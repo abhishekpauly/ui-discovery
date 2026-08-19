@@ -1,0 +1,32 @@
+# Example: a portal whose sidebar renders only the current section.
+#
+# Whole areas end up as islands — nothing reachable from the start URL
+# links to them, so no amount of crawling finds them. `modules:` seeds
+# those areas directly. Measured on a real portal: 6 of 7 requested
+# screens were unreachable without this; with it, 7 of 7.
+#
+# Note max_depth: sibling routes often sit one hop below a section page,
+# so depth 1 misses them even when they ARE linked.
+#
+﻿target: my-portal
+start_url: https://portal.example.com/platform/dashboard
+environment: staging
+authorized: true
+authorized_by: your-name
+auth:
+  required: true
+  state_file: session.json
+budget:
+  max_pages: 80
+  max_depth: 3
+# The Knowledge Hub cluster is an island: nothing reachable from the dashboard
+# links into it, because that sidebar item is a click handler, not an anchor.
+# Seeding it is the only way in.
+modules:
+  - name: knowledge-store
+    start_url: https://portal.example.com/platform/knowledge-store
+  - name: datasets
+    start_url: https://portal.example.com/platform/datasets
+adapters:
+  - name: extra_wait
+    options: { ms: 3000 }

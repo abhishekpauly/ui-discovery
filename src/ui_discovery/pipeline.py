@@ -99,6 +99,18 @@ def main(argv: Optional[list[str]] = None) -> int:
         help=f"Skip a stage (repeatable). One of: {', '.join(STAGES)}",
     )
     parser.add_argument(
+        "--seed", action="append", default=None, metavar="URL",
+        help="Extra start URL (repeatable). Use for routes nothing links to "
+             "— a contextual sidebar, or a nav item that is a click handler "
+             "rather than a link. Also settable as `modules:` in a config.",
+    )
+    parser.add_argument(
+        "--no-reveal-nav", action="store_true",
+        help="Do not expand collapsed navigation before reading links. "
+             "Revealing is on by default and finds routes hidden behind "
+             "accordions and overflow menus.",
+    )
+    parser.add_argument(
         "--max-requests-per-minute", type=float, default=None,
         help="X5: cap request rate across the crawl. Use on shared or "
              "production-adjacent targets.",

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Hidden nav</title></head>
+<body>
+  <nav aria-label="Primary">
+    <a href="visible.html">Visible section</a>
+
+    <!-- A collapsed submenu, rendered the way a component framework does it:
+         the links do not exist in the DOM at all until this is expanded, so
+         `querySelectorAll('a[href]')` cannot see them however hard it looks.
+         This is the case that defeats link-following. -->
+    <button id="more" aria-expanded="false" aria-controls="sub">Knowledge Hub</button>
+    <div id="sub"></div>
+
+    <!-- A destructive control in the same landmark. The reveal pass works
+         inside navigation, which is exactly where this also lives — it must
+         still be refused. -->
+    <button id="danger" aria-expanded="false">Delete workspace</button>
+  </nav>
+  <main><h1>Home</h1></main>
+
+  <script>
+    var m = document.getElementById('more'), s = document.getElementById('sub');
+    m.addEventListener('click', function () {
+      var open = m.getAttribute('aria-expanded') === 'true';
+      m.setAttribute('aria-expanded', String(!open));
+      // Links are created on expand, and removed on collapse.
+      s.innerHTML = open ? '' :
+        '<a href="hidden-a.html">Hidden A</a><a href="hidden-b.html">Hidden B</a>';
+    });
+    document.getElementById('danger').addEventListener('click', function () {
+      document.body.setAttribute('data-deleted', 'true');
+    });
+  </script>
+</body>
+</html>

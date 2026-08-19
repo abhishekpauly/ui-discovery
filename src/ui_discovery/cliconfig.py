@@ -129,6 +129,13 @@ def crawl_options(scope: Scope, args) -> CrawlOptions:  # noqa: ANN001
                              scope.politeness.max_concurrency, 100),
         respect_robots_txt=pick(flag("respect_robots_txt"),
                                 scope.politeness.respect_robots_txt, False),
+        # `modules:` finally does something: each one is an extra start
+        # URL. This is the answer for routes no amount of link-following
+        # reaches — a contextual sidebar, or a nav item that is a click
+        # handler rather than an anchor.
+        seeds=tuple(m.start_url for m in scope.modules if m.start_url)
+              + tuple(getattr(args, "seed", None) or ()),
+        reveal_nav=not getattr(args, "no_reveal_nav", False),
     )
 
 

@@ -170,9 +170,17 @@ Two honest limitations worth knowing:
   URL, so this compares the same site over time — not staging against prod.
   And a live app with rotating content or timestamps will show those as
   changes, because they are.
-- **Coverage is what the crawler could reach.** Pages behind a form
-  submission, a paid action or a destructive confirmation will not appear.
-  Absence from a capture is not evidence of absence from the product.
+- **Coverage is what the crawler could reach.** It follows links, and
+  expands collapsed navigation first so menu-hidden routes are included. Two
+  things still defeat it: a nav item that is a non-semantic `<div>` with a
+  click handler (invisible to anything standards-based — an accessibility
+  defect in the app), and a *contextual* sidebar that renders only the current
+  section, leaving whole areas with nothing linking to them. Seed those
+  explicitly via `modules:` in the config. Pages behind a form submission, a
+  paid action or a destructive confirmation will never appear either.
+  **Absence from a capture is not evidence of absence from the product** —
+  which is why a truncated crawl now says so in `summary.md` rather than
+  quietly reporting fewer screens.
 
 ---
 

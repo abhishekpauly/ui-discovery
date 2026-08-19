@@ -32,7 +32,7 @@ from .extraction import (
 )
 from .interactions import attach_network_async, probe_open_page_async
 from .models import Crawl, CrawlConfig, CrawlStats, NetworkRequest, PageNode
-from .safety import DEFAULT_POLICY, SafetyPolicy
+from .safety import DEFAULT_POLICY, SafetyPolicy, decide, should_execute
 from .util import bfs_depths, normalize_url, resolve_links, slug_for, url_in_scope
 
 
@@ -122,6 +122,69 @@ async def _extract_frames_async(page, raw: dict) -> list:
     return records
 
 
+
+# Landmarks whose collapsed controls plausibly hide routes. Restricting the
+# reveal pass to these is what keeps it safe and cheap: we are not clicking
+# around the page, only opening the navigation.
+_NAV_LANDMARKS = {"navigation", "banner", "complementary"}
+_MAX_REVEALS = 12
+
+
+async def _reveal_nav_links(page, raw: dict, log) -> list[str]:
+    """Expand collapsed navigation, then report any hrefs that appear.
+
+    Routes hidden behind an accordion or an overflow menu are invisible to
+    link-following, because their anchors are not in the DOM until something
+    is clicked. This opens those controls — and only those: candidates must
+    sit in a navigation landmark *and* pass the same safety gates as the
+    probe, so a "Delete" button in a sidebar is still refused.
+
+    Returns the newly-revealed hrefs. Used for discovery only; the captured
+    page model still describes the page as it arrived.
+    """
+    before = {e.get("attributes", {}).get("href")
+              for e in raw.get("elements", [])
+              if e.get("attributes", {}).get("href")}
+
+    candidates = []
+    for el in raw.get("elements", []):
+        if el.get("landmark") not in _NAV_LANDMARKS:
+            continue
+        attrs = el.get("attributes", {}) or {}
+        if attrs.get("aria-expanded") != "false" and not attrs.get("aria-haspopup"):
+            continue
+        decision = decide(el)
+        if should_execute(decision):
+            candidates.append(decision)
+
+    opened = 0
+    for interaction in candidates[:_MAX_REVEALS]:
+        try:
+            handle = await page.query_selector(interaction.dom_path)
+            if handle is None:
+                continue
+            await handle.click(timeout=2000)
+            await page.wait_for_timeout(250)
+            opened += 1
+        except Exception:
+            continue
+
+    if not opened:
+        return []
+
+    try:
+        after_raw = await page.evaluate(JS)
+    except Exception:
+        return []
+    after = {e.get("attributes", {}).get("href")
+             for e in after_raw.get("elements", [])
+             if e.get("attributes", {}).get("href")}
+    revealed = sorted(h for h in after - before if h)
+    if revealed:
+        log.info(f"Revealed {len(revealed)} link(s) behind {opened} nav control(s)")
+    return revealed
+
+
 async def _aria(page) -> str | None:
     try:
         return await page.locator("body").aria_snapshot()
@@ -197,6 +260,19 @@ class CrawlOptions:
     redact_keys: tuple[str, ...] = ()
     # Extensibility (R3)
     adapters: tuple[Adapter, ...] = ()
+    # Coverage
+    #
+    # `seeds` are extra start URLs crawled alongside `start_url`. Some routes
+    # are simply unreachable by following links — a contextual sidebar that
+    # only renders its own section, or a nav item that is a click handler
+    # rather than an anchor. No amount of crawling finds those; you have to
+    # be told they exist.
+    seeds: tuple[str, ...] = ()
+    # Expand collapsed navigation before reading links, so routes hidden
+    # behind an accordion or menu are discovered. On by default: the clicks
+    # are limited to navigation landmarks and pass the same safety gates as
+    # the probe, so the worst case is an opened menu.
+    reveal_nav: bool = True
     # Politeness (X5)
     max_requests_per_minute: float | None = None
     # None means 'leave Crawlee's own default alone'. That default is
@@ -259,6 +335,7 @@ async def crawl_site(
     logged_out_signals = opts.logged_out_signals
     policy, redact_keys = opts.policy, opts.redact_keys
     adapters = opts.adapters
+    seeds, reveal_nav = opts.seeds, opts.reveal_nav
     max_requests_per_minute = opts.max_requests_per_minute
     max_concurrency = opts.max_concurrency
     respect_robots_txt = opts.respect_robots_txt
@@ -456,6 +533,9 @@ async def crawl_site(
             for e in model.elements
             if e.category in ("link", "button") and e.attributes.get("href")
         ]
+        if reveal_nav:
+            hrefs = hrefs + await _reveal_nav_links(page, raw, context.log)
+
         out_links = resolve_links(
             model.final_url or url, hrefs, root,
             dedupe_queries=dedupe_queries,
@@ -498,7 +578,10 @@ async def crawl_site(
 
     started = datetime.now(timezone.utc)
     t0 = time.monotonic()
-    final_stats = await crawler.run([start_url])
+    # Seeds join the start URL; Crawlee dedups, and out-of-scope seeds are
+    # dropped by the same transform as any other request.
+    start_urls = [start_url] + [u for u in seeds if _normalize(u) != root]
+    final_stats = await crawler.run(start_urls)
     runtime = time.monotonic() - t0
     finished = datetime.now(timezone.utc)
 

@@ -83,6 +83,15 @@ def _screens(crawl: Crawl) -> list[dict[str, Any]]:
     return screens
 
 
+def _not_captured(crawl: Crawl) -> list[str]:
+    """URLs the crawl *found* but never visited — almost always the page
+    budget running out. Silently truncating a capture and reporting success
+    is the kind of thing that makes someone trust an incomplete inventory."""
+    captured = {n.url for n in crawl.pages}
+    discovered = {edge["to"] for edge in crawl.navigation}
+    return sorted(discovered - captured)
+
+
 def build_inventory(crawl: Crawl) -> dict[str, Any]:
     """The whole inventory as plain data. Pure — no filesystem access."""
     screens = _screens(crawl)
@@ -92,6 +101,7 @@ def build_inventory(crawl: Crawl) -> dict[str, Any]:
         for key, value in node.page.counts.items():
             if key not in ("visible_elements", "total_elements"):
                 totals[key] += value
+    missed = _not_captured(crawl)
     return {
         "target": crawl.config.start_url,
         "crawl_id": crawl.crawl_id,
@@ -104,6 +114,8 @@ def build_inventory(crawl: Crawl) -> dict[str, Any]:
         "totals_by_category": dict(totals.most_common()),
         "screens": screens,
         "endpoints": endpoints,
+        "discovered_not_captured": missed,
+        "budget_exhausted": bool(missed),
     }
 
 
@@ -163,6 +175,15 @@ def _summary_markdown(inv: dict[str, Any]) -> str:
         "",
         "## Elements by kind (all screens)", "",
     ]
+    if inv["discovered_not_captured"]:
+        missed = inv["discovered_not_captured"]
+        lines[6:6] = [
+            f"> ⚠️ **This capture is incomplete.** {len(missed)} screen(s) "
+            f"were discovered but not visited — the page budget ran out. "
+            f"Raise `--max-pages` and re-run. They are listed at the "
+            f"bottom of this file.",
+            "",
+        ]
     for kind, count in inv["totals_by_category"].items():
         lines.append(f"- {kind}: {count}")
     lines += ["", "## Screens", "",
@@ -174,6 +195,11 @@ def _summary_markdown(inv: dict[str, Any]) -> str:
         lines.append(f"| {i} | **{title}**<br>`{s['url']}` | "
                      f"{s['elements_total']} | {s['elements_visible']} | "
                      f"{s['out_links']} | {shot} |")
+    if inv["discovered_not_captured"]:
+        lines += ["", "## Discovered but not captured", "",
+                  "_Found via links, never visited — the page budget ran out._", ""]
+        lines += [f"- `{u}`" for u in inv["discovered_not_captured"][:100]]
+
     lines += ["", "## Files in this folder", "",
               "| File | What it is |", "| --- | --- |",
               "| `urls.txt` | Every captured screen, one URL per line |",

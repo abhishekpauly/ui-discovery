@@ -199,6 +199,39 @@ one), because they never reach "network idle". Compare `screens_count` and
 `elements_count` in `summary.md` across two runs — if they move on an
 unchanged site, you need this.
 
+**Some screens are missing from the capture.**
+
+Check `summary.md` first — if it says *"This capture is incomplete"*, the page
+budget ran out and the missing URLs are listed at the bottom. Raise
+`--max-pages`.
+
+Otherwise the screens were never *discovered*, and there are three reasons:
+
+1. **They're deeper than you crawled.** `--max-depth 1` only follows one hop.
+   A route linked from a section page is at depth 2. Try `--max-depth 3`.
+2. **They're behind a collapsed menu.** The crawler expands navigation
+   automatically before reading links, so this is usually handled — but if a
+   nav item is a plain `<div>` with a click handler (no link, no ARIA role),
+   nothing standards-based can see it. That is an accessibility defect in the
+   app, and no crawler setting fixes it.
+3. **Nothing links to them.** Portals with a *contextual* sidebar only render
+   the current section's links, so whole areas can be islands. Seed them:
+
+```powershell
+python -m ui_discovery.crawl <url> --seed https://portal.example.com/reports `
+    --seed https://portal.example.com/settings
+```
+
+Better, record them in the config so the run is repeatable:
+
+```yaml
+modules:
+  - name: knowledge-store
+    start_url: https://portal.example.com/knowledge-store
+  - name: datasets
+    start_url: https://portal.example.com/datasets
+```
+
 **It's hammering a shared environment.**
 ```powershell
 python -m ui_discovery.crawl <url> --max-requests-per-minute 60 --max-concurrency 2
