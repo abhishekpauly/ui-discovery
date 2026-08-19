@@ -18,9 +18,45 @@ from pathlib import Path
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from . import SCHEMA_VERSION, __version__
+from .browser import DOM_FINGERPRINT_JS
 from .extraction import JS, assemble_page
 from .models import Crawl, CrawlConfig, CrawlStats, PageNode
 from .util import bfs_depths, normalize_url, resolve_links, slug_for
+
+
+async def _wait_for_dom_stable_async(
+    page,
+    *,
+    timeout_ms: int = 4000,
+    interval_ms: int = 250,
+    required_stable_polls: int = 2,
+) -> dict:
+    """Async twin of `browser.wait_for_dom_stable` — see there for why this
+    exists: `networkidle` fires before SPAs finish client-side rendering."""
+    t0 = time.monotonic()
+    deadline = t0 + timeout_ms / 1000
+    last = None
+    stable_polls = 0
+    while time.monotonic() < deadline:
+        try:
+            fp = await page.evaluate(DOM_FINGERPRINT_JS)
+        except Exception:
+            break
+        if fp == last:
+            stable_polls += 1
+            if stable_polls >= required_stable_polls:
+                return {
+                    "dom_stable": True,
+                    "dom_stable_wait_ms": round((time.monotonic() - t0) * 1000),
+                }
+        else:
+            stable_polls = 0
+        last = fp
+        await page.wait_for_timeout(interval_ms)
+    return {
+        "dom_stable": False,
+        "dom_stable_wait_ms": round((time.monotonic() - t0) * 1000),
+    }
 
 
 async def _readiness(page, response) -> dict:
@@ -35,6 +71,14 @@ async def _readiness(page, response) -> dict:
         signals["body_present"] = True
     except PlaywrightTimeoutError:
         signals["body_present"] = False
+
+    # Past networkidle, keep polling until the DOM stops mutating — protects
+    # extraction/screenshots from firing mid-render (see browser.py).
+    if signals["body_present"]:
+        signals.update(await _wait_for_dom_stable_async(page))
+    else:
+        signals["dom_stable"] = False
+        signals["dom_stable_wait_ms"] = 0
     return signals
 
 
