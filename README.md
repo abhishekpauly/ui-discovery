@@ -103,6 +103,29 @@ same-domain restriction and automatic URL dedup. The crawl records a page graph
 `--max-pages` is an *approximate* cap — a few in-flight requests may finish
 after the limit is reached under concurrency.)
 
+### Page identity (H1)
+
+Two flags control what counts as "the same page". Both default to **off**, so
+identity is unchanged unless you opt in:
+
+```bash
+# Collapse query-string variants that differ only in tracking/session noise
+# (utm_*, gclid, sessionid, ...), so ?id=1&utm_source=a and ?id=1&utm_source=b
+# are one page. Real params (?id=1 vs ?id=2) still separate pages.
+python -m ui_discovery.crawl https://example.com --dedupe-queries
+
+# Add your own noise params (repeatable; requires --dedupe-queries):
+python -m ui_discovery.crawl https://example.com --dedupe-queries --drop-param tab
+
+# Treat `#/route` hash fragments as distinct pages, for SPAs that route
+# client-side via the hash. (A bare `#section` anchor is never a page.)
+python -m ui_discovery.crawl https://example.com --hash-routes
+```
+
+Both settings are applied to the page graph *and* Crawlee's request queue, so
+page counts agree, and both are recorded in `crawl.json`'s `config` block so a
+snapshot always says how its page identity was computed.
+
 ## Run — V2 (analyze a crawl)
 
 ```bash

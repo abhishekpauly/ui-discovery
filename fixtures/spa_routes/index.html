@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Hash-router SPA</title>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    // A minimal hash-based router, mimicking a client-side-routed SPA.
+    // Distinct routes render distinct content under one document — H1
+    // exists so the crawler can tell them apart.
+    var PAGES = {
+      "/": '<h1>Home</h1><nav><a href="#/orders">Orders</a> <a href="#/settings">Settings</a></nav>',
+      "/orders": '<h1>Orders</h1><nav><a href="#/">Home</a> <a href="#/settings">Settings</a></nav><button type="button">Create order</button>',
+      "/settings": '<h1>Settings</h1><nav><a href="#/">Home</a> <a href="#/orders">Orders</a></nav>'
+    };
+    function render() {
+      var route = location.hash.replace(/^#/, "") || "/";
+      document.getElementById("root").innerHTML = PAGES[route] || "<h1>Not found</h1>";
+    }
+    window.addEventListener("hashchange", render);
+    render();
+  </script>
+</body>
+</html>

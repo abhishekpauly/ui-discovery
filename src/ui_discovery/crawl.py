@@ -36,6 +36,21 @@ def main(argv: list[str] | None = None) -> int:
         "--auth-state", default=None,
         help="Path to a saved session (see: python -m ui_discovery.login).",
     )
+    parser.add_argument(
+        "--dedupe-queries", action="store_true",
+        help="Collapse query-string variants that differ only in noise "
+             "params (utm_*, session ids, ...) into one page identity.",
+    )
+    parser.add_argument(
+        "--drop-param", action="append", default=[], metavar="NAME",
+        help="Extra query param name to treat as noise (repeatable). "
+             "Only takes effect with --dedupe-queries.",
+    )
+    parser.add_argument(
+        "--hash-routes", action="store_true",
+        help="Treat `#/route`-style hash fragments as distinct pages "
+             "(for SPAs that route client-side via the hash).",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -57,6 +72,9 @@ def main(argv: list[str] | None = None) -> int:
                 output_dir=str(out_dir),
                 headless=not args.headed,
                 auth_state=auth_state,
+                dedupe_queries=args.dedupe_queries,
+                drop_params=frozenset(args.drop_param) or None,
+                hash_routes=args.hash_routes,
             )
         )
     except Exception as exc:

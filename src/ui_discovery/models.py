@@ -87,6 +87,8 @@ class CrawlConfig(BaseModel):
     max_pages: int
     max_depth: int
     strategy: str  # e.g. "same-domain"
+    dedupe_queries: bool = False  # H1: noise query params collapsed?
+    hash_routes: bool = False  # H1: `#/route` fragments treated as pages?
 
 
 class CrawlStats(BaseModel):

@@ -97,9 +97,16 @@ async def crawl_site(
     output_dir: str = "output",
     headless: bool = True,
     auth_state: dict | None = None,
+    dedupe_queries: bool = False,
+    drop_params: frozenset[str] | None = None,
+    hash_routes: bool = False,
 ) -> Crawl:
     """Crawl a same-domain site starting at `start_url`, extracting a UI model
-    for every discovered page, and return an assembled `Crawl`."""
+    for every discovered page, and return an assembled `Crawl`.
+
+    `dedupe_queries` / `drop_params` / `hash_routes` control page identity
+    (see `util.normalize_url`) and are applied consistently to both the page
+    graph we build and Crawlee's own request queue, so page counts match."""
     # Imported here so the module imports cleanly even if crawlee isn't
     # installed (V0-only environments).
     from crawlee import service_locator
@@ -127,7 +134,24 @@ async def crawl_site(
     except Exception:
         pass
 
-    root = normalize_url(start_url)
+    def _normalize(u: str) -> str:
+        return normalize_url(
+            u,
+            dedupe_queries=dedupe_queries,
+            drop_params=drop_params,
+            hash_routes=hash_routes,
+        )
+
+    def _transform_request(req):  # noqa: ANN001, ANN202
+        # Route Crawlee's own dedup/queue identity through the same
+        # normalization as our page graph, so counts match (H1). Setting
+        # unique_key explicitly bypasses Crawlee's own (fragment-stripping
+        # by default) computation entirely.
+        req["url"] = _normalize(req["url"])
+        req["unique_key"] = req["url"]
+        return req
+
+    root = _normalize(start_url)
     shots_dir = Path(output_dir) / "screenshots"
     shots_dir.mkdir(parents=True, exist_ok=True)
 
@@ -186,7 +210,7 @@ async def crawl_site(
     @crawler.router.default_handler
     async def handler(context: PlaywrightCrawlingContext) -> None:
         page = context.page
-        url = normalize_url(context.request.url)
+        url = _normalize(context.request.url)
         context.log.info(f"Extracting {url}")
 
         readiness = await _readiness(page, context.response)
@@ -214,13 +238,21 @@ async def crawl_site(
             for e in model.elements
             if e.category in ("link", "button") and e.attributes.get("href")
         ]
-        out_links = resolve_links(model.final_url or url, hrefs, root)
+        out_links = resolve_links(
+            model.final_url or url, hrefs, root,
+            dedupe_queries=dedupe_queries,
+            drop_params=drop_params,
+            hash_routes=hash_routes,
+        )
         edges[url] = out_links
         nodes[url] = PageNode(url=url, out_links=out_links, page=model)
 
         # Let Crawlee discover + enqueue same-domain links (it handles dedup,
-        # depth and the page budget).
-        await context.enqueue_links(strategy="same-domain")
+        # depth and the page budget). `transform_request_function` routes its
+        # dedup identity through the same normalization as our page graph.
+        await context.enqueue_links(
+            strategy="same-domain", transform_request_function=_transform_request
+        )
 
     started = datetime.now(timezone.utc)
     t0 = time.monotonic()
@@ -253,6 +285,8 @@ async def crawl_site(
             max_pages=max_pages,
             max_depth=max_depth,
             strategy="same-domain",
+            dedupe_queries=dedupe_queries,
+            hash_routes=hash_routes,
         ),
         stats=CrawlStats(
             pages_crawled=len(nodes),
