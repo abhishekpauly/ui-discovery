@@ -17,6 +17,7 @@ import sys
 
 from .auth import load_storage_state
 from .cliconfig import (
+    adapters_for,
     add_config_argument,
     auth_signals,
     describe,
@@ -143,6 +144,7 @@ def main(argv: list[str] | None = None) -> int:
                 logged_out_signals=logged_out,
                 policy=safety_policy(scope),
                 redact_keys=tuple(scope.privacy.redact_network_keys),
+                adapters=adapters_for(scope),
             )
         )
     except Exception as exc:

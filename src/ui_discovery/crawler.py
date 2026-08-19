@@ -18,6 +18,8 @@ from pathlib import Path
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from . import SCHEMA_VERSION, __version__
+from . import adapters as adapter_hooks
+from .adapters import Adapter
 from .auth import check_auth
 from .browser import DOM_FINGERPRINT_JS
 from .extraction import (
@@ -137,6 +139,7 @@ async def crawl_site(
     logged_out_signals: tuple[str, ...] | None = None,
     policy: SafetyPolicy = DEFAULT_POLICY,
     redact_keys: tuple[str, ...] = (),
+    adapters: list[Adapter] | None = None,
 ) -> Crawl:
     """Crawl a same-domain site starting at `start_url`, extracting a UI model
     for every discovered page, and return an assembled `Crawl`.
@@ -184,8 +187,14 @@ async def crawl_site(
             hash_routes=hash_routes,
         )
 
+    active_adapters = adapters or []
+
     def _in_scope(u: str) -> bool:
-        return url_in_scope(u, include, exclude)
+        # Scope rules first, then adapter vetoes (R3). An adapter can
+        # narrow the crawl, never widen it past the config.
+        if not url_in_scope(u, include, exclude):
+            return False
+        return adapter_hooks.should_visit(active_adapters, u)
 
     def _transform_request(req):  # noqa: ANN001, ANN202
         # Route Crawlee's own dedup/queue identity through the same
@@ -270,6 +279,11 @@ async def crawl_site(
             net_sinks[id(context.page)] = sink
             attach_network_async(context.page, sink, redact_keys)
 
+    if active_adapters:
+        @crawler.pre_navigation_hook
+        async def _adapter_pre_nav(context) -> None:  # noqa: ANN001
+            await adapter_hooks.pre_navigate(active_adapters, context)
+
     @crawler.router.default_handler
     async def handler(context: PlaywrightCrawlingContext) -> None:
         page = context.page
@@ -277,6 +291,9 @@ async def crawl_site(
         context.log.info(f"Extracting {url}")
 
         readiness = await _readiness(page, context.response)
+        # R3: adapter waits run after the generic readiness checks and
+        # before anything is read, so they can cover what those miss.
+        await adapter_hooks.post_navigate(active_adapters, page)
         raw = await page.evaluate(JS)
         frames = await _extract_frames_async(page, raw)
         aria = await _aria(page) if accessibility_tree else None
@@ -306,6 +323,14 @@ async def crawl_site(
             login_url_patterns=login_url_patterns,
             logged_out_signals=logged_out_signals,
         )
+        adapter_hooks.on_page(active_adapters, model)
+        # R3: a product-specific signed-in check overrides the generic one.
+        verdict = adapter_hooks.is_logged_in(active_adapters, model)
+        if verdict is not None:
+            model.auth.looks_logged_out = not verdict
+            if not verdict and not model.auth.signal:
+                model.auth.signal = "adapter"
+                model.auth.evidence = "an adapter reported not-signed-in"
         if (model.auth.looks_logged_out or model.auth.looks_empty) and auth_state:
             context.log.warning(
                 f"Session may be rejected at {url}: "

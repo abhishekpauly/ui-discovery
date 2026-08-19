@@ -17,6 +17,7 @@ import argparse
 import sys
 from typing import Optional
 
+from .adapters import build as build_adapters
 from .auth import DEFAULT_LOGGED_OUT_SIGNALS, DEFAULT_LOGIN_URL_PATTERNS
 from .config import Scope, load_scope
 from .safety import SafetyPolicy
@@ -45,6 +46,16 @@ def load_or_exit(path: Optional[str]) -> Scope:
     try:
         return load_scope(path)
     except (FileNotFoundError, ValueError) as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        raise SystemExit(1)
+
+
+def adapters_for(scope: Scope):
+    """Instantiate the config's adapters, reporting an unknown name cleanly
+    rather than as a traceback."""
+    try:
+        return build_adapters([a.model_dump() for a in scope.adapters])
+    except ValueError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         raise SystemExit(1)
 
@@ -95,6 +106,9 @@ def describe(scope: Scope, config_path: Optional[str]) -> list[str]:
     if scope.scope.include or scope.scope.exclude:
         lines.append(f"[INFO] Scope: include={scope.scope.include or ['*']} "
                      f"exclude={scope.scope.exclude or []}")
+    if scope.adapters:
+        lines.append("[INFO] Adapters: "
+                     + ", ".join(a.name for a in scope.adapters))
     if scope.safety.never_touch:
         lines.append(f"[INFO] never_touch: {scope.safety.never_touch}")
     return lines

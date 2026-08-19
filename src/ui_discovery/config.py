@@ -103,6 +103,15 @@ class Outputs(BaseModel):
     run_label: Optional[str] = None
 
 
+class AdapterSpec(BaseModel):
+    """Selects a registered adapter by name (R3). An unknown name is an error
+    at load time — a config asking for behavior the engine cannot provide has
+    not been honored."""
+
+    name: str
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
 class Module(BaseModel):
     """A separately-crawlable area of the product."""
 
@@ -136,6 +145,7 @@ class Scope(BaseModel):
     safety: Safety = Field(default_factory=Safety)
     privacy: Privacy = Field(default_factory=Privacy)
     outputs: Outputs = Field(default_factory=Outputs)
+    adapters: list[AdapterSpec] = Field(default_factory=list)
 
     model_config = {"extra": "forbid"}  # a typo'd key is an error, not a no-op
 
