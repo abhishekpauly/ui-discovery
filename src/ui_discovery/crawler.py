@@ -20,7 +20,8 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from . import SCHEMA_VERSION, __version__
 from .browser import DOM_FINGERPRINT_JS
 from .extraction import JS, assemble_page
-from .models import Crawl, CrawlConfig, CrawlStats, PageNode
+from .interactions import attach_network_async, probe_open_page_async
+from .models import Crawl, CrawlConfig, CrawlStats, NetworkRequest, PageNode
 from .util import bfs_depths, normalize_url, resolve_links, slug_for
 
 
@@ -100,13 +101,20 @@ async def crawl_site(
     dedupe_queries: bool = False,
     drop_params: frozenset[str] | None = None,
     hash_routes: bool = False,
+    probe: bool = False,
+    max_interactions: int = 40,
 ) -> Crawl:
     """Crawl a same-domain site starting at `start_url`, extracting a UI model
     for every discovered page, and return an assembled `Crawl`.
 
     `dedupe_queries` / `drop_params` / `hash_routes` control page identity
     (see `util.normalize_url`) and are applied consistently to both the page
-    graph we build and Crawlee's own request queue, so page counts match."""
+    graph we build and Crawlee's own request queue, so page counts match.
+
+    With `probe=True`, every crawled page is additionally run through the V3
+    safe-interaction + network probe (H2) — as the same logged-in user, on
+    the page the crawler already has open. Only structurally-safe controls
+    are executed; see `interactions.probe_open_page_async`."""
     # Imported here so the module imports cleanly even if crawlee isn't
     # installed (V0-only environments).
     from crawlee import service_locator
@@ -157,6 +165,10 @@ async def crawl_site(
 
     nodes: dict[str, PageNode] = {}
     edges: dict[str, list[str]] = {}
+    # H2: one network sink per open page, keyed by page identity. Populated
+    # from a pre-navigation hook so page-load traffic is captured, then read
+    # by the handler once that page has been extracted.
+    net_sinks: dict[int, list[NetworkRequest]] = {}
 
     crawler = PlaywrightCrawler(
         headless=headless,
@@ -207,6 +219,16 @@ async def crawl_site(
                     except Exception:
                         pass
 
+    # H2: start observing network traffic before the page navigates, so the
+    # probe's record includes page-load requests, not just those triggered by
+    # the interactions we execute.
+    if probe:
+        @crawler.pre_navigation_hook
+        async def _attach_probe_network(context) -> None:  # noqa: ANN001
+            sink: list[NetworkRequest] = []
+            net_sinks[id(context.page)] = sink
+            attach_network_async(context.page, sink)
+
     @crawler.router.default_handler
     async def handler(context: PlaywrightCrawlingContext) -> None:
         page = context.page
@@ -245,7 +267,8 @@ async def crawl_site(
             hash_routes=hash_routes,
         )
         edges[url] = out_links
-        nodes[url] = PageNode(url=url, out_links=out_links, page=model)
+        node = PageNode(url=url, out_links=out_links, page=model)
+        nodes[url] = node
 
         # Let Crawlee discover + enqueue same-domain links (it handles dedup,
         # depth and the page budget). `transform_request_function` routes its
@@ -253,6 +276,28 @@ async def crawl_site(
         await context.enqueue_links(
             strategy="same-domain", transform_request_function=_transform_request
         )
+
+        # H2: probe last — after extraction, the screenshot and link discovery
+        # have all seen the pristine page. Interactions only ever mutate state
+        # we've already captured. A probe failure must not fail the crawl: the
+        # page's extraction is still valid without it.
+        if probe:
+            try:
+                node.probe = await probe_open_page_async(
+                    page,
+                    url=url,
+                    raw=raw,
+                    network=net_sinks.pop(id(page), []),
+                    max_interactions=max_interactions,
+                )
+                p = node.probe.stats
+                context.log.info(
+                    f"Probed {url}: {p.get('executed', 0)} executed, "
+                    f"{p.get('blocked', 0)} blocked, "
+                    f"{p.get('network_requests', 0)} requests"
+                )
+            except Exception as exc:
+                context.log.warning(f"Probe failed for {url}: {exc}")
 
     started = datetime.now(timezone.utc)
     t0 = time.monotonic()
@@ -287,6 +332,7 @@ async def crawl_site(
             strategy="same-domain",
             dedupe_queries=dedupe_queries,
             hash_routes=hash_routes,
+            probe=probe,
         ),
         stats=CrawlStats(
             pages_crawled=len(nodes),

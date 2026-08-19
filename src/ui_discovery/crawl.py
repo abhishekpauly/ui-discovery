@@ -51,6 +51,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Treat `#/route`-style hash fragments as distinct pages "
              "(for SPAs that route client-side via the hash).",
     )
+    parser.add_argument(
+        "--probe", action="store_true",
+        help="Also run the safe interaction + network probe on every crawled "
+             "page. Only structurally-safe, reversible controls are clicked; "
+             "destructive ones are never executed.",
+    )
+    parser.add_argument(
+        "--max-interactions", type=int, default=40,
+        help="Per-page interaction budget when --probe is set (default: 40).",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -75,6 +85,8 @@ def main(argv: list[str] | None = None) -> int:
                 dedupe_queries=args.dedupe_queries,
                 drop_params=frozenset(args.drop_param) or None,
                 hash_routes=args.hash_routes,
+                probe=args.probe,
+                max_interactions=args.max_interactions,
             )
         )
     except Exception as exc:

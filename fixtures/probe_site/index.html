@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Home · Probe Site</title>
+<style>[hidden] { display: none; }</style>
+</head>
+<body>
+  <header>
+    <nav aria-label="Primary">
+      <a href="index.html">Home</a>
+      <a href="settings.html">Settings</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Home</h1>
+
+    <!-- SAFE: aria-expanded disclosure, reversible -->
+    <button id="acc" aria-expanded="false" aria-controls="acc-panel">Details</button>
+    <div id="acc-panel" hidden>Extra details on the home page.</div>
+
+    <!-- SAFE: native disclosure -->
+    <details>
+      <summary>More info</summary>
+      <p>Native details/summary content.</p>
+    </details>
+  </main>
+
+  <script>
+    // An API call on load, so the crawl-wide probe has network to observe.
+    fetch('./data.json').catch(function () {});
+
+    document.getElementById('acc').addEventListener('click', function () {
+      var open = this.getAttribute('aria-expanded') === 'true';
+      this.setAttribute('aria-expanded', String(!open));
+      document.getElementById('acc-panel').hidden = open;
+    });
+  </script>
+</body>
+</html>

@@ -168,6 +168,27 @@ Nothing destructive is ever clicked; executed controls are reverted afterwards
 (Escape / re-toggle). Network is recorded as method/url/status only — no headers
 or bodies — and sensitive query values are redacted.
 
+### Probing every page of a crawl (H2)
+
+`probe` covers one page. To capture behavior site-wide — as the logged-in
+user, in a single pass — add `--probe` to the crawl:
+
+```bash
+python -m ui_discovery.crawl https://portal.example.com \
+    --auth-state session.json --probe --max-interactions 40
+```
+
+Each page is probed on the browser page the crawler already has open, so
+there is no second browser and no second login. The probe runs *after*
+extraction, the screenshot and link discovery, so those always see the
+pristine page; anything that navigates is walked back so the crawl stays on
+course. Results attach to each page as `pages[].probe` in `crawl.json`, and
+the crawl report gains a probe summary, the observed API endpoints, and a
+per-page probe line. The same safety rules apply as in single-page `probe`.
+
+A probe failure never fails the crawl — the page's extraction is still valid
+without it, and the failure is logged as a warning.
+
 ## Authenticated portals
 
 For a portal behind a login, capture a session once, then reuse it. No

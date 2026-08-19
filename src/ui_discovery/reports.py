@@ -37,6 +37,38 @@ def _page_label(node: PageNode) -> str:
     return f"{title} — {node.url}"
 
 
+# H2 keys carried per page when the crawl ran with --probe.
+_PROBE_STAT_KEYS = (
+    "elements_seen", "executed", "observed_only", "blocked", "caution",
+    "state_changing", "network_requests", "api_requests",
+)
+
+
+def _probe_totals(crawl: Crawl) -> dict[str, int]:
+    """Sum each page's probe stats. Empty dict when the crawl wasn't probed,
+    which is what suppresses the probe sections from the report."""
+    probes = [n.probe for n in crawl.pages if n.probe]
+    if not probes:
+        return {}
+    return {
+        key: sum(p.stats.get(key, 0) for p in probes)
+        for key in _PROBE_STAT_KEYS
+    }
+
+
+def _api_endpoints(crawl: Crawl, limit: int = 20) -> list[tuple[str, int]]:
+    """Distinct API endpoint patterns observed across all probed pages, most
+    frequent first."""
+    counter: Counter = Counter()
+    for node in crawl.pages:
+        if not node.probe:
+            continue
+        for req in node.probe.network:
+            if req.is_api and req.endpoint_pattern:
+                counter[req.endpoint_pattern] += 1
+    return counter.most_common(limit)
+
+
 # --- Markdown ---------------------------------------------------------------
 
 
@@ -80,6 +112,27 @@ def build_markdown(crawl: Crawl) -> str:
         lines.append(f"- {k}: {v}")
     lines.append("")
 
+    totals = _probe_totals(crawl)
+    if totals:
+        lines.append("## Interaction & network probe (all pages)")
+        lines.append("")
+        lines.append(f"- Controls seen: {totals['elements_seen']} · "
+                     f"executed: **{totals['executed']}** · "
+                     f"observed only: {totals['observed_only']}")
+        lines.append(f"- Refused as destructive (BLOCK): {totals['blocked']} · "
+                     f"caution: {totals['caution']}")
+        lines.append(f"- State-changing interactions: {totals['state_changing']}")
+        lines.append(f"- Network requests: {totals['network_requests']} "
+                     f"(API: {totals['api_requests']})")
+        lines.append("")
+        endpoints = _api_endpoints(crawl)
+        if endpoints:
+            lines.append("Observed API endpoints:")
+            lines.append("")
+            for pattern, count in endpoints:
+                lines.append(f"- `{pattern}` ({count})")
+            lines.append("")
+
     lines.append("## Page inventory")
     lines.append("")
     for node in crawl.pages:
@@ -103,6 +156,12 @@ def build_markdown(crawl: Crawl) -> str:
             lines.append(f"- Out-links ({len(node.out_links)}): "
                          + ", ".join(f"`{u.rsplit('/', 1)[-1] or u}`"
                                      for u in node.out_links[:10]))
+        if node.probe:
+            ps = node.probe.stats
+            lines.append(f"- Probe: {ps.get('executed', 0)} executed · "
+                         f"{ps.get('blocked', 0)} blocked · "
+                         f"{ps.get('state_changing', 0)} state-changing · "
+                         f"{ps.get('network_requests', 0)} requests")
         lines.append("")
 
     return "\n".join(lines)
@@ -142,6 +201,37 @@ def build_html(crawl: Crawl) -> str:
     totals_str = " · ".join(f"{esc(k)}: <b>{esc(v)}</b>"
                             for k, v in sorted(totals.items(), key=lambda kv: -kv[1]))
 
+    # H2: probe sections appear only when the crawl actually probed.
+    probe_html = ""
+    pt = _probe_totals(crawl)
+    if pt:
+        endpoints = _api_endpoints(crawl)
+        endpoints_html = ""
+        if endpoints:
+            items = "".join(
+                f"<tr><td><code>{esc(pattern)}</code></td><td>{esc(count)}</td></tr>"
+                for pattern, count in endpoints
+            )
+            endpoints_html = (
+                "<h2>Observed API endpoints</h2><table>"
+                "<thead><tr><th>Endpoint pattern</th><th>Requests</th></tr></thead>"
+                f"<tbody>{items}</tbody></table>"
+            )
+        probe_html = f"""
+<h2>Interaction &amp; network probe</h2>
+<div class="kpis">
+  <span>Controls seen: <b>{esc(pt['elements_seen'])}</b></span>
+  <span>Executed: <b>{esc(pt['executed'])}</b></span>
+  <span>Observed only: <b>{esc(pt['observed_only'])}</b></span>
+  <span>Refused (destructive): <b>{esc(pt['blocked'])}</b></span>
+  <span>Caution: <b>{esc(pt['caution'])}</b></span>
+  <span>State-changing: <b>{esc(pt['state_changing'])}</b></span>
+  <span>Requests: <b>{esc(pt['network_requests'])}</b> (API {esc(pt['api_requests'])})</span>
+</div>
+<p class="meta">Only structurally-safe, reversible controls are executed;
+destructive ones are observed and refused.</p>
+{endpoints_html}"""
+
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <title>UI Crawl Report — {esc(c.start_url)}</title>
@@ -171,6 +261,7 @@ def build_html(crawl: Crawl) -> str:
 </div>
 <h2>UI inventory (all pages)</h2>
 <p>{totals_str}</p>
+{probe_html}
 <h2>Pages ({esc(s.pages_crawled)})</h2>
 <table>
 <thead><tr><th>Depth</th><th>Page</th><th>Status</th><th>Elements</th><th>Screenshot</th></tr></thead>

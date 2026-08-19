@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Settings · Probe Site</title>
+<style>[hidden] { display: none; }</style>
+</head>
+<body>
+  <header>
+    <nav aria-label="Primary">
+      <a href="index.html">Home</a>
+      <a href="settings.html">Settings</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Settings</h1>
+
+    <!-- SAFE: tab switch, reversible; second tab triggers a fetch -->
+    <div role="tablist" aria-label="Sections">
+      <button role="tab" id="tab-general" aria-selected="true"
+              aria-controls="panel-general">General</button>
+      <button role="tab" id="tab-audit" aria-selected="false"
+              aria-controls="panel-audit">Audit</button>
+    </div>
+    <section id="panel-general" role="tabpanel">General settings.</section>
+    <section id="panel-audit" role="tabpanel" hidden>Audit log.</section>
+
+    <!-- BLOCK: destructive. The type (haspopup=dialog) is allow-listed, but
+         the "Delete account" label must override and refuse execution — this
+         is what the crawl-wide probe test asserts is never clicked. -->
+    <button id="del" aria-haspopup="dialog" aria-controls="confirm">Delete account</button>
+    <div role="dialog" id="confirm" aria-label="Confirm deletion" hidden>
+      <p>This cannot be undone.</p>
+      <button>Cancel</button><button>Delete</button>
+    </div>
+  </main>
+
+  <script>
+    function sel(id) { return document.getElementById(id); }
+
+    document.querySelectorAll('[role=tab]').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        document.querySelectorAll('[role=tab]').forEach(function (t) {
+          t.setAttribute('aria-selected', 'false');
+          sel(t.getAttribute('aria-controls')).hidden = true;
+        });
+        tab.setAttribute('aria-selected', 'true');
+        sel(tab.getAttribute('aria-controls')).hidden = false;
+        if (tab.id === 'tab-audit') fetch('./audit.json').catch(function () {});
+      });
+    });
+
+    // Clicking Delete would open the confirm dialog — the probe must never
+    // get here. The test asserts the dialog stays hidden.
+    sel('del').addEventListener('click', function () {
+      sel('confirm').hidden = false;
+      document.body.setAttribute('data-delete-clicked', 'true');
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { sel('confirm').hidden = true; }
+    });
+  </script>
+</body>
+</html>

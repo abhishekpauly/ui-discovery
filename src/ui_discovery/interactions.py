@@ -1,10 +1,23 @@
-"""V3 interaction probe (single page, sync Playwright).
+"""V3 interaction probe — discover what a page *does*, safely.
 
 Loads one page, discovers interactive elements, and *executes only the
 structurally-safe, reversible ones* (per safety.py) — recording a cheap
 before/after state signature so we can tell what each interaction changed.
 Meanwhile every network request is observed (method/url/status only, secrets
 redacted). Nothing destructive is ever clicked.
+
+Two entry points share one set of rules:
+
+  * `probe_page(url, ...)` — sync Playwright, opens its own browser. This is
+    the V3 CLI path (`python -m ui_discovery.probe`).
+  * `probe_open_page_async(page, ...)` — takes an **already-open** async page
+    and probes it in place. This is what the crawler calls (H2) so every
+    crawled page can be probed as the logged-in user, without a second
+    browser or a second login.
+
+The safety decisions (`safety.decide` / `should_execute`) and the state
+signature JS are shared by both, so "what is safe to click" has exactly one
+definition. Only the await-vs-not plumbing is written twice.
 """
 
 from __future__ import annotations
@@ -57,32 +70,40 @@ def _state(page) -> StateSignature:
     return StateSignature(**page.evaluate(_STATE_JS))
 
 
+def _duration_ms(request) -> float | None:
+    """Round-trip time from Playwright's timing, or None if unavailable."""
+    try:
+        t = request.timing
+        if t and t.get("responseEnd", -1) > 0 and t.get("requestStart", -1) >= 0:
+            return round(t["responseEnd"] - t["requestStart"], 1)
+    except Exception:
+        pass
+    return None
+
+
+def _record(request, status: int | None) -> NetworkRequest:
+    """Build one observed-request record. Shared by the sync and async probes
+    so both emit identical data — only the event plumbing differs. Every
+    attribute read here is a plain property in both Playwright APIs."""
+    method, url, rtype = request.method, request.url, request.resource_type
+    is_api, is_gql, pattern = classify_request(method, url, rtype)
+    return NetworkRequest(
+        method=method,
+        url=redact_url(url),
+        resource_type=rtype,
+        status=status,
+        is_api=is_api,
+        is_graphql=is_gql,
+        endpoint_pattern=pattern,
+        duration_ms=_duration_ms(request),
+    )
+
+
 def _attach_network(page, sink: list[NetworkRequest]) -> None:
     def on_finished(request):
         try:
             resp = request.response()
-            status = resp.status if resp else None
-            rtype = request.resource_type
-            method = request.method
-            url = request.url
-            is_api, is_gql, pattern = classify_request(method, url, rtype)
-            duration = None
-            try:
-                t = request.timing
-                if t and t.get("responseEnd", -1) > 0 and t.get("requestStart", -1) >= 0:
-                    duration = round(t["responseEnd"] - t["requestStart"], 1)
-            except Exception:
-                duration = None
-            sink.append(NetworkRequest(
-                method=method,
-                url=redact_url(url),
-                resource_type=rtype,
-                status=status,
-                is_api=is_api,
-                is_graphql=is_gql,
-                endpoint_pattern=pattern,
-                duration_ms=duration,
-            ))
+            sink.append(_record(request, resp.status if resp else None))
         except Exception:
             pass
 
@@ -90,20 +111,7 @@ def _attach_network(page, sink: list[NetworkRequest]) -> None:
         # Blocked / aborted / connection-refused requests never fire
         # "requestfinished"; record them too, with no status.
         try:
-            rtype = request.resource_type
-            method = request.method
-            url = request.url
-            is_api, is_gql, pattern = classify_request(method, url, rtype)
-            sink.append(NetworkRequest(
-                method=method,
-                url=redact_url(url),
-                resource_type=rtype,
-                status=None,
-                is_api=is_api,
-                is_graphql=is_gql,
-                endpoint_pattern=pattern,
-                duration_ms=None,
-            ))
+            sink.append(_record(request, None))
         except Exception:
             pass
 
@@ -111,7 +119,28 @@ def _attach_network(page, sink: list[NetworkRequest]) -> None:
     page.on("requestfailed", on_failed)
 
 
-def _revert(page, interaction: Interaction, before: StateSignature) -> bool:
+def attach_network_async(page, sink: list[NetworkRequest]) -> None:
+    """Async twin of `_attach_network`. Listens on "response" rather than
+    "requestfinished" because the async `request.response()` is a coroutine —
+    a `Response` hands us the status synchronously instead. Public so the
+    crawler can attach it pre-navigation and catch page-load traffic."""
+    def on_response(response):
+        try:
+            sink.append(_record(response.request, response.status))
+        except Exception:
+            pass
+
+    def on_failed(request):
+        try:
+            sink.append(_record(request, None))
+        except Exception:
+            pass
+
+    page.on("response", on_response)
+    page.on("requestfailed", on_failed)
+
+
+def _revert(page, before: StateSignature) -> bool:
     """Best-effort restore after an in-page toggle so later probes see a clean
     page. Returns True if state looks restored."""
     try:
@@ -124,6 +153,159 @@ def _revert(page, interaction: Interaction, before: StateSignature) -> bool:
                 and restored.visible_dialogs == before.visible_dialogs)
     except Exception:
         return False
+
+
+def _score(interaction: Interaction, before: StateSignature,
+           after: StateSignature) -> None:
+    """Fill in what an executed interaction changed. Pure comparison of two
+    state signatures — shared by both probes so "what counts as a change" has
+    one definition."""
+    interaction.after = after
+    interaction.executed = True
+    interaction.route_changed = after.url != before.url
+    interaction.dialog_opened = after.visible_dialogs > before.visible_dialogs
+    interaction.expanded_changed = after.expanded != before.expanded
+    interaction.dom_changed = (
+        interaction.route_changed
+        or interaction.dialog_opened
+        or interaction.expanded_changed
+        or after.visible_interactive != before.visible_interactive
+        or after.content_hash != before.content_hash
+    )
+
+
+def _assemble_probe(
+    *,
+    url: str,
+    final_url: str,
+    title: str,
+    interactions: list[Interaction],
+    network: list[NetworkRequest],
+    max_interactions: int,
+) -> InteractionProbe:
+    """Pure model-builder, shared by the sync and async probes — mirrors how
+    `extraction.assemble_page` is shared by the extractor and the crawler."""
+    stats = {
+        "elements_seen": len(interactions),
+        "executed": sum(1 for i in interactions if i.executed),
+        "observed_only": sum(1 for i in interactions if not i.executed),
+        "blocked": sum(1 for i in interactions if i.safety_label == "BLOCK"),
+        "caution": sum(1 for i in interactions if i.safety_label == "CAUTION"),
+        "state_changing": sum(1 for i in interactions if i.dom_changed),
+        "network_requests": len(network),
+        "api_requests": sum(1 for n in network if n.is_api),
+    }
+    return InteractionProbe(
+        schema_version=SCHEMA_VERSION,
+        engine_version=__version__,
+        probed_at=datetime.now(timezone.utc).isoformat(),
+        url=url,
+        final_url=final_url,
+        title=title,
+        config={"max_interactions": max_interactions,
+                "allow_list": sorted(ALLOW_LIST)},
+        stats=stats,
+        interactions=interactions,
+        network=network,
+    )
+
+
+# --- async core (H2): probe a page the crawler already has open -------------
+
+async def _state_async(page) -> StateSignature:
+    return StateSignature(**await page.evaluate(_STATE_JS))
+
+
+async def _revert_async(page, before: StateSignature) -> bool:
+    """Async twin of `_revert`."""
+    try:
+        after = await _state_async(page)
+        if after.visible_dialogs > before.visible_dialogs or after.expanded != before.expanded:
+            await page.keyboard.press("Escape")
+            await page.wait_for_timeout(120)
+        restored = await _state_async(page)
+        return (restored.url == before.url
+                and restored.visible_dialogs == before.visible_dialogs)
+    except Exception:
+        return False
+
+
+async def probe_open_page_async(
+    page,
+    *,
+    url: str,
+    raw: dict,
+    network: list[NetworkRequest],
+    max_interactions: int = 40,
+    timeout_ms: int = 30000,
+) -> InteractionProbe:
+    """Probe an **already-open** async page in place, and return the result.
+
+    Unlike `probe_page`, this opens no browser and performs no navigation —
+    the caller (the crawler) has already navigated, as the logged-in user,
+    and already run the extraction pass. `raw` is that extraction output, so
+    we classify the elements it found rather than re-scanning the DOM;
+    `network` is a sink the caller attached before navigation (see
+    `attach_network_async`), so page-load traffic is captured too.
+
+    The same safety rules apply as in the sync probe: only structurally-safe,
+    reversible controls are executed, and anything that navigates is walked
+    back so the crawler stays on course.
+    """
+    interactions: list[Interaction] = []
+    candidates = [decide(el) for el in raw.get("elements", [])]
+
+    executed_count = 0
+    for interaction in candidates:
+        if not should_execute(interaction):
+            interactions.append(interaction)
+            continue
+        if executed_count >= max_interactions:
+            interaction.skipped_reason = "interaction budget reached"
+            interactions.append(interaction)
+            continue
+
+        try:
+            handle = await page.query_selector(interaction.dom_path)
+        except Exception:
+            handle = None
+        if handle is None:
+            interaction.skipped_reason = "element not locatable"
+            interactions.append(interaction)
+            continue
+
+        before = await _state_async(page)
+        interaction.before = before
+        try:
+            await handle.click(timeout=3000)
+            await page.wait_for_timeout(300)
+            _score(interaction, before, await _state_async(page))
+            executed_count += 1
+
+            if interaction.route_changed:
+                # An allow-listed type should not navigate; if it did, go back
+                # so the rest of this page's probe — and the crawl itself —
+                # stay on the page we were sent to extract.
+                try:
+                    await page.go_back(timeout=timeout_ms)
+                    await page.wait_for_timeout(200)
+                except Exception:
+                    pass
+                interaction.reverted = (await _state_async(page)).url == before.url
+            else:
+                interaction.reverted = await _revert_async(page, before)
+        except Exception as exc:
+            interaction.error = str(exc).splitlines()[0][:200]
+        interactions.append(interaction)
+
+    return _assemble_probe(
+        url=url,
+        final_url=raw.get("final_url", url),
+        title=raw.get("title", ""),
+        interactions=interactions,
+        network=network,
+        max_interactions=max_interactions,
+    )
 
 
 def probe_page(
@@ -179,19 +361,7 @@ def probe_page(
                 try:
                     handle.click(timeout=3000)
                     page.wait_for_timeout(300)
-                    after = _state(page)
-                    interaction.after = after
-                    interaction.executed = True
-                    interaction.route_changed = after.url != before.url
-                    interaction.dialog_opened = after.visible_dialogs > before.visible_dialogs
-                    interaction.expanded_changed = after.expanded != before.expanded
-                    interaction.dom_changed = (
-                        interaction.route_changed
-                        or interaction.dialog_opened
-                        or interaction.expanded_changed
-                        or after.visible_interactive != before.visible_interactive
-                        or after.content_hash != before.content_hash
-                    )
+                    _score(interaction, before, _state(page))
                     executed_count += 1
 
                     if interaction.route_changed:
@@ -204,34 +374,18 @@ def probe_page(
                             pass
                         interaction.reverted = _state(page).url == before.url
                     else:
-                        interaction.reverted = _revert(page, interaction, before)
+                        interaction.reverted = _revert(page, before)
                 except Exception as exc:
                     interaction.error = str(exc).splitlines()[0][:200]
                 interactions.append(interaction)
 
-            stats = {
-                "elements_seen": len(candidates),
-                "executed": sum(1 for i in interactions if i.executed),
-                "observed_only": sum(1 for i in interactions if not i.executed),
-                "blocked": sum(1 for i in interactions if i.safety_label == "BLOCK"),
-                "caution": sum(1 for i in interactions if i.safety_label == "CAUTION"),
-                "state_changing": sum(1 for i in interactions if i.dom_changed),
-                "network_requests": len(network),
-                "api_requests": sum(1 for n in network if n.is_api),
-            }
-
-            return InteractionProbe(
-                schema_version=SCHEMA_VERSION,
-                engine_version=__version__,
-                probed_at=datetime.now(timezone.utc).isoformat(),
+            return _assemble_probe(
                 url=url,
                 final_url=final_url,
                 title=title,
-                config={"max_interactions": max_interactions,
-                        "allow_list": sorted(ALLOW_LIST)},
-                stats=stats,
                 interactions=interactions,
                 network=network,
+                max_interactions=max_interactions,
             )
         finally:
             browser.close()

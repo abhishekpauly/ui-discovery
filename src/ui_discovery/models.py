@@ -89,6 +89,7 @@ class CrawlConfig(BaseModel):
     strategy: str  # e.g. "same-domain"
     dedupe_queries: bool = False  # H1: noise query params collapsed?
     hash_routes: bool = False  # H1: `#/route` fragments treated as pages?
+    probe: bool = False  # H2: safe interaction/network probe per page?
 
 
 class CrawlStats(BaseModel):
@@ -110,6 +111,9 @@ class PageNode(BaseModel):
     depth: Optional[int] = None
     out_links: list[str] = Field(default_factory=list)
     page: Page
+    # H2: per-page interaction/network probe, present only when the crawl ran
+    # with --probe. Additive — a crawl without it is unchanged.
+    probe: Optional["InteractionProbe"] = None
 
 
 class Crawl(BaseModel):
@@ -367,3 +371,9 @@ class QAPlan(BaseModel):
     language: str = "py"  # generated skeleton language: py | ts
     stats: dict[str, int] = Field(default_factory=dict)
     scenarios: list[TestScenario] = Field(default_factory=list)
+
+
+# `PageNode.probe` forward-references `InteractionProbe`, which is defined
+# further down this module. Resolve it explicitly so the reference is bound at
+# import time rather than lazily on first validation.
+PageNode.model_rebuild()
