@@ -17,6 +17,14 @@ import sys
 from pathlib import Path
 
 from .auth import load_storage_state
+from .cliconfig import (
+    add_config_argument,
+    describe,
+    load_or_exit,
+    pick,
+    resolve_output_dir,
+    safety_policy,
+)
 from .interactions import probe_page
 from .reports import write_probe
 from .util import slug_for
@@ -29,10 +37,12 @@ def main(argv: list[str] | None = None) -> int:
         prog="ui_discovery.probe",
         description="V3 safe interaction + network probe for a single page.",
     )
-    parser.add_argument("url", help="URL to probe (http(s):// or file://).")
-    parser.add_argument("--max-interactions", type=int, default=40,
+    parser.add_argument("url", nargs="?", default=None,
+                        help="URL to probe. Optional if the config sets start_url.")
+    add_config_argument(parser)
+    parser.add_argument("--max-interactions", type=int, default=None,
                         help="Max safe interactions to execute.")
-    parser.add_argument("--output", default="output", help="Output directory.")
+    parser.add_argument("--output", default=None, help="Output directory.")
     parser.add_argument("--headed", action="store_true", help="Run browser headed.")
     parser.add_argument(
         "--auth-state", default=None,
@@ -40,21 +50,32 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    scope = load_or_exit(args.config)
+    for line in describe(scope, args.config):
+        print(line)
     try:
-        auth_state = load_storage_state(args.auth_state)
+        url = scope.resolve_start_url(args.url)
+    except ValueError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        auth_state = load_storage_state(args.auth_state or scope.auth.state_file)
     except (FileNotFoundError, ValueError) as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
 
-    out_dir = Path(args.output) / slug_for(args.url)
+    out_dir = Path(resolve_output_dir(scope, args.output, slug_for(url)))
 
-    print(f"[INFO] Probing {args.url}")
+    print(f"[INFO] Probing {url}")
     try:
         probe = probe_page(
-            args.url,
-            max_interactions=args.max_interactions,
+            url,
+            max_interactions=pick(args.max_interactions,
+                                  scope.budget.max_interactions, 40),
             headless=not args.headed,
             auth_state=auth_state,
+            policy=safety_policy(scope),
         )
     except Exception as exc:
         print(f"[ERROR] Probe failed: {exc}", file=sys.stderr)

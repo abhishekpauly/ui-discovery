@@ -76,6 +76,44 @@ def same_site(url: str, root: str) -> bool:
     return urlparse(url).netloc == urlparse(root).netloc
 
 
+def path_matches(url: str, pattern: str) -> bool:
+    """Glob-match a URL's path against `pattern` (`*` within a segment, `**`
+    across segments), e.g. `/app/**` or `/reports/*/export`.
+
+    Matching is on the path alone, so a pattern stays valid across
+    environments — the same `scope.yaml` works for staging and prod.
+    """
+    path = urlparse(url).path or "/"
+    # fnmatch's `*` crosses `/`, which would make `/app/*` match `/app/a/b`.
+    # Translate explicitly instead: `**` crosses segments, `*` does not.
+    parts = []
+    for chunk in re.split(r"(\*\*|\*|\?)", pattern):
+        if chunk == "**":
+            parts.append(".*")
+        elif chunk == "*":
+            parts.append("[^/]*")
+        elif chunk == "?":
+            parts.append("[^/]")
+        else:
+            parts.append(re.escape(chunk))
+    return re.fullmatch("".join(parts), path) is not None
+
+
+def url_in_scope(
+    url: str,
+    include: list[str] | None = None,
+    exclude: list[str] | None = None,
+) -> bool:
+    """Scope gate: excluded always loses, then an include list (when present)
+    must match. An empty include list means "everything not excluded"."""
+    for pattern in exclude or ():
+        if path_matches(url, pattern):
+            return False
+    if not include:
+        return True
+    return any(path_matches(url, pattern) for pattern in include)
+
+
 def resolve_links(
     base_url: str,
     hrefs: list[str],

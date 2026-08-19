@@ -37,7 +37,7 @@ from .models import (
 )
 from .network import classify as classify_request
 from .network import redact_url
-from .safety import ALLOW_LIST, decide, should_execute
+from .safety import ALLOW_LIST, DEFAULT_POLICY, SafetyPolicy, decide, should_execute
 
 # A cheap, deterministic snapshot of page state used for before/after diffs.
 _STATE_JS = """
@@ -81,7 +81,8 @@ def _duration_ms(request) -> float | None:
     return None
 
 
-def _record(request, status: int | None) -> NetworkRequest:
+def _record(request, status: int | None,
+            redact_keys: tuple[str, ...] = ()) -> NetworkRequest:
     """Build one observed-request record. Shared by the sync and async probes
     so both emit identical data — only the event plumbing differs. Every
     attribute read here is a plain property in both Playwright APIs."""
@@ -89,7 +90,7 @@ def _record(request, status: int | None) -> NetworkRequest:
     is_api, is_gql, pattern = classify_request(method, url, rtype)
     return NetworkRequest(
         method=method,
-        url=redact_url(url),
+        url=redact_url(url, redact_keys),
         resource_type=rtype,
         status=status,
         is_api=is_api,
@@ -119,20 +120,21 @@ def _attach_network(page, sink: list[NetworkRequest]) -> None:
     page.on("requestfailed", on_failed)
 
 
-def attach_network_async(page, sink: list[NetworkRequest]) -> None:
+def attach_network_async(page, sink: list[NetworkRequest],
+                         redact_keys: tuple[str, ...] = ()) -> None:
     """Async twin of `_attach_network`. Listens on "response" rather than
     "requestfinished" because the async `request.response()` is a coroutine —
     a `Response` hands us the status synchronously instead. Public so the
     crawler can attach it pre-navigation and catch page-load traffic."""
     def on_response(response):
         try:
-            sink.append(_record(response.request, response.status))
+            sink.append(_record(response.request, response.status, redact_keys))
         except Exception:
             pass
 
     def on_failed(request):
         try:
-            sink.append(_record(request, None))
+            sink.append(_record(request, None, redact_keys))
         except Exception:
             pass
 
@@ -238,6 +240,7 @@ async def probe_open_page_async(
     network: list[NetworkRequest],
     max_interactions: int = 40,
     timeout_ms: int = 30000,
+    policy: SafetyPolicy = DEFAULT_POLICY,
 ) -> InteractionProbe:
     """Probe an **already-open** async page in place, and return the result.
 
@@ -253,7 +256,7 @@ async def probe_open_page_async(
     back so the crawler stays on course.
     """
     interactions: list[Interaction] = []
-    candidates = [decide(el) for el in raw.get("elements", [])]
+    candidates = [decide(el, policy) for el in raw.get("elements", [])]
 
     executed_count = 0
     for interaction in candidates:
@@ -315,6 +318,7 @@ def probe_page(
     headless: bool = True,
     timeout_ms: int = 30000,
     auth_state: dict | None = None,
+    policy: SafetyPolicy = DEFAULT_POLICY,
 ) -> InteractionProbe:
     network: list[NetworkRequest] = []
     interactions: list[Interaction] = []
@@ -334,7 +338,7 @@ def probe_page(
             final_url = raw.get("final_url", url)
 
             # Classify every discovered element up front (pure, deterministic).
-            candidates = [decide(el) for el in raw.get("elements", [])]
+            candidates = [decide(el, policy) for el in raw.get("elements", [])]
 
             executed_count = 0
             for interaction in candidates:

@@ -35,6 +35,7 @@ CORE_MODULES = [
     "ui_discovery.extract", "ui_discovery.extraction", "ui_discovery.browser",
     "ui_discovery.crawl", "ui_discovery.crawler",
     "ui_discovery.analyze", "ui_discovery.diff",
+    "ui_discovery.config", "ui_discovery.cliconfig", "ui_discovery.intake",
     "ui_discovery.analysis.engine", "ui_discovery.analysis.fingerprint",
     "ui_discovery.analysis.regions", "ui_discovery.analysis.components",
     "ui_discovery.analysis.navigation",

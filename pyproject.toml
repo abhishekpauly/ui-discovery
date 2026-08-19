@@ -7,6 +7,11 @@ dependencies = [
     "playwright==1.56.0",
     "pydantic==2.13.3",
     "crawlee[playwright]==1.9.1",
+    # Scope configs (H5/R2/S1). Pure data, no network, no AI — JSON configs
+    # work without it, but YAML is the documented format.
+    # 6.0.3 is the first release with a Python 3.14 wheel; 6.0.2 tries to
+    # build from source and fails there.
+    "pyyaml==6.0.3",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +31,7 @@ ui-discovery-extract = "ui_discovery.extract:main"
 ui-discovery-crawl = "ui_discovery.crawl:main"
 ui-discovery-analyze = "ui_discovery.analyze:main"
 ui-discovery-diff = "ui_discovery.diff:main"
+ui-discovery-intake = "ui_discovery.intake:main"
 ui-discovery-probe = "ui_discovery.probe:main"
 ui-discovery-login = "ui_discovery.login:main"
 ui-discovery-semantic = "ui_discovery.semantic:main"

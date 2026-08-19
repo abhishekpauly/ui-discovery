@@ -149,6 +149,12 @@ class CrawlConfig(BaseModel):
     hash_routes: bool = False  # H1: `#/route` fragments treated as pages?
     probe: bool = False  # H2: safe interaction/network probe per page?
     auth_used: bool = False  # H4: was a saved session supplied?
+    # H5/R2/S1: the scope that produced this crawl, so a snapshot records what
+    # was in and out of scope rather than leaving it to the operator's memory.
+    include: list[str] = Field(default_factory=list)
+    exclude: list[str] = Field(default_factory=list)
+    config_file: Optional[str] = None
+    capabilities: dict[str, bool] = Field(default_factory=dict)
 
 
 class CrawlStats(BaseModel):

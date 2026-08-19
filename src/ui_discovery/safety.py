@@ -20,8 +20,46 @@ No LLM is involved. Both gates are data below and can be overridden by config.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 
 from .models import Interaction
+
+
+@dataclass(frozen=True)
+class SafetyPolicy:
+    """Per-target additions to the safety envelope, from a scope config.
+
+    Deliberately **additive only**: config can make the engine more cautious,
+    never less. There is no way to remove a block word or to un-refuse a
+    destructive control, because a config file is exactly the wrong place to
+    be able to weaken this by accident.
+    """
+
+    block_words_extra: frozenset[str] = field(default_factory=frozenset)
+    caution_words_extra: frozenset[str] = field(default_factory=frozenset)
+    # Accessible names / dom_path fragments that must never be interacted
+    # with, matched case-insensitively as substrings.
+    never_touch: tuple[str, ...] = ()
+
+    def blocks(self) -> set[str]:
+        return BLOCK_WORDS | {w.lower() for w in self.block_words_extra}
+
+    def cautions(self) -> set[str]:
+        return CAUTION_WORDS | {w.lower() for w in self.caution_words_extra}
+
+    def is_never_touch(self, *candidates: str | None) -> str | None:
+        """Return the matching rule, or None."""
+        for rule in self.never_touch:
+            needle = rule.strip().lower()
+            if not needle:
+                continue
+            for candidate in candidates:
+                if candidate and needle in candidate.lower():
+                    return rule
+        return None
+
+
+DEFAULT_POLICY = SafetyPolicy()
 
 # Interaction types we consider structurally safe AND reversible in-page.
 ALLOW_LIST = {"tab", "expander", "disclosure", "menu"}
@@ -45,15 +83,15 @@ CAUTION_WORDS = {
 _WS = re.compile(r"\s+")
 
 
-def classify_label(name: str | None) -> str:
+def classify_label(name: str | None, policy: SafetyPolicy = DEFAULT_POLICY) -> str:
     """SAFE / CAUTION / BLOCK from an accessible name or text."""
     if not name:
         return "SAFE"
     text = _WS.sub(" ", name.strip().lower())
-    for w in BLOCK_WORDS:
+    for w in policy.blocks():
         if w in text:
             return "BLOCK"
-    for w in CAUTION_WORDS:
+    for w in policy.cautions():
         if re.search(rf"\b{re.escape(w)}\b", text):
             return "CAUTION"
     return "SAFE"
@@ -83,20 +121,23 @@ def interaction_type(el: dict) -> str:
     return "other"
 
 
-def decide(el: dict) -> Interaction:
+def decide(el: dict, policy: SafetyPolicy = DEFAULT_POLICY) -> Interaction:
     """Produce an Interaction record carrying the (deterministic) decision.
     Does not touch the browser — pure classification."""
     name = el.get("accessible_name") or el.get("text")
     itype = interaction_type(el)
-    label = classify_label(name)
+    label = classify_label(name, policy)
 
     visible = bool(el.get("visible", True))
     enabled = bool(el.get("enabled", True))
+    banned = policy.is_never_touch(name, el.get("dom_path"))
 
     execute = True
     reason = None
     if not visible or not enabled:
         execute, reason = False, "not visible/enabled"
+    elif banned:
+        execute, reason = False, f"matches never_touch rule {banned!r}"
     elif el.get("frame"):
         # H3: this element lives inside an iframe, so its dom_path is relative
         # to that frame. Selectors do not cross frame boundaries, so resolving

@@ -33,6 +33,7 @@ _EXTRACTION = "ui_discovery.extraction"
 _CRAWLER = "ui_discovery.crawler"
 _ANALYSIS = "ui_discovery.analysis"
 _DIFF = "ui_discovery.diff"
+_CONFIG = "ui_discovery.config"
 _INTERACTIONS = "ui_discovery.interactions"
 _AUTH = "ui_discovery.auth"
 _SEMANTIC = "ui_discovery.semantic"
@@ -51,6 +52,10 @@ _EXPORTS = {
     "probe_page": _INTERACTIONS,
     # C1 — deterministic change diff between two analyses.
     "diff_analyses": _DIFF,
+    # H5/R2/S1 — scope configuration.
+    "Scope": _CONFIG,
+    "load_scope": _CONFIG,
+    "dump_scope": _CONFIG,
     # Session auth — capture/load a logged-in Playwright storage state.
     "capture_session": _AUTH,
     "load_storage_state": _AUTH,

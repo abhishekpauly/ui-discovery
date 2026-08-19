@@ -431,6 +431,71 @@ main:nth-of-type(1) > open-widget#open-host >>> button#shadow-btn
 > the page could match a *different* element. They are observed only, with
 > `skipped_reason: "inside an iframe (observed only)"`.
 
+## Scope configs (H5 · R2 · S1)
+
+Per-target behavior lives in a config file, not in flags or code. One file
+says what to crawl, as whom, how much, what to capture and what never to
+touch — and doubles as the audit record of what was in scope and why.
+
+```bash
+python -m ui_discovery.intake                  # interactive; writes scope.yaml
+python -m ui_discovery.intake --template       # a filled-in example instead
+python -m ui_discovery.intake --check scope.yaml   # validate + flag concerns
+
+python -m ui_discovery.crawl --config scope.yaml   # url comes from the config
+```
+
+```yaml
+target: acme-portal
+start_url: https://portal.acme.example/
+environment: staging
+authorized: true
+authorized_by: jordan
+scope:
+  include: ["/app/**"]
+  exclude: ["/admin/**", "/billing/**", "/logout"]
+auth:
+  required: true
+  state_file: session.json
+budget: { max_pages: 25, max_depth: 3, max_interactions: 40 }
+identity: { dedupe_queries: true, hash_routes: false, drop_params: ["tab"] }
+capabilities:
+  screenshots: true
+  accessibility_tree: true
+  probe: false
+safety:
+  block_words_extra: ["deactivate account"]
+  never_touch: ["#danger-zone"]
+privacy:
+  redact_network_keys: ["account", "ssn"]
+outputs:
+  dir: ./output
+  keep_history: true        # one dated folder per run, so `diff` has two snapshots
+```
+
+Three rules govern all of this:
+
+- **Zero-config still works.** Every default reproduces today's behavior, so
+  a bare `crawl <url>` is unchanged.
+- **Precedence is flags > config > defaults.** Config-backed flags default to
+  `None` internally so "the user typed `--max-pages 25`" is distinguishable
+  from "argparse filled in 25" — otherwise a default nobody typed would
+  silently beat the config.
+- **If it is in the schema, it is wired.** A toggle that quietly did nothing
+  would be worse than no toggle. An unknown key is an error, not a no-op, so
+  a typo'd `budgt:` fails loudly instead of being ignored.
+
+**Config can only tighten safety, never loosen it.** `block_words_extra` and
+`never_touch` add restrictions; there is no way to remove a block word, and
+`submit_forms: true` is rejected outright. Auth-expiry signals are likewise
+*extended*, never replaced, so a config cannot accidentally blind the check.
+
+Excluded paths are dropped before they are ever queued — an excluded area is
+never fetched, not fetched-then-discarded. The scope that produced a snapshot
+is recorded in `crawl.json` (`config.include` / `config.exclude` /
+`config.capabilities` / `config.config_file`), so a capture always says what
+it was and wasn't allowed to look at.
+
 ## Use as a library
 
 Every capability above is importable and composable — the CLIs

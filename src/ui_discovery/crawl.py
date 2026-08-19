@@ -14,9 +14,17 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from pathlib import Path
 
 from .auth import load_storage_state
+from .cliconfig import (
+    add_config_argument,
+    auth_signals,
+    describe,
+    load_or_exit,
+    pick,
+    resolve_output_dir,
+    safety_policy,
+)
 from .crawler import crawl_site
 from .reports import write_reports
 from .util import slug_for
@@ -27,39 +35,49 @@ def main(argv: list[str] | None = None) -> int:
         prog="ui_discovery.crawl",
         description="V1 UI crawler (Crawlee + Playwright) -> UI Crawl Report.",
     )
-    parser.add_argument("url", help="Start URL (http(s)://).")
-    parser.add_argument("--max-pages", type=int, default=25, help="Page budget.")
-    parser.add_argument("--max-depth", type=int, default=3, help="Depth budget.")
-    parser.add_argument("--output", default="output", help="Output directory.")
+    # `url` is optional: a scope config can carry `start_url:` instead.
+    parser.add_argument("url", nargs="?", default=None,
+                        help="Start URL (http(s)://). Optional if the config "
+                             "sets start_url.")
+    add_config_argument(parser)
+    # Config-backed flags default to None so "not typed" is distinguishable
+    # from "typed the same as the default" — see cliconfig.pick.
+    parser.add_argument("--max-pages", type=int, default=None, help="Page budget.")
+    parser.add_argument("--max-depth", type=int, default=None, help="Depth budget.")
+    parser.add_argument("--output", default=None, help="Output directory.")
     parser.add_argument("--headed", action="store_true", help="Run browser headed.")
     parser.add_argument(
         "--auth-state", default=None,
         help="Path to a saved session (see: python -m ui_discovery.login).",
     )
     parser.add_argument(
-        "--dedupe-queries", action="store_true",
+        "--dedupe-queries", action="store_true", default=None,
         help="Collapse query-string variants that differ only in noise "
              "params (utm_*, session ids, ...) into one page identity.",
     )
     parser.add_argument(
-        "--drop-param", action="append", default=[], metavar="NAME",
+        "--drop-param", action="append", default=None, metavar="NAME",
         help="Extra query param name to treat as noise (repeatable). "
              "Only takes effect with --dedupe-queries.",
     )
     parser.add_argument(
-        "--hash-routes", action="store_true",
+        "--hash-routes", action="store_true", default=None,
         help="Treat `#/route`-style hash fragments as distinct pages "
              "(for SPAs that route client-side via the hash).",
     )
     parser.add_argument(
-        "--probe", action="store_true",
+        "--probe", action="store_true", default=None,
         help="Also run the safe interaction + network probe on every crawled "
              "page. Only structurally-safe, reversible controls are clicked; "
              "destructive ones are never executed.",
     )
     parser.add_argument(
-        "--max-interactions", type=int, default=40,
+        "--max-interactions", type=int, default=None,
         help="Per-page interaction budget when --probe is set (default: 40).",
+    )
+    parser.add_argument(
+        "--no-screenshots", action="store_true", default=None,
+        help="Skip screenshots.",
     )
     parser.add_argument(
         "--fail-on-auth-expiry", action="store_true",
@@ -68,36 +86,72 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    scope = load_or_exit(args.config)
+    for line in describe(scope, args.config):
+        print(line)
+
     try:
-        auth_state = load_storage_state(args.auth_state)
-    except (FileNotFoundError, ValueError) as exc:
+        start_url = scope.resolve_start_url(args.url)
+    except ValueError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
 
-    out_dir = Path(args.output) / slug_for(args.url)
+    auth_state_path = args.auth_state or scope.auth.state_file
+    try:
+        auth_state = load_storage_state(auth_state_path)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
+    if scope.auth.required and not auth_state:
+        print("[ERROR] This config sets auth.required: true but no session "
+              "was supplied. Pass --auth-state, or set auth.state_file.",
+              file=sys.stderr)
+        return 1
 
-    print(f"[INFO] Crawling {args.url} "
-          f"(max_pages={args.max_pages}, max_depth={args.max_depth})")
+    max_pages = pick(args.max_pages, scope.budget.max_pages, 25)
+    max_depth = pick(args.max_depth, scope.budget.max_depth, 3)
+    drop_params = args.drop_param or scope.identity.drop_params
+    login_patterns, logged_out = auth_signals(scope)
+    out_dir = resolve_output_dir(scope, args.output, slug_for(start_url))
+
+    print(f"[INFO] Crawling {start_url} "
+          f"(max_pages={max_pages}, max_depth={max_depth})")
     try:
         crawl = asyncio.run(
             crawl_site(
-                args.url,
-                max_pages=args.max_pages,
-                max_depth=args.max_depth,
+                start_url,
+                max_pages=max_pages,
+                max_depth=max_depth,
                 output_dir=str(out_dir),
                 headless=not args.headed,
                 auth_state=auth_state,
-                dedupe_queries=args.dedupe_queries,
-                drop_params=frozenset(args.drop_param) or None,
-                hash_routes=args.hash_routes,
-                probe=args.probe,
-                max_interactions=args.max_interactions,
+                dedupe_queries=pick(args.dedupe_queries,
+                                    scope.identity.dedupe_queries, False),
+                drop_params=frozenset(drop_params) or None,
+                hash_routes=pick(args.hash_routes,
+                                 scope.identity.hash_routes, False),
+                probe=pick(args.probe, scope.capabilities.probe, False),
+                max_interactions=pick(args.max_interactions,
+                                      scope.budget.max_interactions, 40),
+                include=scope.scope.include,
+                exclude=scope.scope.exclude,
+                screenshots=pick(
+                    False if args.no_screenshots else None,
+                    scope.capabilities.screenshots, True),
+                accessibility_tree=scope.capabilities.accessibility_tree,
+                login_url_patterns=login_patterns,
+                logged_out_signals=logged_out,
+                policy=safety_policy(scope),
+                redact_keys=tuple(scope.privacy.redact_network_keys),
             )
         )
     except Exception as exc:
         print(f"[ERROR] Crawl failed: {exc}", file=sys.stderr)
         return 1
 
+    # Record which config produced this snapshot — the audit trail S1 exists
+    # for is worthless if the capture doesn't name the scope it ran under.
+    crawl.config.config_file = args.config
     paths = write_reports(crawl, str(out_dir))
     s = crawl.stats
     print(f"[INFO] Crawled {s.pages_crawled} pages "
@@ -120,8 +174,8 @@ def main(argv: list[str] | None = None) -> int:
             f"crawled pages, {' and '.join(symptom)}.\n"
             f"         This capture is of the login/blank state, not the "
             f"product. Re-capture the session:\n"
-            f"         python -m ui_discovery.login {args.url} "
-            f"--output {args.auth_state}",
+            f"         python -m ui_discovery.login {start_url} "
+            f"--output {auth_state_path or 'session.json'}",
             file=sys.stderr,
         )
         if args.fail_on_auth_expiry:

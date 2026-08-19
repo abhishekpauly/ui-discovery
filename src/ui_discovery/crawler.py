@@ -29,7 +29,8 @@ from .extraction import (
 )
 from .interactions import attach_network_async, probe_open_page_async
 from .models import Crawl, CrawlConfig, CrawlStats, NetworkRequest, PageNode
-from .util import bfs_depths, normalize_url, resolve_links, slug_for
+from .safety import DEFAULT_POLICY, SafetyPolicy
+from .util import bfs_depths, normalize_url, resolve_links, slug_for, url_in_scope
 
 
 async def _wait_for_dom_stable_async(
@@ -128,6 +129,14 @@ async def crawl_site(
     hash_routes: bool = False,
     probe: bool = False,
     max_interactions: int = 40,
+    include: list[str] | None = None,
+    exclude: list[str] | None = None,
+    screenshots: bool = True,
+    accessibility_tree: bool = True,
+    login_url_patterns: tuple[str, ...] | None = None,
+    logged_out_signals: tuple[str, ...] | None = None,
+    policy: SafetyPolicy = DEFAULT_POLICY,
+    redact_keys: tuple[str, ...] = (),
 ) -> Crawl:
     """Crawl a same-domain site starting at `start_url`, extracting a UI model
     for every discovered page, and return an assembled `Crawl`.
@@ -175,6 +184,9 @@ async def crawl_site(
             hash_routes=hash_routes,
         )
 
+    def _in_scope(u: str) -> bool:
+        return url_in_scope(u, include, exclude)
+
     def _transform_request(req):  # noqa: ANN001, ANN202
         # Route Crawlee's own dedup/queue identity through the same
         # normalization as our page graph, so counts match (H1). Setting
@@ -182,6 +194,10 @@ async def crawl_site(
         # by default) computation entirely.
         req["url"] = _normalize(req["url"])
         req["unique_key"] = req["url"]
+        # Out-of-scope URLs are dropped before they are ever queued, so an
+        # excluded area is never fetched — not fetched-then-discarded.
+        if not _in_scope(req["url"]):
+            return "skip"
         return req
 
     root = _normalize(start_url)
@@ -252,7 +268,7 @@ async def crawl_site(
         async def _attach_probe_network(context) -> None:  # noqa: ANN001
             sink: list[NetworkRequest] = []
             net_sinks[id(context.page)] = sink
-            attach_network_async(context.page, sink)
+            attach_network_async(context.page, sink, redact_keys)
 
     @crawler.router.default_handler
     async def handler(context: PlaywrightCrawlingContext) -> None:
@@ -263,13 +279,15 @@ async def crawl_site(
         readiness = await _readiness(page, context.response)
         raw = await page.evaluate(JS)
         frames = await _extract_frames_async(page, raw)
-        aria = await _aria(page)
+        aria = await _aria(page) if accessibility_tree else None
 
-        shot: str | None = str(shots_dir / f"{slug_for(url)}.png")
-        try:
-            await page.screenshot(path=shot, full_page=True)
-        except Exception:
-            shot = None
+        shot: str | None = None
+        if screenshots:
+            shot = str(shots_dir / f"{slug_for(url)}.png")
+            try:
+                await page.screenshot(path=shot, full_page=True)
+            except Exception:
+                shot = None
 
         model = assemble_page(
             requested_url=url,
@@ -283,7 +301,11 @@ async def crawl_site(
         # H4: a login page reached *with* a session in hand means that session
         # is no longer good. Warn per page — a silent crawl of login screens is
         # the failure mode this exists to prevent.
-        model.auth = check_auth(model)
+        model.auth = check_auth(
+            model,
+            login_url_patterns=login_url_patterns,
+            logged_out_signals=logged_out_signals,
+        )
         if (model.auth.looks_logged_out or model.auth.looks_empty) and auth_state:
             context.log.warning(
                 f"Session may be rejected at {url}: "
@@ -326,6 +348,7 @@ async def crawl_site(
                     raw=raw,
                     network=net_sinks.pop(id(page), []),
                     max_interactions=max_interactions,
+                    policy=policy,
                 )
                 p = node.probe.stats
                 context.log.info(
@@ -377,6 +400,13 @@ async def crawl_site(
             hash_routes=hash_routes,
             probe=probe,
             auth_used=bool(auth_state),
+            include=list(include or []),
+            exclude=list(exclude or []),
+            capabilities={
+                "screenshots": screenshots,
+                "accessibility_tree": accessibility_tree,
+                "probe": probe,
+            },
         ),
         stats=CrawlStats(
             pages_crawled=len(nodes),
