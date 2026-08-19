@@ -5,17 +5,22 @@
 // the identity signals the UI model needs. This runs entirely against browser
 // / web standards — no assumption about React/Angular/Vue/etc.
 () => {
-  function cssPath(el) {
-    if (!(el instanceof Element)) return "";
+  // Shadow boundaries are marked with " >>> " — Playwright's shadow-piercing
+  // combinator, so the resulting path stays resolvable via query_selector
+  // while still showing a reader exactly where the boundary is.
+  const SHADOW_SEP = " >>> ";
+
+  function segmentsWithin(el) {
+    // Path of `el` within its own root (document or a shadow root).
     const path = [];
+    const root = el.getRootNode();
     while (el && el.nodeType === Node.ELEMENT_NODE && path.length < 40) {
       let sel = el.nodeName.toLowerCase();
-      // Only take the #id shortcut when the id is actually unique on the page —
-      // duplicate ids (invalid but common) would otherwise collapse distinct
-      // elements onto the same path.
-      if (el.id && document.querySelectorAll("#" + CSS.escape(el.id)).length === 1) {
-        sel += "#" + CSS.escape(el.id);
-        path.unshift(sel);
+      // Only take the #id shortcut when the id is actually unique *within this
+      // root* — duplicate ids (invalid but common, and routine across shadow
+      // roots) would otherwise collapse distinct elements onto the same path.
+      if (el.id && root.querySelectorAll("#" + CSS.escape(el.id)).length === 1) {
+        path.unshift(sel + "#" + CSS.escape(el.id));
         break;
       }
       let nth = 1;
@@ -23,11 +28,53 @@
       while ((sib = sib.previousElementSibling)) {
         if (sib.nodeName === el.nodeName) nth++;
       }
-      sel += ":nth-of-type(" + nth + ")";
-      path.unshift(sel);
+      path.unshift(sel + ":nth-of-type(" + nth + ")");
       el = el.parentElement;
     }
     return path.join(" > ");
+  }
+
+  function cssPath(el) {
+    if (!(el instanceof Element)) return "";
+    // Walk out through any open shadow roots, prepending each host's path.
+    const chunks = [];
+    let cur = el;
+    let guard = 0;
+    while (cur && guard++ < 20) {
+      chunks.unshift(segmentsWithin(cur));
+      const root = cur.getRootNode();
+      if (root instanceof ShadowRoot) {
+        cur = root.host;
+      } else {
+        break;
+      }
+    }
+    return chunks.join(SHADOW_SEP);
+  }
+
+  function shadowDepth(el) {
+    let depth = 0;
+    let root = el.getRootNode();
+    let guard = 0;
+    while (root instanceof ShadowRoot && guard++ < 20) {
+      depth++;
+      root = root.host.getRootNode();
+    }
+    return depth;
+  }
+
+  // Every root worth querying: the document plus every OPEN shadow root
+  // reachable from it, depth-first. Closed roots are deliberately absent —
+  // `element.shadowRoot` is null for them by web standards, so their contents
+  // are genuinely unobservable rather than merely skipped.
+  function collectRoots() {
+    const roots = [document];
+    for (let i = 0; i < roots.length && roots.length < 500; i++) {
+      roots[i].querySelectorAll("*").forEach((el) => {
+        if (el.shadowRoot) roots.push(el.shadowRoot);
+      });
+    }
+    return roots;
   }
 
   function siblingOrdinal(el) {
@@ -54,7 +101,19 @@
   ];
   function landmarkOf(el) {
     let cur = el.parentElement;
-    while (cur) {
+    let guard = 0;
+    while (cur || guard < 40) {
+      if (!cur) {
+        // Ran out of ancestors inside a shadow root — a landmark can wrap the
+        // host from the light DOM, so continue the walk on the other side of
+        // the boundary rather than reporting "no landmark".
+        const root = el.getRootNode();
+        if (!(root instanceof ShadowRoot)) return null;
+        el = root.host;
+        cur = el;
+        continue;
+      }
+      guard++;
       const r = (cur.getAttribute && cur.getAttribute("role")) || "";
       if (r && LANDMARK_ROLES.includes(r.trim().split(/\s+/)[0])) {
         return r.trim().split(/\s+/)[0];
@@ -119,6 +178,11 @@
   // Deterministic approximation of the accessible-name algorithm. Returns
   // [name, source] so a reader can see HOW the name was derived.
   function accName(el) {
+    // IDREF lookups (aria-labelledby, label[for]) resolve within the element's
+    // own root: ids do not cross a shadow boundary, so resolving them against
+    // `document` would silently pick up an unrelated element of the same id.
+    const root = el.getRootNode();
+
     const al = el.getAttribute("aria-label");
     if (al && al.trim()) return [al.trim(), "aria-label"];
 
@@ -126,7 +190,7 @@
     if (lb) {
       const txt = lb.split(/\s+/)
         .map((id) => {
-          const t = document.getElementById(id);
+          const t = root.getElementById ? root.getElementById(id) : null;
           return t ? t.textContent.replace(/\s+/g, " ").trim() : "";
         })
         .filter(Boolean)
@@ -137,7 +201,7 @@
     const tag = el.nodeName;
     if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") {
       if (el.id) {
-        const lab = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
+        const lab = root.querySelector('label[for="' + CSS.escape(el.id) + '"]');
         if (lab && lab.textContent.trim()) {
           return [lab.textContent.replace(/\s+/g, " ").trim(), "label[for]"];
         }
@@ -208,6 +272,7 @@
       dom_path: cssPath(el),
       sibling_ordinal: siblingOrdinal(el),
       landmark: landmarkOf(el),
+      shadow_depth: shadowDepth(el),
       source: "runtime",
     };
   }
@@ -227,24 +292,51 @@
     ["nav", "nav, [role=navigation]"],
   ];
 
+  const roots = collectRoots();
+
   const seen = new Set();
   const elements = [];
   for (const [cat, sel] of GROUPS) {
-    document.querySelectorAll(sel).forEach((el) => {
-      if (seen.has(el)) return;
-      seen.add(el);
-      elements.push(describe(el, cat));
-    });
+    for (const root of roots) {
+      root.querySelectorAll(sel).forEach((el) => {
+        if (seen.has(el)) return;
+        seen.add(el);
+        elements.push(describe(el, cat));
+      });
+    }
   }
 
   const headings = [];
-  document.querySelectorAll("h1,h2,h3,h4,h5,h6,[role=heading]").forEach((el) => {
-    let level;
-    if (/^H[1-6]$/.test(el.nodeName)) level = parseInt(el.nodeName[1], 10);
-    else level = parseInt(el.getAttribute("aria-level") || "2", 10);
-    const text = (el.textContent || "").replace(/\s+/g, " ").trim();
-    if (text) headings.push({ level, text: text.slice(0, 200), dom_path: cssPath(el) });
-  });
+  for (const root of roots) {
+    root.querySelectorAll("h1,h2,h3,h4,h5,h6,[role=heading]").forEach((el) => {
+      let level;
+      if (/^H[1-6]$/.test(el.nodeName)) level = parseInt(el.nodeName[1], 10);
+      else level = parseInt(el.getAttribute("aria-level") || "2", 10);
+      const text = (el.textContent || "").replace(/\s+/g, " ").trim();
+      if (text) {
+        headings.push({
+          level, text: text.slice(0, 200), dom_path: cssPath(el),
+          shadow_depth: shadowDepth(el),
+        });
+      }
+    });
+  }
+
+  // Every iframe on the page, whether or not it is entered. Traversal is
+  // decided host-side (same-origin only); this is the raw inventory so the
+  // model can record what was seen but deliberately not entered.
+  const frames = [];
+  for (const root of roots) {
+    root.querySelectorAll("iframe, frame").forEach((el) => {
+      frames.push({
+        src: el.getAttribute("src") || "",
+        name: el.getAttribute("name") || el.getAttribute("id") || "",
+        title: el.getAttribute("title") || "",
+        dom_path: cssPath(el),
+        visible: isVisible(el),
+      });
+    });
+  }
 
   return {
     title: document.title,
@@ -252,5 +344,8 @@
     viewport: { width: window.innerWidth, height: window.innerHeight },
     headings,
     elements,
+    frames,
+    // How many roots were queried: 1 = no open shadow DOM on this page.
+    roots_scanned: roots.length,
   };
 }

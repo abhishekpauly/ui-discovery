@@ -358,6 +358,43 @@ re-crawling:
 Plus the browser's own **ARIA snapshot** (`accessibility_tree`), kept alongside
 the deterministic pass rather than instead of it.
 
+### Shadow DOM & iframes (H3)
+
+The extractor sees past two boundaries a plain `document.querySelectorAll`
+misses — with deliberately different policies:
+
+| Boundary | Traversed? | Why |
+| --- | --- | --- |
+| Open shadow root | yes | Component libraries put real controls there — it's part of your page |
+| Nested open shadow roots | yes | Same reason, recursively |
+| Closed shadow root | no | `element.shadowRoot` is `null` by web standards — genuinely unobservable, not skipped |
+| Same-origin iframe | yes | Part of the product under test |
+| Cross-origin iframe | **no** | Third-party content is outside the product under test |
+
+Cross-origin frames are *recorded, not entered* — Playwright could read them;
+choosing not to is a scoping decision. Every iframe seen is listed in
+`page.frames[]` with `traversed` and a `reason`, so a snapshot always says
+what it declined to look at:
+
+```json
+{ "key": "cross-origin", "url": "https://widget.vendor.example/…",
+  "same_origin": false, "traversed": false,
+  "reason": "cross-origin frame — recorded but not traversed …" }
+```
+
+Provenance is carried per element: `shadow_depth` (0 = light DOM) and
+`frame`/`frame_path`. Shadow boundaries appear in `dom_path` as ` >>> `,
+Playwright's shadow-piercing combinator, so the path stays resolvable:
+
+```
+main:nth-of-type(1) > open-widget#open-host >>> button#shadow-btn
+```
+
+> **Elements inside an iframe are never clicked by the probe.** Selectors do
+> not cross frame boundaries, so a frame-relative `dom_path` resolved against
+> the page could match a *different* element. They are observed only, with
+> `skipped_reason: "inside an iframe (observed only)"`.
+
 ## Use as a library
 
 Every capability above is importable and composable — the CLIs

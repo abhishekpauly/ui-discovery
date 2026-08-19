@@ -45,6 +45,19 @@ class Element(BaseModel):
     sibling_ordinal: int = 0
     landmark: Optional[str] = None
 
+    # H3 provenance — where in the document tree this element actually lives.
+    #
+    # `shadow_depth` counts open shadow boundaries crossed (0 = light DOM);
+    # `dom_path` marks each boundary with " >>> ", which Playwright resolves.
+    #
+    # `frame` is set only for elements found inside a same-origin iframe. For
+    # those, `dom_path` is relative to **that frame**, not the page — selectors
+    # do not cross frame boundaries — so acting on one means entering the frame
+    # first via `frame_path` (the host-page selector for the iframe element).
+    shadow_depth: int = 0
+    frame: Optional[str] = None
+    frame_path: Optional[str] = None
+
     source: str = "runtime"
 
 
@@ -52,6 +65,26 @@ class Heading(BaseModel):
     level: int
     text: str
     dom_path: str = ""
+    shadow_depth: int = 0
+    frame: Optional[str] = None
+
+
+class FrameInfo(BaseModel):
+    """One iframe seen on the page, and whether we entered it.
+
+    Cross-origin frames are recorded but **not** traversed. That is a scoping
+    decision, not a technical limit — Playwright can read them — because
+    third-party embedded content is outside the product under test.
+    """
+
+    key: str  # name/id if present, else the frame URL
+    url: str = ""
+    dom_path: str = ""  # host-page selector for the <iframe> element
+    title: Optional[str] = None
+    same_origin: bool = False
+    traversed: bool = False
+    reason: Optional[str] = None  # why it was not traversed
+    element_count: int = 0
 
 
 class Page(BaseModel):
@@ -71,6 +104,9 @@ class Page(BaseModel):
     counts: dict[str, int] = Field(default_factory=dict)
     headings: list[Heading] = Field(default_factory=list)
     elements: list[Element] = Field(default_factory=list)
+
+    # H3: every iframe seen, and whether its contents were merged above.
+    frames: list[FrameInfo] = Field(default_factory=list)
 
     # The browser's own ARIA snapshot (YAML) — ground-truth-ish a11y tree,
     # kept alongside the deterministic per-element pass rather than instead of.

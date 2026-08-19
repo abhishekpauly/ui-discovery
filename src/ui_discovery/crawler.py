@@ -19,7 +19,13 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from . import SCHEMA_VERSION, __version__
 from .browser import DOM_FINGERPRINT_JS
-from .extraction import JS, assemble_page
+from .extraction import (
+    JS,
+    assemble_page,
+    merge_frame_extraction,
+    plan_frames,
+    skipped_frame,
+)
 from .interactions import attach_network_async, probe_open_page_async
 from .models import Crawl, CrawlConfig, CrawlStats, NetworkRequest, PageNode
 from .util import bfs_depths, normalize_url, resolve_links, slug_for
@@ -81,6 +87,24 @@ async def _readiness(page, response) -> dict:
         signals["dom_stable"] = False
         signals["dom_stable_wait_ms"] = 0
     return signals
+
+
+async def _extract_frames_async(page, raw: dict) -> list:
+    """Async twin of `extraction.extract_frames_sync` — same policy (enter
+    same-origin frames only), same records."""
+    records = []
+    children = [f for f in page.frames if f is not page.main_frame]
+    for plan in plan_frames(page.url, children, raw.get("frames", []) or []):
+        if not plan["same_origin"]:
+            records.append(skipped_frame(plan))
+            continue
+        try:
+            frame_raw = await plan["frame"].evaluate(JS)
+            records.append(merge_frame_extraction(raw, plan, frame_raw))
+        except Exception as exc:
+            plan["reason"] = f"frame could not be read: {str(exc).splitlines()[0][:120]}"
+            records.append(skipped_frame(plan))
+    return records
 
 
 async def _aria(page) -> str | None:
@@ -237,6 +261,7 @@ async def crawl_site(
 
         readiness = await _readiness(page, context.response)
         raw = await page.evaluate(JS)
+        frames = await _extract_frames_async(page, raw)
         aria = await _aria(page)
 
         shot: str | None = str(shots_dir / f"{slug_for(url)}.png")
@@ -251,6 +276,7 @@ async def crawl_site(
             readiness=readiness,
             aria_tree=aria,
             screenshot_path=shot,
+            frames=frames,
         )
 
         # Build the page graph from the extracted anchors (deterministic, and

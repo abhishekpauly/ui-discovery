@@ -97,6 +97,12 @@ def decide(el: dict) -> Interaction:
     reason = None
     if not visible or not enabled:
         execute, reason = False, "not visible/enabled"
+    elif el.get("frame"):
+        # H3: this element lives inside an iframe, so its dom_path is relative
+        # to that frame. Selectors do not cross frame boundaries, so resolving
+        # it against the page would either miss — or, worse, match a
+        # *different* element that happens to share the path. Never click it.
+        execute, reason = False, "inside an iframe (observed only)"
     elif itype not in ALLOW_LIST:
         execute, reason = False, f"type '{itype}' not on allow-list (observe only)"
     elif label != "SAFE":

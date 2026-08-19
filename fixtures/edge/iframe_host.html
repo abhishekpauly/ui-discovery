@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Iframe host</title></head>
+<body>
+  <main>
+    <h1>Iframe host page</h1>
+    <button id="host-btn">Host button</button>
+
+    <!-- Same-origin: its contents must be extracted and merged. -->
+    <iframe id="same-origin" src="iframe_child.html" title="Same-origin widget"
+            width="400" height="200"></iframe>
+
+    <!-- Cross-origin (a different port is a different origin). The test
+         rewrites this src to a second server; its presence must be recorded
+         but its contents must NOT be traversed. -->
+    <iframe id="cross-origin" src="about:blank" title="Third-party widget"
+            width="400" height="200"></iframe>
+  </main>
+</body>
+</html>
