@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Navigating Controls</title></head>
+<body>
+  <main>
+    <h1>Controls that navigate</h1>
+
+    <!-- An allow-listed TYPE (role=tab) whose handler navigates to another
+         page. The probe must detect route_changed and recover with go_back. -->
+    <button role="tab" aria-selected="false" id="goto">Open page 2</button>
+
+    <!-- A tab that changes the in-page hash route. -->
+    <button role="tab" aria-selected="false" id="hash">Hash route</button>
+
+    <!-- A control that triggers an API call carrying a secret token, to
+         exercise network redaction. -->
+    <button role="tab" aria-selected="false" id="load">Load with token</button>
+  </main>
+  <script>
+    document.getElementById('goto').addEventListener('click', function () {
+      location.href = 'page2.html';
+    });
+    document.getElementById('hash').addEventListener('click', function () {
+      location.hash = '#/details';
+    });
+    document.getElementById('load').addEventListener('click', function () {
+      fetch('./data.json?access_token=SECRET123&page=2').catch(function () {});
+    });
+  </script>
+</body></html>

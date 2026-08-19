@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Engine output (crawl snapshots + screenshots)
+output/
+
+# Saved login sessions — treat like passwords, never commit
+session.json
+*.session.json
+
+
+# OS
+.DS_Store
+Thumbs.db

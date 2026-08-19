@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>TodoMVC-style SPA</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    // A small client-rendered todo app (a stand-in for a public demo SPA,
+    // used because the cloud sandbox blocks external sites). Content is built
+    // by JS after load, so the extractor must observe the rendered result.
+    var todos = ["Write V0 extractor", "Review page.json", "Plan V1"];
+    function render() {
+      var app = document.getElementById("app");
+      var items = todos.map(function (t, i) {
+        return (
+          '<li>' +
+          '  <input type="checkbox" id="t' + i + '" aria-label="Toggle: ' + t + '" />' +
+          '  <label for="t' + i + '">' + t + '</label>' +
+          '  <button type="button" aria-label="Delete: ' + t + '">x</button>' +
+          '</li>'
+        );
+      }).join("");
+      app.innerHTML = [
+        '<header><h1>todos</h1></header>',
+        '<main>',
+        '  <form aria-label="New todo">',
+        '    <label for="new">What needs to be done?</label>',
+        '    <input id="new" name="new" type="text" placeholder="What needs to be done?" />',
+        '    <button type="submit">Add</button>',
+        '  </form>',
+        '  <ul aria-label="Todo list">' + items + '</ul>',
+        '</main>',
+        '<footer>',
+        '  <nav aria-label="Filters">',
+        '    <a href="#/all">All</a>',
+        '    <a href="#/active">Active</a>',
+        '    <a href="#/completed">Completed</a>',
+        '  </nav>',
+        '  <button type="button">Clear completed</button>',
+        '</footer>'
+      ].join("");
+    }
+    setTimeout(render, 120);
+  </script>
+</body>
+</html>

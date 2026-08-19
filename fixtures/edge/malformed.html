@@ -1,0 +1,13 @@
+<!-- Missing <head>, unclosed tags, duplicate ids, stray text. The browser
+     repairs this; the extractor must not crash on it. -->
+<title>Malformed &amp; Messy</title>
+<body>
+<h1>Broken <em>markup
+<p>Paragraph never closed
+<button id="dup">First dup-id button
+<button id="dup">Second dup-id button</button>
+<a href="/x">Link <span>with <b>nested inline
+<input placeholder="orphan input">
+<ul><li>item<li>item2
+<table><tr><td>cell<td>cell2
+</body>

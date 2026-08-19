@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>SPA-like App</title>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    // Content is injected after load to mimic a client-rendered SPA.
+    // The extractor must observe what actually rendered, not the initial HTML.
+    setTimeout(function () {
+      var root = document.getElementById("root");
+      root.innerHTML = [
+        '<header><nav aria-label="Main">',
+        '  <a href="#/dashboard">Dashboard</a>',
+        '  <a href="#/customers">Customers</a>',
+        '</nav></header>',
+        '<main>',
+        '  <h1>Customers</h1>',
+        '  <button type="button" aria-label="Create customer">+</button>',
+        '  <button type="button" disabled>Export</button>',
+        '  <form aria-label="Filter customers">',
+        '    <label for="q">Search</label>',
+        '    <input id="q" name="q" type="search" placeholder="Search customers" />',
+        '    <select id="status" name="status" aria-label="Status filter">',
+        '      <option>Active</option><option>Archived</option>',
+        '    </select>',
+        '  </form>',
+        '</main>'
+      ].join("");
+    }, 150);
+  </script>
+</body>
+</html>

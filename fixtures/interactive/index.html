@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Interactive Demo</title>
+<style>
+  [hidden] { display: none; }
+  .panel { border: 1px solid #ddd; padding: 8px; margin: 6px 0; }
+  #menu { border: 1px solid #ccc; }
+</style>
+</head>
+<body>
+  <header>
+    <nav aria-label="Primary"><a href="index.html">Home</a></nav>
+  </header>
+  <main>
+    <h1>Interactive Demo</h1>
+
+    <!-- TABS: safe to switch; second tab triggers a fetch (API observation) -->
+    <div role="tablist" aria-label="Sections">
+      <button role="tab" id="tab-overview" aria-selected="true"
+              aria-controls="panel-overview">Overview</button>
+      <button role="tab" id="tab-activity" aria-selected="false"
+              aria-controls="panel-activity">Activity</button>
+    </div>
+    <section id="panel-overview" role="tabpanel">Overview content.</section>
+    <section id="panel-activity" role="tabpanel" hidden>Activity content.</section>
+
+    <!-- ACCORDION: aria-expanded toggle -> reversible -->
+    <button id="acc" aria-expanded="false" aria-controls="acc-panel">Details</button>
+    <div id="acc-panel" class="panel" hidden>Extra details here.</div>
+
+    <!-- NATIVE DISCLOSURE -->
+    <details>
+      <summary>More info</summary>
+      <p>Native details/summary content.</p>
+    </details>
+
+    <!-- MENU: haspopup, open-then-close (reverted with Escape) -->
+    <button id="opts" aria-haspopup="menu" aria-expanded="false"
+            aria-controls="menu">Options</button>
+    <ul id="menu" role="menu" hidden>
+      <li role="menuitem">Rename</li>
+      <li role="menuitem">Duplicate</li>
+    </ul>
+
+    <!-- CAUTION: state-changing, observed but not clicked -->
+    <button id="save">Save changes</button>
+
+    <!-- BLOCK: destructive; haspopup=dialog makes the TYPE allow-listed, but
+         the "Delete" label must override and refuse execution. -->
+    <button id="del" aria-haspopup="dialog" aria-controls="confirm">Delete account</button>
+    <div role="dialog" id="confirm" aria-label="Confirm deletion" hidden>
+      <p>This cannot be undone.</p>
+      <button>Cancel</button><button>Delete</button>
+    </div>
+  </main>
+
+  <script>
+    // Initial API call on load (network observation).
+    fetch('./data.json').catch(function () {});
+
+    function sel(id) { return document.getElementById(id); }
+
+    // Tabs
+    document.querySelectorAll('[role=tab]').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        document.querySelectorAll('[role=tab]').forEach(function (t) {
+          t.setAttribute('aria-selected', 'false');
+          sel(t.getAttribute('aria-controls')).hidden = true;
+        });
+        tab.setAttribute('aria-selected', 'true');
+        sel(tab.getAttribute('aria-controls')).hidden = false;
+        if (tab.id === 'tab-activity') fetch('./orders.json').catch(function () {});
+      });
+    });
+
+    // Accordion
+    sel('acc').addEventListener('click', function () {
+      var open = this.getAttribute('aria-expanded') === 'true';
+      this.setAttribute('aria-expanded', String(!open));
+      sel('acc-panel').hidden = open;
+    });
+
+    // Menu
+    sel('opts').addEventListener('click', function () {
+      var open = this.getAttribute('aria-expanded') === 'true';
+      this.setAttribute('aria-expanded', String(!open));
+      sel('menu').hidden = open;
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        sel('opts').setAttribute('aria-expanded', 'false');
+        sel('menu').hidden = true;
+        sel('confirm').hidden = true;
+        sel('del').setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    // Delete -> opens confirm dialog (should never be reached by the probe)
+    sel('del').addEventListener('click', function () {
+      sel('confirm').hidden = false;
+    });
+  </script>
+</body>
+</html>

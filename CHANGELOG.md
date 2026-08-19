@@ -1,0 +1,211 @@
+# Changelog
+
+All notable changes to the UI Discovery Engine are recorded here.
+Format follows [Keep a Changelog](https://keepachangelog.com/); versioning is
+[SemVer](https://semver.org/). This is a `0.x` project, so minor bumps may add
+capabilities freely; patch bumps are fixes/hotfixes.
+
+**Two version numbers are tracked separately:**
+- **Product version** (`pyproject.toml` `version`, `__version__`) — bumped every
+  release below.
+- **Schema version** (`SCHEMA_VERSION`) — the JSON model shape. Still `0.1.0`
+  because all growth so far is *additive* (new optional fields / new models),
+  not breaking. Bump it only when a change would break readers of old snapshots.
+
+The "V0…V5" phase names used in planning map to product versions as noted.
+
+---
+
+## [Unreleased]
+
+Planned work is tracked in `ROADMAP.md` and `PRODUCT_TRACKER.md`. Next up:
+`X0` (git baseline) → `R1` (library surface) → `H1` (URL/SPA normalization).
+The V5 track (5.1–5.3) is complete; V5.4 (LLM change narrative) depends on `C1`.
+
+---
+
+## [0.8.0] — 2026-08-12  ·  QA / test generation + Playwright export (V5.3 + C2)  (minor)
+
+### Added
+- `qagen` CLI (`ui_discovery.qagen`) — generates candidate **test scenarios**
+  (smoke, navigation, form, destructive-guard, interaction) from crawl (+
+  analysis + semantics + probe if present) → `qa.json` / `qa.md` / `qa.html`.
+- **Playwright test-skeleton export (delivers roadmap C2):** runnable
+  `generated_tests.py` (or `.spec.ts` with `--lang ts`) built from the stable
+  role + accessible-name selectors. **Destructive controls are never
+  automated** — they become explicit "SKIP (guard)" lines; forms are fill-only.
+- **Deterministic by default (zero tokens);** optional `--provider` writes a
+  test-strategy narrative on top (shared quarantined `llm.py`), never changing
+  the scenarios.
+- `TestStep` / `TestScenario` / `QAPlan` models; QA reports in `reports.py`.
+### Changed
+- AI-free guard extended to `ui_discovery.qagen`.
+### Tests
+- +6 (scenarios, generated-Playwright-compiles, destructive-guard, mock strategy).
+  **Total: 110.**
+
+---
+
+## [0.7.0] — 2026-08-12  ·  Documentation generation (V5.2)  (minor)
+
+### Added
+- `docgen` CLI (`ui_discovery.docgen`) — assembles a **UI reference document**
+  from crawl (+ analysis + semantics if present) → `documentation.json` / `.md`
+  / `.html`: executive overview, global navigation, shared components, and a
+  per-page reference (purpose, regions, controls grouped by semantic role,
+  links, screenshot).
+- **Deterministic by default (zero tokens);** degrades gracefully without
+  analysis/semantics (falls back to category grouping).
+- **Optional LLM prose, quarantined:** `--provider mock|anthropic|openai` has the
+  model write the overview + per-page purpose *on top of* the deterministic
+  scaffold; AI-drafted prose is marked as such and never mutates source models.
+- Shared `ui_discovery.llm` text-provider seam (Mock + lazy Anthropic/OpenAI) —
+  the reusable quarantined LLM layer for V5 generation features.
+- `Documentation` / `DocPage` models; documentation reports in `reports.py`.
+### Changed
+- AI-free guard extended to `ui_discovery.llm` and `ui_discovery.docgen`
+  (imports load no AI library).
+### Tests
+- +6 (deterministic doc, no-analysis fallback, mock prose, provider seam).
+  **Total: 104.**
+
+---
+
+## [0.6.0] — 2026-08-12  ·  Semantic classification (V5.1)  (minor)
+
+### Added
+- `semantic` CLI (`ui_discovery.semantic`) — labels every fingerprinted element
+  by semantic role (primary/secondary action, navigation, filter, data display,
+  destructive, form input, informational) → `semantics.json` / `.md` / `.html`.
+- **Deterministic by default (zero tokens):** classifies from role / accessible
+  name / landmark / safety class; needs no provider, key, or network.
+- **Optional LLM refinement, quarantined:** `--provider mock|anthropic|openai`
+  refines labels *on top of* the deterministic pass; providers import their SDK
+  **lazily** (module import stays AI-free), live only under the `[semantic]`
+  extra, and outputs never mutate the analysis. `mock` is an offline stand-in
+  for testing/demo.
+- `SemanticLabel` / `Semantics` models; semantics reports in `reports.py`.
+### Changed
+- AI-free guard extended to cover `ui_discovery.semantic` (its import loads no
+  AI library); the suite passes with the `[semantic]` extra NOT installed.
+### Tests
+- +10 (deterministic classification, mock refine, plumbing). **Total: 98.**
+
+---
+
+## [0.5.1] — 2026-08-12  ·  AI-free runtime guarantee  (hotfix)
+
+### Added
+- Architecture principle #13 — **runtime is AI-free and self-contained** (no
+  LLM, no API key, no tokens, no external service beyond the target). AI is a
+  detachable opt-in enrichment for V5 only. Documented in `ARCHITECTURE.md` /
+  `CLAUDE.md`.
+- Enforceable guard `tests/test_no_ai_runtime.py`: fails the build if the core
+  imports any AI/LLM library, lists one as a core dependency, or reads a provider
+  API key. The optional `[semantic]` extra is the sole quarantined home for V5's
+  future AI deps.
+### Changed
+- Crawler pins Crawlee's `tldextract` to its bundled public-suffix snapshot, so
+  same-domain checks make **no network fetch** — crawls depend on nothing beyond
+  the target site.
+### Tests
+- +4 (AI-free runtime guards). **Total: 88.**
+
+---
+
+## [0.5.0] — 2026-08-12  ·  Session-based authentication  (minor)
+
+### Added
+- `login` CLI (`ui_discovery.login`) — opens a visible browser, you log in by
+  hand, and the session (`storage_state`: cookies + localStorage) is saved.
+- `--auth-state session.json` on `extract`, `crawl`, and `probe`; the session is
+  applied to every page so authenticated portals can be captured as the logged-in
+  user. Crawler applies it via a Crawlee pre-navigation hook (cookies +
+  localStorage).
+- `auth.py` (load/validate storage state, capture helper); `session.json` added
+  to `.gitignore` (treated as a secret).
+### Tests
+- +7 (cookie-gated fixture server proving session reuse; storage-state
+  validation). **Total: 84.**
+
+---
+
+## [0.4.1] — 2026-08-12  ·  QA hardening  (hotfix)
+
+### Fixed
+- `body_present` readiness falsely reported `false` on empty/minimal pages — the
+  wait used `state="visible"`; an empty `<body>` has zero height. Now waits for
+  `state="attached"` (extractor + crawler).
+- Duplicate `id`s collapsed distinct elements onto one `dom_path` — the `#id`
+  shortcut is now taken only when the id is unique on the page.
+### Added
+- `requestfailed` network handler in the probe (blocked/aborted requests are now
+  captured).
+- Adversarial fixtures (`fixtures/edge/`) and a rainy-day test suite; `QA_REPORT.md`.
+### Tests
+- +16 edge/negative-path tests. **Total: 77.**
+
+---
+
+## [0.4.0] — 2026-08-12  ·  Safe interaction + network probe (V3)  (minor)
+
+### Added
+- `probe` CLI (`ui_discovery.probe`) — discovers interactive elements and
+  executes only structurally-safe, reversible ones (tabs, accordions, menus,
+  disclosures), recording before/after state and reverting after.
+- Deterministic two-gate safety model (`safety.py`): allow-list of interaction
+  types + SAFE/CAUTION/BLOCK label classifier. Nothing destructive is clicked.
+- Network observation (`network.py`): method/url/status only, secrets redacted,
+  endpoints normalized to `:id`, GraphQL/API detection. No headers or bodies.
+- Probe reports (`probe.json` / `.md` / `.html`).
+### Tests
+- +22 (safety classification, destructive-override, redaction, live probe).
+  **Total: 61.**
+
+---
+
+## [0.3.0] — 2026-08-12  ·  Analysis layer (V2)  (minor)
+
+### Added
+- `analyze` CLI (`ui_discovery.analyze`) — reads the immutable crawl and writes
+  `analysis.json` / `.md` / `.html`. No re-crawling.
+- Element **fingerprinting** (`analysis/fingerprint.py`): stable per-element
+  identity (data-testid → id → structural), generated-id resilient.
+- UI **region** inference from landmarks; **component** detection (shared across
+  pages + repeated within page); **navigation**-menu extraction.
+### Tests
+- +15 (fingerprint determinism/stability, component/region/nav detection).
+  **Total: 39.**
+
+---
+
+## [0.2.0] — 2026-08-12  ·  Crawler + UI Crawl Report (V1)  (minor)
+
+### Added
+- `crawl` CLI (`ui_discovery.crawl`) — Crawlee `PlaywrightCrawler` drives the V0
+  extractor across a same-domain site; request queue, dedup, retries, `--max-
+  pages` / `--max-depth` budgets.
+- Page graph (depth + navigation edges) and UI Crawl Report (`crawl.json` /
+  `report.md` / `report.html` + per-page screenshots).
+- Shared `assemble_page()` so sync (V0) and async (crawler) reuse model-building.
+### Fixed
+- Chromium `--no-sandbox` under root; per-crawl in-memory storage isolation so
+  repeated crawls in one process stay clean.
+### Tests
+- +12 (crawl completeness, depth/page budgets, same-domain filtering, reports).
+  **Total: 24.**
+
+---
+
+## [0.1.0] — 2026-08-12  ·  Single-page extractor (V0)  (initial)
+
+### Added
+- `extract` CLI (`ui_discovery.extract`) — renders one URL and emits a
+  deterministic UI model (`page.json`) + screenshot.
+- Framework-agnostic extraction (`extract.js`): per-element role, accessible
+  name (+ source), text, visibility, enabled state, geometry, attributes,
+  `dom_path`, sibling ordinal, landmark; plus the browser ARIA snapshot.
+- Pydantic models with `schema_version`; robust readiness waits (no fixed
+  sleeps); local HTML fixtures as the primary test surface.
+### Tests
+- 12 (extraction, schema round-trip, visibility, identity signals). **Total: 12.**

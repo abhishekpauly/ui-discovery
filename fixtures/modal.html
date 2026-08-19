@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Page with Modal</title>
+  <style>
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Account</h1>
+    <button type="button" id="open">Delete account</button>
+
+    <!-- A visible dialog and a hidden one: the extractor must record both,
+         but correctly mark visibility so a safe crawler can tell them apart. -->
+    <div role="dialog" aria-label="Confirm deletion" id="confirm">
+      <h2>Are you sure?</h2>
+      <p>This cannot be undone.</p>
+      <button type="button">Cancel</button>
+      <button type="button">Delete</button>
+    </div>
+
+    <div role="dialog" aria-label="Hidden helper dialog" id="helper" class="hidden">
+      <button type="button">Should be marked not-visible</button>
+    </div>
+  </main>
+</body>
+</html>

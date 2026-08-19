@@ -1,0 +1,45 @@
+[project]
+name = "ui-discovery"
+version = "0.8.0"
+description = "Framework-agnostic UI Discovery Engine — V0 single-page extractor"
+requires-python = ">=3.10"
+dependencies = [
+    "playwright==1.56.0",
+    "pydantic==2.13.3",
+    "crawlee[playwright]==1.9.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+]
+# V5 ONLY — the quarantined home for optional AI/LLM enrichment (semantic
+# classification, doc/QA generation). The core NEVER depends on these; the full
+# test suite must pass with this extra NOT installed. Add providers here when V5
+# is built. Enforced by tests/test_no_ai_runtime.py.
+semantic = [
+    # e.g. "anthropic>=0.40" — add only when implementing V5, never to `dependencies`.
+]
+
+[project.scripts]
+ui-discovery-extract = "ui_discovery.extract:main"
+ui-discovery-crawl = "ui_discovery.crawl:main"
+ui-discovery-analyze = "ui_discovery.analyze:main"
+ui-discovery-probe = "ui_discovery.probe:main"
+ui-discovery-login = "ui_discovery.login:main"
+ui-discovery-semantic = "ui_discovery.semantic:main"
+ui-discovery-docgen = "ui_discovery.docgen:main"
+ui-discovery-qagen = "ui_discovery.qagen:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# Pinned tooling versions (record for reproducibility):
+#   Python      3.11.15
+#   Playwright  1.56.0   (browser: Chromium)
+#   Pydantic    2.13.3
+#   Crawlee     1.9.1    (crawlee[playwright])

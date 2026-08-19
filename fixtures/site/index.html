@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Home · Demo App</title></head>
+<body>
+  <header>
+    <nav aria-label="Primary">
+      <a href="index.html">Home</a>
+      <a href="customers.html">Customers</a>
+      <a href="orders.html">Orders</a>
+      <a href="about.html">About</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Welcome</h1>
+    <p>A small multi-page fixture site for exercising the crawler.</p>
+    <a href="customers.html" role="button">Go to customers</a>
+    <!-- external link: must be excluded by the same-domain strategy -->
+    <a href="https://example.com/">External site (should not be crawled)</a>
+  </main>
+</body>
+</html>

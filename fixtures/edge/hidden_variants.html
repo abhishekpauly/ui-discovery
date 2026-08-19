@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Hidden Variants</title>
+<style>
+  .dnone { display: none; }
+  .vhidden { visibility: hidden; }
+  .opacity0 { opacity: 0; }
+  .zerosize { width: 0; height: 0; padding: 0; border: 0; overflow: hidden; }
+</style></head>
+<body>
+  <main>
+    <h1>Visibility edge cases</h1>
+    <button class="dnone">display none</button>
+    <button class="vhidden">visibility hidden</button>
+    <button class="opacity0">opacity zero</button>
+    <button class="zerosize">zero size</button>
+    <button hidden>hidden attribute</button>
+    <button aria-hidden="true">aria-hidden</button>
+    <button>Genuinely visible</button>
+    <input type="hidden" name="secret" value="x">
+  </main>
+</body></html>

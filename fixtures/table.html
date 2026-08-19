@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Data Table</title>
+</head>
+<body>
+  <main>
+    <h1>Orders</h1>
+    <table aria-label="Orders table">
+      <thead>
+        <tr><th>ID</th><th>Customer</th><th>Total</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1001</td><td>Acme</td><td>$120</td>
+          <td><a href="/orders/1001">View</a></td>
+        </tr>
+        <tr>
+          <td>1002</td><td>Globex</td><td>$80</td>
+          <td><a href="/orders/1002">View</a></td>
+        </tr>
+      </tbody>
+    </table>
+    <nav aria-label="Pagination">
+      <button type="button">Previous</button>
+      <button type="button">Next</button>
+    </nav>
+  </main>
+</body>
+</html>
