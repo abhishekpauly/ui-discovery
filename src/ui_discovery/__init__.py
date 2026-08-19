@@ -33,6 +33,7 @@ _EXTRACTION = "ui_discovery.extraction"
 _CRAWLER = "ui_discovery.crawler"
 _ANALYSIS = "ui_discovery.analysis"
 _DIFF = "ui_discovery.diff"
+_NARRATE = "ui_discovery.narrate"
 _CONFIG = "ui_discovery.config"
 _SOURCEMAP = "ui_discovery.sourcemap"
 _INTERACTIONS = "ui_discovery.interactions"
@@ -53,6 +54,9 @@ _EXPORTS = {
     "probe_page": _INTERACTIONS,
     # C1 — deterministic change diff between two analyses.
     "diff_analyses": _DIFF,
+    # V5.4 — readable change narrative over a diff.
+    "build_narrative": _NARRATE,
+    "narrate_diff": _NARRATE,
     # H5/R2/S1 — scope configuration.
     "Scope": _CONFIG,
     "load_scope": _CONFIG,
@@ -86,6 +90,11 @@ _EXPORTS = {
 _ALIASES = {
     "generate_documentation": "generate",
     "generate_qa_plan": "generate",
+    # `narrate` would collide with the submodule of the same name: importing
+    # ui_discovery.narrate binds the module as a package attribute, and normal
+    # attribute lookup wins over __getattr__, so the function would be
+    # unreachable under its own name.
+    "narrate_diff": "narrate",
 }
 
 __all__ = ["__version__", "SCHEMA_VERSION", *_EXPORTS]

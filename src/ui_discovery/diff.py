@@ -46,6 +46,7 @@ from .models import (
     PageAnalysis,
     PageChange,
 )
+from .narrate import narrate
 from .reports import write_diff
 
 T = TypeVar("T")
@@ -315,6 +316,15 @@ def main(argv: list[str] | None = None) -> int:
         "--output", default=None,
         help="Where to write the diff (default: alongside the newer analysis).",
     )
+    parser.add_argument(
+        "--provider", default="none",
+        help="V5.4: rewrite the change narrative with an LLM "
+             "(none|mock|anthropic|openai). The diff itself is always "
+             "deterministic; only the prose changes.",
+    )
+    parser.add_argument(
+        "--model", default=None, help="Provider model override.",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -331,6 +341,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"[INFO] Diffing {old.source_crawl_id} -> {new.source_crawl_id}")
     diff = diff_analyses(old, new)
+    diff = narrate(diff, args.provider, args.model)
 
     out_dir = args.output or str(new_json.parent)
     paths = write_diff(diff, out_dir)
@@ -341,6 +352,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[INFO] Elements: +{s['elements_added']} -{s['elements_removed']} "
           f"renamed {s['elements_renamed']}")
     print(f"[INFO] Components: +{s['components_added']} -{s['components_removed']}")
+    print(f"[INFO] Narrative: {diff.narrative_source}")
     for key in ("json", "markdown", "html"):
         print(f"[INFO] Wrote {paths[key]}")
     return 0

@@ -974,6 +974,14 @@ def build_diff_markdown(diff: Diff) -> str:
     lines.append(_diff_headline(diff))
     lines.append("")
 
+    if diff.narrative:
+        src = (" _(AI-drafted from the findings below)_"
+               if diff.narrative_source != "deterministic" else "")
+        lines.append("## What changed" + src)
+        lines.append("")
+        lines.append(diff.narrative)
+        lines.append("")
+
     if diff.stats.get("elements_renamed"):
         lines.append("## Renamed controls")
         lines.append("")
@@ -1033,6 +1041,15 @@ def build_diff_html(diff: Diff) -> str:
         return html.escape(str(x))
 
     s = diff.stats
+
+    narrative_html = ""
+    if diff.narrative:
+        src = (" (AI-drafted from the findings below)"
+               if diff.narrative_source != "deterministic" else "")
+        body = "".join(f"<p>{esc(para)}</p>"
+                       for para in diff.narrative.split("\n\n") if para.strip())
+        narrative_html = (f"<h2>What changed{esc(src)}</h2>"
+                          f"<div class='narrative'>{body}</div>")
 
     renamed_rows = "".join(
         f"<tr><td>“{esc(c.previous_name)}”</td>"
@@ -1106,6 +1123,7 @@ def build_diff_html(diff: Diff) -> str:
   .mark.added {{ color: #15803d; }}
   .mark.removed {{ color: #b91c1c; }}
   .mark.renamed, .mark.changed {{ color: #b45309; }}
+  .narrative p {{ margin: .5rem 0; }}
 </style></head><body>
 <h1>UI Change Diff</h1>
 <p class="meta">Site <code>{esc(diff.new.start_url)}</code> · generated
@@ -1116,6 +1134,7 @@ def build_diff_html(diff: Diff) -> str:
   New: crawl <code>{esc(diff.new.source_crawl_id)}</code>
   ({esc(diff.new.page_count)} pages, {esc(diff.new.element_count)} elements)
 </p>
+{narrative_html}
 <div class="kpis">
   <span>Pages: <b>+{esc(s['pages_added'])}</b> / <b>−{esc(s['pages_removed'])}</b>
    / <b>~{esc(s['pages_changed'])}</b></span>

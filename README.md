@@ -184,6 +184,30 @@ Anything not confidently paired stays an add and a remove — the diff never
 guesses a rename it cannot evidence. Fully deterministic: the same pair of
 snapshots always yields the same diff, with no LLM and no network.
 
+### Change narrative (V5.4)
+
+`diff` also writes a readable summary of what changed — **deterministic by
+default, zero tokens**, assembled from the diff's own fields:
+
+```
+This release shows 1 added page, 2 renamed controls, 7 added and 1 removed controls.
+
+**Renames.** "Filter list" → "Refine list"; "Create customer" → "Add customer".
+Renamed controls break tests and docs that match on label, and are the most
+common cause of a suite going red after a release that changed nothing
+functional.
+
+_Structural changes only. Whether each one is intended is not something two
+snapshots can answer._
+```
+
+`--provider anthropic|openai|mock` rewrites **the prose only**. The LLM is
+handed the already-computed findings to phrase, never the snapshots to
+analyse, and it cannot touch a single structured field — so the tables stay
+the source of truth and are labelled *AI-drafted* when the prose is. A
+provider that fails, refuses or returns nothing leaves the deterministic
+summary in place rather than an empty one.
+
 > **Snapshots must share an origin.** Pages are matched by absolute URL, and
 > fingerprints embed the page URL, so this compares the *same site over time*
 > (`prod` on Monday vs `prod` on Friday). Comparing across hosts (staging vs

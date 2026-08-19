@@ -343,6 +343,11 @@ class Diff(BaseModel):
     pages: list[PageChange] = Field(default_factory=list)
     elements: list[ElementChange] = Field(default_factory=list)
     components: list[ComponentChange] = Field(default_factory=list)
+    # V5.4: a readable summary of the above. Deterministic by default; an
+    # optional LLM rewrites the prose only. The structured fields above
+    # remain the source of truth and are never derived from the narrative.
+    narrative: str = ""
+    narrative_source: str = "deterministic"
 
 
 # --- V4: source correlation --------------------------------------------------

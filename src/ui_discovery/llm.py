@@ -90,7 +90,9 @@ def get_text_provider(name: str, model: Optional[str] = None) -> Optional[TextPr
     if name == "mock":
         return MockTextProvider()
     if name == "anthropic":
-        return _AnthropicText(model or "claude-sonnet-4-5")
+        # Override per run with --model. Kept current deliberately: a stale
+        # default silently pins every user to an older model.
+        return _AnthropicText(model or "claude-opus-5")
     if name == "openai":
         return _OpenAIText(model or "gpt-4o-mini")
     raise SystemExit(f"[ERROR] Unknown provider: {name}")
