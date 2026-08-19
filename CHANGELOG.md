@@ -18,9 +18,100 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ## [Unreleased]
 
-Planned work is tracked in `ROADMAP.md` and `PRODUCT_TRACKER.md`. Next up:
-`X0` (git baseline) → `R1` (library surface) → `H1` (URL/SPA normalization).
-The V5 track (5.1–5.3) is complete; V5.4 (LLM change narrative) depends on `C1`.
+Nothing pending. Remaining roadmap items are deliberately deferred:
+`X3` (CI) needs a git remote to exist first; `X4` (incremental crawl) is a
+speculative optimization until crawl times actually hurt; `X6` (storage
+backend) is explicitly deferred in `ROADMAP.md` until data volume demands it.
+
+---
+
+## [0.12.0] — 2026-08-19  ·  Roadmap complete: hardening, config, adapters, source correlation  (minor)
+
+Everything from `ROADMAP.md` except the three deferred items above. This
+covers eleven roadmap items shipped since 0.8.0; the version had drifted badly
+behind the code.
+
+### Added
+- **X0** — git baseline. The project is now version-controlled, one branch and
+  commit per roadmap item.
+- **R1** — a formal library/SDK surface. Every capability is importable from
+  `ui_discovery` and composable without touching a CLI; the CLIs are thin
+  wrappers over the same functions. Exports resolve lazily, so
+  `import ui_discovery` stays cheap and AI-free.
+- **H1** — query-string and SPA route normalization. `--dedupe-queries`
+  (plus `--drop-param`) collapses tracking/session variants; `--hash-routes`
+  makes `#/route` fragments distinct pages. Both applied to the page graph
+  *and* Crawlee's request queue so counts agree; both off by default.
+- **H2** — the safe interaction/network probe runs on every crawled page
+  (`crawl --probe`), as the logged-in user, in one pass. `interactions.py`
+  gained an async core operating on a page the crawler already has open.
+- **H3** — shadow DOM and iframe traversal. Open shadow roots are queried
+  (boundaries marked with ` >>> ` in `dom_path`, plus `shadow_depth`);
+  same-origin iframes are merged with `frame`/`frame_path` provenance;
+  cross-origin frames are recorded but not entered.
+- **H4** — session-expiry detection. Four signals (visible password field,
+  login URL segment, logged-out title/heading, and a settled page that
+  rendered *nothing*) set `stats.auth_expired`, banner the report and print
+  the re-capture command. `--fail-on-auth-expiry` exits 2 for CI.
+- **H5 + R2 + S1** — scope configs (`--config scope.yaml`), capability
+  toggles, and `python -m ui_discovery.intake` to generate and `--check` one.
+  Includes URL include/exclude scoping, dropped before enqueue so an excluded
+  area is never fetched.
+- **R3** — the adapter seam. Site-specific behavior registers as named
+  adapters (`extra_wait`, `extra_headers`, `skip_paths`, `logged_in_marker`)
+  instead of accumulating as special cases in the core.
+- **C1** — deterministic change diff (`python -m ui_discovery.diff old/ new/`):
+  pages, elements and components added/removed, plus **renamed controls**
+  matched by fingerprint or, for structurally-identified elements, by a
+  name-independent key. Ambiguous pairings stay add+remove.
+- **V4** — source correlation (`python -m ui_discovery.sourcescan <repo>`).
+  Reads a frontend repo as text (never executes it) into a `SourceIndex`, and
+  links runtime observations to it with a confidence level and evidence for
+  every claim.
+- **V5.4** — a readable change narrative over the C1 diff. Deterministic by
+  default; `--provider` rewrites the prose only.
+- **X1** — `python -m ui_discovery.pipeline`: crawl → analyze → semantic →
+  docgen → qagen in one command. A failing report stage never discards the
+  crawl.
+- **X5** — politeness: `--max-requests-per-minute`, `--max-concurrency`,
+  `--respect-robots-txt`. Defaults are unchanged behavior.
+
+### Fixed
+- Sessions with tokens in `localStorage` were never actually restored — the
+  injected script was a function expression that was defined and never
+  invoked, so authenticated crawls silently captured login pages. Now pinned
+  by a regression test verified to fail against the old code.
+- Extraction and screenshots fired before SPAs finished rendering.
+  `networkidle` only tracks network traffic, so a DOM-stability poll now runs
+  after it; new `dom_stable` / `dom_stable_wait_ms` readiness signals.
+- **A page that had not begun rendering was mistaken for a settled one.** An
+  app shell produces an identical DOM on every poll, so the stability check
+  above declared it stable after ~500ms and every later stage faithfully
+  recorded zero elements — and H4 then reported a healthy session as
+  rejected. Stability now requires *rendered* content (measured by rendered
+  text and interactive elements, not markup size — a shell's inline script
+  can be kilobytes while it displays nothing). On the live portal this took
+  two pages from 0 elements to 47 and 91, and one page that had been captured
+  half-rendered now waits 2.2s for its content.
+- IDREF lookups (`aria-labelledby`, `label[for]`) resolved against `document`,
+  which is wrong across a shadow boundary; the landmark walk stopped at a
+  shadow root instead of continuing through the host.
+- Elements inside an iframe could be clicked by the probe using a
+  frame-relative selector resolved against the page — which can match a
+  *different* element. They are observe-only now.
+- `load_storage_state` rejected session files carrying a UTF-8 BOM.
+- A concurrency cap below 10 was rejected outright by Crawlee's default
+  `desired_concurrency` — the exact value someone throttling a shared host
+  would reach for.
+- The Anthropic provider default was pinned to a stale model.
+- `tests/conftest.py`'s server never released its port (`shutdown()` without
+  `server_close()`), which hung any test that rebound one.
+
+### Changed
+- `pyyaml` added to core dependencies (pinned `6.0.3` — the first release with
+  a Python 3.14 wheel). JSON configs work without it.
+- `SCHEMA_VERSION` stays `0.1.0`: every model change above is additive (new
+  optional fields), so old snapshots remain readable.
 
 ---
 

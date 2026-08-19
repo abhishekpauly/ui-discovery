@@ -17,14 +17,11 @@ import sys
 
 from .auth import load_storage_state
 from .cliconfig import (
-    adapters_for,
     add_config_argument,
-    auth_signals,
+    crawl_kwargs,
     describe,
     load_or_exit,
-    pick,
     resolve_output_dir,
-    safety_policy,
 )
 from .crawler import crawl_site
 from .reports import write_reports
@@ -81,6 +78,20 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip screenshots.",
     )
     parser.add_argument(
+        "--max-requests-per-minute", type=float, default=None,
+        help="X5: cap request rate across the crawl. Use on shared or "
+             "production-adjacent targets.",
+    )
+    parser.add_argument(
+        "--max-concurrency", type=int, default=None,
+        help="X5: upper bound on parallel pages (default 100; Crawlee "
+             "autoscales below it).",
+    )
+    parser.add_argument(
+        "--respect-robots-txt", action="store_true", default=None,
+        help="X5: honour the target's robots.txt.",
+    )
+    parser.add_argument(
         "--fail-on-auth-expiry", action="store_true",
         help="Exit non-zero if a saved session turns out to be expired "
              "(a login page was reached while authenticated).",
@@ -109,42 +120,18 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 1
 
-    max_pages = pick(args.max_pages, scope.budget.max_pages, 25)
-    max_depth = pick(args.max_depth, scope.budget.max_depth, 3)
-    drop_params = args.drop_param or scope.identity.drop_params
-    login_patterns, logged_out = auth_signals(scope)
+    kwargs = crawl_kwargs(scope, args)
     out_dir = resolve_output_dir(scope, args.output, slug_for(start_url))
 
     print(f"[INFO] Crawling {start_url} "
-          f"(max_pages={max_pages}, max_depth={max_depth})")
+          f"(max_pages={kwargs['max_pages']}, max_depth={kwargs['max_depth']})")
     try:
         crawl = asyncio.run(
             crawl_site(
                 start_url,
-                max_pages=max_pages,
-                max_depth=max_depth,
                 output_dir=str(out_dir),
-                headless=not args.headed,
                 auth_state=auth_state,
-                dedupe_queries=pick(args.dedupe_queries,
-                                    scope.identity.dedupe_queries, False),
-                drop_params=frozenset(drop_params) or None,
-                hash_routes=pick(args.hash_routes,
-                                 scope.identity.hash_routes, False),
-                probe=pick(args.probe, scope.capabilities.probe, False),
-                max_interactions=pick(args.max_interactions,
-                                      scope.budget.max_interactions, 40),
-                include=scope.scope.include,
-                exclude=scope.scope.exclude,
-                screenshots=pick(
-                    False if args.no_screenshots else None,
-                    scope.capabilities.screenshots, True),
-                accessibility_tree=scope.capabilities.accessibility_tree,
-                login_url_patterns=login_patterns,
-                logged_out_signals=logged_out,
-                policy=safety_policy(scope),
-                redact_keys=tuple(scope.privacy.redact_network_keys),
-                adapters=adapters_for(scope),
+                **kwargs,
             )
         )
     except Exception as exc:

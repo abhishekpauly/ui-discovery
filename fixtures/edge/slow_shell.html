@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Slow shell</title></head>
+<body>
+  <!-- An app shell that renders nothing for a while. Its DOM is byte-identical
+       across early polls, so a naive stability check calls it "settled" and
+       captures a blank page. -->
+  <div id="root"></div>
+  <script>
+    setTimeout(function () {
+      document.getElementById("root").innerHTML =
+        '<main><h1>Loaded at last</h1>' +
+        '<button id="late">Late button</button>' +
+        '<p>' + 'x'.repeat(400) + '</p></main>';
+    }, 1500);
+  </script>
+</body>
+</html>

@@ -17,32 +17,83 @@ from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 # only tells us XHR/fetch traffic stopped, which SPAs reach *before* they're
 # done painting (e.g. still waiting on a websocket push, a timer-driven state
 # update, or a CSS transition). Cheap on purpose: this runs every poll tick.
-DOM_FINGERPRINT_JS = (
-    "() => document.body ? "
-    "document.body.innerHTML.length + ':' + document.querySelectorAll('*').length "
-    ": ''"
-)
+# Four fields: serialized size, node count, *rendered text* length, and
+# interactive-element count. The first two detect change; the last two decide
+# whether anything has actually rendered — markup length alone is not a
+# content signal, since an app shell's `<script>` block can be kilobytes of
+# it while the page shows nothing.
+DOM_FINGERPRINT_JS = """
+() => {
+  const b = document.body;
+  if (!b) return '';
+  const interactive = document.querySelectorAll(
+    'a[href],button,input,select,textarea,[role=button],[role=link],[role=tab]'
+  ).length;
+  return [
+    b.innerHTML.length,
+    document.querySelectorAll('*').length,
+    (b.innerText || '').trim().length,
+    interactive,
+  ].join(':');
+}
+"""
+
+
+# Enough rendered text to call a page "showing something". Deliberately low:
+# this only has to clear an app shell, which renders none.
+RENDERED_TEXT_FLOOR = 20
+
+
+def has_rendered(fingerprint: str) -> bool:
+    """True if the fingerprint shows a page that has actually rendered.
+
+    Judged on *rendered text* and interactive elements, not markup size — an
+    unrendered shell can carry kilobytes of inline script while displaying
+    nothing at all, which is exactly the case this exists to catch.
+    """
+    try:
+        _html, _nodes, text_len, interactive = (
+            int(part) for part in fingerprint.split(":")
+        )
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return text_len >= RENDERED_TEXT_FLOOR or interactive >= 1
 
 
 def wait_for_dom_stable(
     page: Page,
     *,
-    timeout_ms: int = 4000,
+    timeout_ms: int = 8000,
     interval_ms: int = 250,
     required_stable_polls: int = 2,
 ) -> dict[str, Any]:
-    """Poll `DOM_FINGERPRINT_JS` until it stops changing (or `timeout_ms`
-    elapses). Returns `{"dom_stable": bool, "dom_stable_wait_ms": int}`."""
+    """Poll `DOM_FINGERPRINT_JS` until the DOM stops changing *with content in
+    it*, or `timeout_ms` elapses.
+
+    The "with content" part is not fussiness. An app shell that has not begun
+    rendering produces an identical fingerprint on every poll, so a plain
+    equality check calls it stable after two ticks — declaring a blank page
+    settled precisely because nothing has happened yet. Observed live: a
+    dashboard reported `dom_stable` after 550ms with an empty body, and every
+    downstream stage then faithfully recorded a page with zero elements.
+
+    So an empty body never satisfies stability; we keep polling until content
+    appears or we run out of time. A page that is genuinely empty costs the
+    full timeout and reports `dom_stable: false` — which is the honest answer,
+    and is what the H4 empty-page check should be reacting to.
+    """
     t0 = time.monotonic()
     deadline = t0 + timeout_ms / 1000
     last = None
     stable_polls = 0
+    saw_content = False
     while time.monotonic() < deadline:
         try:
             fp = page.evaluate(DOM_FINGERPRINT_JS)
         except Exception:
             break
-        if fp == last:
+        saw_content = saw_content or has_rendered(fp)
+        if fp == last and has_rendered(fp):
             stable_polls += 1
             if stable_polls >= required_stable_polls:
                 return {
@@ -56,6 +107,9 @@ def wait_for_dom_stable(
     return {
         "dom_stable": False,
         "dom_stable_wait_ms": round((time.monotonic() - t0) * 1000),
+        # Distinguishes "never rendered anything" from "rendered but kept
+        # changing" — very different problems with the same timeout.
+        "dom_content_seen": saw_content,
     }
 
 

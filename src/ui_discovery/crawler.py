@@ -21,7 +21,7 @@ from . import SCHEMA_VERSION, __version__
 from . import adapters as adapter_hooks
 from .adapters import Adapter
 from .auth import check_auth
-from .browser import DOM_FINGERPRINT_JS
+from .browser import DOM_FINGERPRINT_JS, has_rendered
 from .extraction import (
     JS,
     assemble_page,
@@ -38,22 +38,24 @@ from .util import bfs_depths, normalize_url, resolve_links, slug_for, url_in_sco
 async def _wait_for_dom_stable_async(
     page,
     *,
-    timeout_ms: int = 4000,
+    timeout_ms: int = 8000,
     interval_ms: int = 250,
     required_stable_polls: int = 2,
 ) -> dict:
-    """Async twin of `browser.wait_for_dom_stable` — see there for why this
-    exists: `networkidle` fires before SPAs finish client-side rendering."""
+    """Async twin of `browser.wait_for_dom_stable` — see there for why an
+    empty body never counts as stable."""
     t0 = time.monotonic()
     deadline = t0 + timeout_ms / 1000
     last = None
     stable_polls = 0
+    saw_content = False
     while time.monotonic() < deadline:
         try:
             fp = await page.evaluate(DOM_FINGERPRINT_JS)
         except Exception:
             break
-        if fp == last:
+        saw_content = saw_content or has_rendered(fp)
+        if fp == last and has_rendered(fp):
             stable_polls += 1
             if stable_polls >= required_stable_polls:
                 return {
@@ -67,6 +69,7 @@ async def _wait_for_dom_stable_async(
     return {
         "dom_stable": False,
         "dom_stable_wait_ms": round((time.monotonic() - t0) * 1000),
+        "dom_content_seen": saw_content,
     }
 
 
@@ -140,6 +143,9 @@ async def crawl_site(
     policy: SafetyPolicy = DEFAULT_POLICY,
     redact_keys: tuple[str, ...] = (),
     adapters: list[Adapter] | None = None,
+    max_requests_per_minute: float | None = None,
+    max_concurrency: int = 100,
+    respect_robots_txt: bool = False,
 ) -> Crawl:
     """Crawl a same-domain site starting at `start_url`, extracting a UI model
     for every discovered page, and return an assembled `Crawl`.
@@ -154,7 +160,7 @@ async def crawl_site(
     are executed; see `interactions.probe_open_page_async`."""
     # Imported here so the module imports cleanly even if crawlee isn't
     # installed (V0-only environments).
-    from crawlee import service_locator
+    from crawlee import ConcurrencySettings, service_locator
     from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
     from crawlee.storage_clients import MemoryStorageClient
 
@@ -232,6 +238,18 @@ async def crawl_site(
         max_requests_per_crawl=max_pages,   # page budget
         max_crawl_depth=max_depth,          # depth budget
         max_request_retries=2,              # retry budget
+        # X5: politeness. Crawlee autoscales up to these ceilings, so the
+        # defaults leave existing behavior unchanged.
+        concurrency_settings=ConcurrencySettings(
+            max_concurrency=max_concurrency,
+            # Crawlee's desired_concurrency defaults to 10 and must not exceed
+            # max_concurrency, so a cap below 10 would otherwise be rejected —
+            # exactly the low value someone throttling a shared host reaches for.
+            desired_concurrency=min(10, max_concurrency),
+            max_tasks_per_minute=(max_requests_per_minute
+                                  if max_requests_per_minute else float("inf")),
+        ),
+        respect_robots_txt_file=respect_robots_txt,
     )
 
     # Authenticated portals: apply the saved session (cookies + localStorage)

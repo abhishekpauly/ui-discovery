@@ -59,6 +59,24 @@ class Identity(BaseModel):
     drop_params: list[str] = Field(default_factory=list)
 
 
+class Politeness(BaseModel):
+    """X5 — how hard to push a target.
+
+    Defaults are the engine's existing behavior, so nothing changes unless
+    you ask. But when the target is shared infrastructure (a team's staging
+    portal), a rate cap is the difference between a capture and an incident.
+    """
+
+    # Requests per minute across the whole crawl. None = unlimited.
+    max_requests_per_minute: Optional[float] = None
+    # Upper bound on parallel pages. Crawlee autoscales below this.
+    max_concurrency: int = 100
+    # Honour the target's robots.txt. Off by default because the engine is
+    # pointed at products you own and are authorized to test, where robots
+    # rules are written for search engines, not for you.
+    respect_robots_txt: bool = False
+
+
 class Capabilities(BaseModel):
     """Feature switches. Defaults reproduce today's behavior exactly."""
 
@@ -142,6 +160,7 @@ class Scope(BaseModel):
     budget: Budget = Field(default_factory=Budget)
     identity: Identity = Field(default_factory=Identity)
     capabilities: Capabilities = Field(default_factory=Capabilities)
+    politeness: Politeness = Field(default_factory=Politeness)
     safety: Safety = Field(default_factory=Safety)
     privacy: Privacy = Field(default_factory=Privacy)
     outputs: Outputs = Field(default_factory=Outputs)

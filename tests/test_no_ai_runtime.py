@@ -50,7 +50,7 @@ CORE_MODULES = [
     # V5 modules must ALSO import AI-free — providers load their SDK lazily,
     # only when instantiated. Importing these modules never does.
     "ui_discovery.semantic", "ui_discovery.llm", "ui_discovery.docgen",
-    "ui_discovery.narrate",
+    "ui_discovery.narrate", "ui_discovery.pipeline",
     "ui_discovery.qagen",
 ]
 

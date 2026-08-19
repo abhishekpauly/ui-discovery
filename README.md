@@ -78,6 +78,34 @@ output/<slug>/
   screenshot.png   # full-page screenshot
 ```
 
+## Run — everything at once (X1)
+
+```bash
+# crawl -> analyze -> semantic -> docgen -> qagen, into one output folder
+python -m ui_discovery.pipeline https://example.com --config scope.yaml
+
+# skip stages you don't want
+python -m ui_discovery.pipeline https://example.com --skip docgen --skip qagen
+```
+
+Every stage is the same function its individual CLI calls — the pipeline
+orchestrates, it does not reimplement, and both it and `crawl` resolve their
+settings through the same code so one config cannot mean two different crawls.
+A failing *report* stage is a warning, not an abort: the crawl is the
+expensive artifact and stays on disk.
+
+### Politeness (X5)
+
+```bash
+python -m ui_discovery.crawl https://portal.example.com     --max-requests-per-minute 60 --max-concurrency 4 --respect-robots-txt
+```
+
+Defaults are unchanged behavior (unlimited rate, Crawlee autoscaling,
+robots.txt ignored — the engine is pointed at products you own and are
+authorized to test). Set them when the target is shared infrastructure, where
+a rate cap is the difference between a capture and an incident. Also
+available as a `politeness:` block in the scope config.
+
 ## Run — V1 (crawl a site)
 
 ```bash
