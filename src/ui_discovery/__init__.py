@@ -34,6 +34,7 @@ _CRAWLER = "ui_discovery.crawler"
 _ANALYSIS = "ui_discovery.analysis"
 _DIFF = "ui_discovery.diff"
 _CONFIG = "ui_discovery.config"
+_SOURCEMAP = "ui_discovery.sourcemap"
 _INTERACTIONS = "ui_discovery.interactions"
 _AUTH = "ui_discovery.auth"
 _SEMANTIC = "ui_discovery.semantic"
@@ -56,6 +57,9 @@ _EXPORTS = {
     "Scope": _CONFIG,
     "load_scope": _CONFIG,
     "dump_scope": _CONFIG,
+    # V4 — source indexing and runtime->source correlation.
+    "index_repo": _SOURCEMAP,
+    "correlate": _SOURCEMAP,
     # Session auth — capture/load a logged-in Playwright storage state.
     "capture_session": _AUTH,
     "load_storage_state": _AUTH,

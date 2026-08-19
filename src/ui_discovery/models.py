@@ -345,6 +345,81 @@ class Diff(BaseModel):
     components: list[ComponentChange] = Field(default_factory=list)
 
 
+# --- V4: source correlation --------------------------------------------------
+
+
+class SourceRef(BaseModel):
+    """A location in the repo. Every claim V4 makes points at one of these, so
+    a reader can go and check it."""
+
+    path: str  # repo-relative, forward slashes
+    line: int = 0
+    snippet: str = ""
+
+
+class SourceComponent(BaseModel):
+    name: str
+    kind: str = "component"  # component | page | layout
+    ref: SourceRef
+    # Literal strings found in the component: labels, aria-labels, test ids.
+    labels: list[str] = Field(default_factory=list)
+    test_ids: list[str] = Field(default_factory=list)
+
+
+class SourceRoute(BaseModel):
+    path: str  # the route pattern as written, e.g. /orders/:id
+    component: Optional[str] = None
+    ref: Optional[SourceRef] = None
+
+
+class SourceEndpoint(BaseModel):
+    method: str = "GET"
+    url: str  # as written in source; may contain template placeholders
+    pattern: str = ""  # normalized, comparable to observed traffic
+    ref: Optional[SourceRef] = None
+
+
+class SourceIndex(BaseModel):
+    schema_version: str
+    engine_version: str
+    indexed_at: str
+    repo_path: str
+    stats: dict[str, int] = Field(default_factory=dict)
+    components: list[SourceComponent] = Field(default_factory=list)
+    routes: list[SourceRoute] = Field(default_factory=list)
+    endpoints: list[SourceEndpoint] = Field(default_factory=list)
+
+
+class Correlation(BaseModel):
+    """One link from something observed at runtime to something in source.
+
+    `confidence` is never omitted and never inflated: confirmed > high >
+    medium > low > unknown, each with the evidence that produced it. An
+    inference presented as a fact would make the whole report untrustworthy.
+    """
+
+    kind: str  # element | route | endpoint
+    runtime: str  # what was observed (accessible name / url / endpoint)
+    runtime_page: Optional[str] = None
+    source_name: Optional[str] = None
+    ref: Optional[SourceRef] = None
+    confidence: str = "unknown"  # confirmed|high|medium|low|unknown
+    evidence: str = ""
+    alternatives: list[str] = Field(default_factory=list)
+
+
+class CorrelationReport(BaseModel):
+    schema_version: str
+    engine_version: str
+    generated_at: str
+    repo_path: str
+    source_crawl_id: Optional[str] = None
+    stats: dict[str, int] = Field(default_factory=dict)
+    correlations: list[Correlation] = Field(default_factory=list)
+    unmatched_runtime: list[str] = Field(default_factory=list)
+    unmatched_source: list[str] = Field(default_factory=list)
+
+
 # --- V3: interaction + network models ---------------------------------------
 
 
