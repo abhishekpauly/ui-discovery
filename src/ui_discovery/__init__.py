@@ -48,6 +48,7 @@ _EXPORTS = {
     "extract_page": _EXTRACTION,
     # V1 — multi-page crawl.
     "crawl_site": _CRAWLER,
+    "CrawlOptions": _CRAWLER,
     # V2 — structural analysis over a crawl (fingerprints, regions, components).
     "analyze_crawl": _ANALYSIS,
     # V3 — safe interaction + network probe over one page.

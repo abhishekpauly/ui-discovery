@@ -63,12 +63,18 @@ def has_rendered(fingerprint: str) -> bool:
 def wait_for_dom_stable(
     page: Page,
     *,
+    networkidle: bool = True,
     timeout_ms: int = 8000,
     interval_ms: int = 250,
     required_stable_polls: int = 2,
 ) -> dict[str, Any]:
     """Poll `DOM_FINGERPRINT_JS` until the DOM stops changing *with content in
     it*, or `timeout_ms` elapses.
+
+    A page whose network never went idle is still fetching, so a 500ms lull
+    in the DOM means very little — under load, pages render in bursts with
+    gaps longer than that. When `networkidle` did not fire we therefore
+    demand a longer stretch of quiet before calling it settled.
 
     The "with content" part is not fussiness. An app shell that has not begun
     rendering produces an identical fingerprint on every poll, so a plain
@@ -82,6 +88,11 @@ def wait_for_dom_stable(
     full timeout and reports `dom_stable: false` — which is the honest answer,
     and is what the H4 empty-page check should be reacting to.
     """
+    if not networkidle:
+        # Still fetching: require a full second of quiet, and allow longer.
+        required_stable_polls = max(required_stable_polls, 4)
+        timeout_ms = max(timeout_ms, 15000)
+
     t0 = time.monotonic()
     deadline = t0 + timeout_ms / 1000
     last = None
@@ -144,7 +155,8 @@ def navigate(page: Page, url: str, timeout_ms: int = 30000) -> dict[str, Any]:
     # mid-render on SPAs that finish painting after their network traffic
     # settles (websocket-driven state, timers, CSS transitions).
     if signals["body_present"]:
-        signals.update(wait_for_dom_stable(page))
+        signals.update(wait_for_dom_stable(
+            page, networkidle=signals["networkidle"]))
     else:
         signals["dom_stable"] = False
         signals["dom_stable_wait_ms"] = 0

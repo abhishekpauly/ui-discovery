@@ -20,6 +20,7 @@ from typing import Optional
 from .adapters import build as build_adapters
 from .auth import DEFAULT_LOGGED_OUT_SIGNALS, DEFAULT_LOGIN_URL_PATTERNS
 from .config import Scope, load_scope
+from .crawler import CrawlOptions
 from .safety import SafetyPolicy
 
 
@@ -77,8 +78,8 @@ def auth_signals(scope: Scope) -> tuple[tuple[str, ...], tuple[str, ...]]:
     )
 
 
-def crawl_kwargs(scope: Scope, args) -> dict:  # noqa: ANN001
-    """Resolve every `crawl_site` tunable from flags + config, in one place.
+def crawl_options(scope: Scope, args) -> CrawlOptions:  # noqa: ANN001
+    """Resolve every crawl setting from flags + config, in one place.
 
     `crawl` and `pipeline` both need this. Duplicating it would let the two
     commands drift — the same config quietly producing different crawls
@@ -95,36 +96,36 @@ def crawl_kwargs(scope: Scope, args) -> dict:  # noqa: ANN001
     drop_params = getattr(args, "drop_param", None) or scope.identity.drop_params
     login_patterns, logged_out = auth_signals(scope)
 
-    return {
-        "max_pages": pick(flag("max_pages"), scope.budget.max_pages, 25),
-        "max_depth": pick(flag("max_depth"), scope.budget.max_depth, 3),
-        "headless": not getattr(args, "headed", False),
-        "dedupe_queries": pick(flag("dedupe_queries"),
-                               scope.identity.dedupe_queries, False),
-        "drop_params": frozenset(drop_params) or None,
-        "hash_routes": pick(flag("hash_routes"), scope.identity.hash_routes, False),
-        "probe": pick(flag("probe"), scope.capabilities.probe, False),
-        "max_interactions": pick(flag("max_interactions"),
-                                 scope.budget.max_interactions, 40),
-        "include": scope.scope.include,
-        "exclude": scope.scope.exclude,
-        "screenshots": pick(
+    return CrawlOptions(
+        max_pages=pick(flag("max_pages"), scope.budget.max_pages, 25),
+        max_depth=pick(flag("max_depth"), scope.budget.max_depth, 3),
+        headless=not getattr(args, "headed", False),
+        dedupe_queries=pick(flag("dedupe_queries"),
+                            scope.identity.dedupe_queries, False),
+        drop_params=frozenset(drop_params) or None,
+        hash_routes=pick(flag("hash_routes"), scope.identity.hash_routes, False),
+        probe=pick(flag("probe"), scope.capabilities.probe, False),
+        max_interactions=pick(flag("max_interactions"),
+                              scope.budget.max_interactions, 40),
+        include=scope.scope.include,
+        exclude=scope.scope.exclude,
+        screenshots=pick(
             False if getattr(args, "no_screenshots", None) else None,
             scope.capabilities.screenshots, True),
-        "accessibility_tree": scope.capabilities.accessibility_tree,
-        "login_url_patterns": login_patterns,
-        "logged_out_signals": logged_out,
-        "policy": safety_policy(scope),
-        "redact_keys": tuple(scope.privacy.redact_network_keys),
-        "adapters": adapters_for(scope),
-        "max_requests_per_minute": pick(
+        accessibility_tree=scope.capabilities.accessibility_tree,
+        login_url_patterns=login_patterns,
+        logged_out_signals=logged_out,
+        policy=safety_policy(scope),
+        redact_keys=tuple(scope.privacy.redact_network_keys),
+        adapters=tuple(adapters_for(scope)),
+        max_requests_per_minute=pick(
             flag("max_requests_per_minute"),
             scope.politeness.max_requests_per_minute, None),
-        "max_concurrency": pick(flag("max_concurrency"),
-                                scope.politeness.max_concurrency, 100),
-        "respect_robots_txt": pick(flag("respect_robots_txt"),
-                                   scope.politeness.respect_robots_txt, False),
-    }
+        max_concurrency=pick(flag("max_concurrency"),
+                             scope.politeness.max_concurrency, 100),
+        respect_robots_txt=pick(flag("respect_robots_txt"),
+                                scope.politeness.respect_robots_txt, False),
+    )
 
 
 def resolve_output_dir(scope: Scope, cli_output: Optional[str], slug: str) -> str:

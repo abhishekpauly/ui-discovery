@@ -94,6 +94,29 @@ settings through the same code so one config cannot mean two different crawls.
 A failing *report* stage is a warning, not an abort: the crawl is the
 expensive artifact and stays on disk.
 
+### Sites where `networkidle` never fires
+
+An SPA holding a websocket open never reaches network idle, so the generic
+DOM-stability check is doing all the work — and it cannot tell "finished"
+from "paused between fetches". Two crawls of an unchanged site then differ,
+which makes `diff` unusable.
+
+Give those apps a fixed settle window with the `extra_wait` adapter — see
+`examples/websocket-spa.scope.yaml`:
+
+```yaml
+adapters:
+  - name: extra_wait
+    options: { ms: 4000 }
+```
+
+Measured on a real portal: two consecutive crawls went from differing by 594
+elements to being **identical on all 8 pages**, with the only remaining diff
+being genuinely dynamic content (a rotating carousel, live timestamps).
+
+If a capture looks thin, compare `total_elements` across two runs before
+trusting it — instability shows up as pages that shrink.
+
 ### Politeness (X5)
 
 ```bash

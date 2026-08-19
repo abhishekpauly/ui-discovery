@@ -12,6 +12,7 @@ import json
 import tempfile
 import time
 import uuid
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -38,12 +39,18 @@ from .util import bfs_depths, normalize_url, resolve_links, slug_for, url_in_sco
 async def _wait_for_dom_stable_async(
     page,
     *,
+    networkidle: bool = True,
     timeout_ms: int = 8000,
     interval_ms: int = 250,
     required_stable_polls: int = 2,
 ) -> dict:
     """Async twin of `browser.wait_for_dom_stable` — see there for why an
     empty body never counts as stable."""
+    if not networkidle:
+        # Still fetching: require a full second of quiet, and allow longer.
+        required_stable_polls = max(required_stable_polls, 4)
+        timeout_ms = max(timeout_ms, 15000)
+
     t0 = time.monotonic()
     deadline = t0 + timeout_ms / 1000
     last = None
@@ -89,7 +96,8 @@ async def _readiness(page, response) -> dict:
     # Past networkidle, keep polling until the DOM stops mutating — protects
     # extraction/screenshots from firing mid-render (see browser.py).
     if signals["body_present"]:
-        signals.update(await _wait_for_dom_stable_async(page))
+        signals.update(await _wait_for_dom_stable_async(
+            page, networkidle=signals["networkidle"]))
     else:
         signals["dom_stable"] = False
         signals["dom_stable_wait_ms"] = 0
@@ -121,34 +129,114 @@ async def _aria(page) -> str | None:
         return None
 
 
+def _concurrency_kwargs(
+    max_requests_per_minute: float | None, max_concurrency: int | None,
+) -> dict:
+    """Crawlee options for politeness — or nothing at all.
+
+    Returning `{}` when neither limit is set is the point: Crawlee gives
+    browser crawlers `desired_concurrency=1` precisely because parallel
+    browser pages starve each other's rendering, and passing our own
+    ConcurrencySettings unconditionally overrode that with 10. On a real
+    portal that made pages settle half-rendered — one dropped from 528
+    elements to 28 — and two crawls of an *unchanged* site then diffed to
+    594 phantom removals.
+
+    So: only speak up when asked, and keep desired_concurrency at 1.
+    """
+    from crawlee import ConcurrencySettings
+
+    if max_requests_per_minute is None and max_concurrency is None:
+        return {}
+    ceiling = max_concurrency if max_concurrency is not None else 100
+    return {
+        "concurrency_settings": ConcurrencySettings(
+            max_concurrency=ceiling,
+            desired_concurrency=1,  # match Crawlee's browser-crawler default
+            max_tasks_per_minute=(max_requests_per_minute
+                                  if max_requests_per_minute else float("inf")),
+        )
+    }
+
+
+@dataclass(frozen=True)
+class CrawlOptions:
+    """Everything tunable about a crawl, in one object.
+
+    These were twenty-odd keyword arguments on `crawl_site`, which had stopped
+    being readable and made it impossible to pass a crawl's settings around as
+    a value. Grouping them costs nothing at the call site — `crawl_site` still
+    accepts them as keywords — but gives callers something they can build,
+    inspect, and reuse.
+
+    Every default reproduces the engine's behavior with no configuration.
+    """
+
+    # Budget
+    max_pages: int = 25
+    max_depth: int = 3
+    max_interactions: int = 40
+    # Runtime
+    headless: bool = True
+    # Page identity (H1)
+    dedupe_queries: bool = False
+    drop_params: frozenset[str] | None = None
+    hash_routes: bool = False
+    # Scope (S1)
+    include: list[str] | None = None
+    exclude: list[str] | None = None
+    # Capabilities (R2)
+    probe: bool = False
+    screenshots: bool = True
+    accessibility_tree: bool = True
+    # Auth-expiry signals (H4) — these extend the built-ins, never replace them
+    login_url_patterns: tuple[str, ...] | None = None
+    logged_out_signals: tuple[str, ...] | None = None
+    # Safety & privacy
+    policy: SafetyPolicy = DEFAULT_POLICY
+    redact_keys: tuple[str, ...] = ()
+    # Extensibility (R3)
+    adapters: tuple[Adapter, ...] = ()
+    # Politeness (X5)
+    max_requests_per_minute: float | None = None
+    # None means 'leave Crawlee's own default alone'. That default is
+    # desired_concurrency=1 for browser crawlers, chosen because parallel
+    # browser pages starve each other's rendering — passing a value here
+    # unconditionally silently raised it to 10 and made pages settle
+    # half-rendered.
+    max_concurrency: int | None = None
+    respect_robots_txt: bool = False
+
+    def replace(self, **overrides) -> "CrawlOptions":
+        """A copy with `overrides` applied. An unknown name raises TypeError,
+        so a typo is still an error rather than a silently ignored setting."""
+        if "adapters" in overrides and overrides["adapters"] is not None:
+            overrides["adapters"] = tuple(overrides["adapters"])
+        return replace(self, **{k: v for k, v in overrides.items()
+                                if v is not None or k in _NULLABLE})
+
+
+# Fields whose `None` is meaningful rather than "not specified".
+_NULLABLE = frozenset({
+    "drop_params", "include", "exclude", "login_url_patterns",
+    "logged_out_signals", "max_requests_per_minute", "max_concurrency",
+})
+
+
 async def crawl_site(
     start_url: str,
     *,
-    max_pages: int = 25,
-    max_depth: int = 3,
     output_dir: str = "output",
-    headless: bool = True,
     auth_state: dict | None = None,
-    dedupe_queries: bool = False,
-    drop_params: frozenset[str] | None = None,
-    hash_routes: bool = False,
-    probe: bool = False,
-    max_interactions: int = 40,
-    include: list[str] | None = None,
-    exclude: list[str] | None = None,
-    screenshots: bool = True,
-    accessibility_tree: bool = True,
-    login_url_patterns: tuple[str, ...] | None = None,
-    logged_out_signals: tuple[str, ...] | None = None,
-    policy: SafetyPolicy = DEFAULT_POLICY,
-    redact_keys: tuple[str, ...] = (),
-    adapters: list[Adapter] | None = None,
-    max_requests_per_minute: float | None = None,
-    max_concurrency: int = 100,
-    respect_robots_txt: bool = False,
+    options: CrawlOptions | None = None,
+    **overrides,
 ) -> Crawl:
     """Crawl a same-domain site starting at `start_url`, extracting a UI model
     for every discovered page, and return an assembled `Crawl`.
+
+    Settings come from `options` (a `CrawlOptions`), and any keyword arguments
+    override individual fields — so `crawl_site(url, max_depth=2)` still works
+    exactly as before, and an unknown keyword is still a TypeError.
 
     `dedupe_queries` / `drop_params` / `hash_routes` control page identity
     (see `util.normalize_url`) and are applied consistently to both the page
@@ -158,9 +246,25 @@ async def crawl_site(
     safe-interaction + network probe (H2) — as the same logged-in user, on
     the page the crawler already has open. Only structurally-safe controls
     are executed; see `interactions.probe_open_page_async`."""
+    opts = (options or CrawlOptions()).replace(**overrides)
+
+    # Unpacked into locals so the body below reads the same as it always has.
+    max_pages, max_depth = opts.max_pages, opts.max_depth
+    max_interactions, headless = opts.max_interactions, opts.headless
+    dedupe_queries, drop_params = opts.dedupe_queries, opts.drop_params
+    hash_routes, include, exclude = opts.hash_routes, opts.include, opts.exclude
+    probe, screenshots = opts.probe, opts.screenshots
+    accessibility_tree = opts.accessibility_tree
+    login_url_patterns = opts.login_url_patterns
+    logged_out_signals = opts.logged_out_signals
+    policy, redact_keys = opts.policy, opts.redact_keys
+    adapters = opts.adapters
+    max_requests_per_minute = opts.max_requests_per_minute
+    max_concurrency = opts.max_concurrency
+    respect_robots_txt = opts.respect_robots_txt
     # Imported here so the module imports cleanly even if crawlee isn't
     # installed (V0-only environments).
-    from crawlee import ConcurrencySettings, service_locator
+    from crawlee import service_locator
     from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
     from crawlee.storage_clients import MemoryStorageClient
 
@@ -238,18 +342,8 @@ async def crawl_site(
         max_requests_per_crawl=max_pages,   # page budget
         max_crawl_depth=max_depth,          # depth budget
         max_request_retries=2,              # retry budget
-        # X5: politeness. Crawlee autoscales up to these ceilings, so the
-        # defaults leave existing behavior unchanged.
-        concurrency_settings=ConcurrencySettings(
-            max_concurrency=max_concurrency,
-            # Crawlee's desired_concurrency defaults to 10 and must not exceed
-            # max_concurrency, so a cap below 10 would otherwise be rejected —
-            # exactly the low value someone throttling a shared host reaches for.
-            desired_concurrency=min(10, max_concurrency),
-            max_tasks_per_minute=(max_requests_per_minute
-                                  if max_requests_per_minute else float("inf")),
-        ),
         respect_robots_txt_file=respect_robots_txt,
+        **_concurrency_kwargs(max_requests_per_minute, max_concurrency),
     )
 
     # Authenticated portals: apply the saved session (cookies + localStorage)

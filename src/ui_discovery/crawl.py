@@ -18,7 +18,7 @@ import sys
 from .auth import load_storage_state
 from .cliconfig import (
     add_config_argument,
-    crawl_kwargs,
+    crawl_options,
     describe,
     load_or_exit,
     resolve_output_dir,
@@ -120,18 +120,18 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 1
 
-    kwargs = crawl_kwargs(scope, args)
+    options = crawl_options(scope, args)
     out_dir = resolve_output_dir(scope, args.output, slug_for(start_url))
 
     print(f"[INFO] Crawling {start_url} "
-          f"(max_pages={kwargs['max_pages']}, max_depth={kwargs['max_depth']})")
+          f"(max_pages={options.max_pages}, max_depth={options.max_depth})")
     try:
         crawl = asyncio.run(
             crawl_site(
                 start_url,
                 output_dir=str(out_dir),
                 auth_state=auth_state,
-                **kwargs,
+                options=options,
             )
         )
     except Exception as exc:

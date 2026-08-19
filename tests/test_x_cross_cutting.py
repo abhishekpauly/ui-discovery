@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from ui_discovery.cliconfig import crawl_kwargs
+from ui_discovery.cliconfig import crawl_options
 from ui_discovery.config import Scope
 from ui_discovery.crawler import crawl_site
 
@@ -42,17 +42,17 @@ def test_politeness_read_from_config():
         "max_concurrency": 2,
         "respect_robots_txt": True,
     }})
-    kwargs = crawl_kwargs(scope, _Args())
-    assert kwargs["max_requests_per_minute"] == 30
-    assert kwargs["max_concurrency"] == 2
-    assert kwargs["respect_robots_txt"] is True
+    opts = crawl_options(scope, _Args())
+    assert opts.max_requests_per_minute == 30
+    assert opts.max_concurrency == 2
+    assert opts.respect_robots_txt is True
 
 
 def test_politeness_flag_beats_config():
     scope = Scope.model_validate(
         {"politeness": {"max_requests_per_minute": 30}})
-    kwargs = crawl_kwargs(scope, _Args(max_requests_per_minute=5.0))
-    assert kwargs["max_requests_per_minute"] == 5.0
+    opts = crawl_options(scope, _Args(max_requests_per_minute=5.0))
+    assert opts.max_requests_per_minute == 5.0
 
 
 def test_rate_limited_crawl_still_completes(serve, tmp_path):
@@ -163,19 +163,19 @@ def test_a_failing_report_stage_does_not_lose_the_crawl(
 
 
 def test_pipeline_and_crawl_resolve_settings_identically(tmp_path):
-    # Both commands go through crawl_kwargs, so the same config cannot
+    # Both commands go through crawl_options, so the same config cannot
     # produce different crawls depending on which entry point was used.
     scope = Scope.model_validate({
         "budget": {"max_pages": 7, "max_depth": 2},
         "capabilities": {"probe": True, "screenshots": False},
         "identity": {"dedupe_queries": True},
     })
-    kwargs = crawl_kwargs(scope, _Args())
-    assert kwargs["max_pages"] == 7
-    assert kwargs["max_depth"] == 2
-    assert kwargs["probe"] is True
-    assert kwargs["screenshots"] is False
-    assert kwargs["dedupe_queries"] is True
+    opts = crawl_options(scope, _Args())
+    assert opts.max_pages == 7
+    assert opts.max_depth == 2
+    assert opts.probe is True
+    assert opts.screenshots is False
+    assert opts.dedupe_queries is True
 
 
 # --- readiness: "hasn't started" is not "settled" ----------------------------
@@ -213,3 +213,60 @@ def test_a_genuinely_empty_page_reports_not_stable():
     assert has_rendered("25:8:0:0") is False          # `<div id="root"></div>`
     assert has_rendered("") is False
     assert has_rendered("garbage") is False
+
+
+# --- CrawlOptions -----------------------------------------------------------
+
+def test_crawl_options_defaults_are_the_engine_defaults():
+    from ui_discovery import CrawlOptions
+
+    o = CrawlOptions()
+    assert (o.max_pages, o.max_depth) == (25, 3)
+    assert o.headless is True
+    assert o.screenshots is True
+    assert o.probe is False
+
+
+def test_keyword_overrides_still_work_on_crawl_site():
+    # The whole point of the refactor: 40-odd existing call sites keep
+    # passing plain keywords and nothing about them changes.
+    import inspect
+
+    from ui_discovery.crawler import crawl_site
+
+    params = list(inspect.signature(crawl_site).parameters)
+    assert params == ["start_url", "output_dir", "auth_state", "options",
+                      "overrides"]
+
+
+def test_options_replace_ignores_unset_flags_but_honours_meaningful_none():
+    from ui_discovery import CrawlOptions
+
+    base = CrawlOptions()
+    # `None` from an unset argparse flag must not wipe out a real default...
+    assert base.replace(max_depth=None).max_depth == 3
+    # ...but `None` is a real value for the nullable fields.
+    assert base.replace(include=None).include is None
+
+
+def test_a_mistyped_option_is_still_an_error():
+    from ui_discovery import CrawlOptions
+
+    with pytest.raises(TypeError):
+        CrawlOptions().replace(max_dpeth=2)
+
+
+def test_options_are_reusable_across_crawls(serve, tmp_path):
+    from ui_discovery import CrawlOptions
+
+    site = serve("fixtures/site")
+    options = CrawlOptions(max_depth=0, max_pages=1, screenshots=False)
+    first = asyncio.run(crawl_site(site.url("index.html"),
+                                   output_dir=str(tmp_path / "a"),
+                                   options=options))
+    second = asyncio.run(crawl_site(site.url("about.html"),
+                                    output_dir=str(tmp_path / "b"),
+                                    options=options))
+    assert first.pages and second.pages
+    assert all(n.page.screenshot_path is None for n in first.pages)
+    assert all(n.page.screenshot_path is None for n in second.pages)

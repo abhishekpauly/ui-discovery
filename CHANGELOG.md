@@ -100,6 +100,16 @@ behind the code.
   frame-relative selector resolved against the page — which can match a
   *different* element. They are observe-only now.
 - `load_storage_state` rejected session files carrying a UTF-8 BOM.
+- **X5 silently raised browser concurrency from 1 to 10.** Crawlee defaults
+  browser crawlers to `desired_concurrency=1` because parallel browser pages
+  starve each other's rendering; passing our own `ConcurrencySettings`
+  unconditionally overrode that. Pages then settled half-rendered — one went
+  from 528 elements to 28 — and two crawls of an *unchanged* site diffed to
+  594 phantom removals. Politeness settings are now only sent to Crawlee when
+  actually requested, and keep `desired_concurrency=1`.
+- Stability was declared after 500ms of quiet even when the network had never
+  gone idle, which under load is just a gap between render bursts. A page
+  still fetching now has to stay quiet four times as long.
 - A concurrency cap below 10 was rejected outright by Crawlee's default
   `desired_concurrency` — the exact value someone throttling a shared host
   would reach for.
@@ -108,6 +118,9 @@ behind the code.
   `server_close()`), which hung any test that rebound one.
 
 ### Changed
+- `crawl_site` takes a `CrawlOptions` object instead of 23 keyword arguments.
+  Existing keyword calls still work unchanged (`crawl_site(url, max_depth=2)`),
+  and a mistyped option is still a `TypeError`.
 - `pyyaml` added to core dependencies (pinned `6.0.3` — the first release with
   a Python 3.14 wheel). JSON configs work without it.
 - `SCHEMA_VERSION` stays `0.1.0`: every model change above is additive (new

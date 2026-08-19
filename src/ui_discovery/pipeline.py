@@ -23,7 +23,7 @@ from .analysis import analyze_crawl
 from .auth import load_storage_state
 from .cliconfig import (
     add_config_argument,
-    crawl_kwargs,
+    crawl_options,
     describe,
     load_or_exit,
     resolve_output_dir,
@@ -140,13 +140,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     results: dict = {}
 
     # --- crawl (the one stage that must succeed) ---------------------------
-    kwargs = crawl_kwargs(scope, args)
+    options = crawl_options(scope, args)
     print("[INFO] --- crawl ---")
-    print(f"[INFO] Crawling {start_url} (max_pages={kwargs['max_pages']}, "
-          f"max_depth={kwargs['max_depth']}, probe={kwargs['probe']})")
+    print(f"[INFO] Crawling {start_url} (max_pages={options.max_pages}, "
+          f"max_depth={options.max_depth}, probe={options.probe})")
     try:
         crawl = asyncio.run(crawl_site(
-            start_url, output_dir=str(out_dir), auth_state=auth_state, **kwargs,
+            start_url, output_dir=str(out_dir), auth_state=auth_state,
+            options=options,
         ))
     except Exception as exc:
         print(f"[ERROR] Crawl failed: {exc}", file=sys.stderr)

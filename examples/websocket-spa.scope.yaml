@@ -1,0 +1,25 @@
+# Example: an SPA that holds a websocket open.
+#
+# `networkidle` never fires on these, so the generic DOM-plateau check is
+# doing all the work and cannot tell "finished" from "between fetches".
+# Two crawls of an unchanged site then differ, which makes `diff` useless.
+# A fixed settle window fixes it: measured on a real portal, this took two
+# consecutive crawls from differing by 594 elements to being identical.
+#
+target: my-portal
+start_url: https://portal.example.com/dashboard
+environment: staging
+authorized: true
+authorized_by: your-name
+auth:
+  required: true
+  state_file: session.json
+budget:
+  max_pages: 8
+  max_depth: 1
+# This app holds a websocket open, so `networkidle` never fires and the
+# generic DOM-plateau check cannot tell "finished" from "between fetches".
+# A fixed settle window is the honest fix for it.
+adapters:
+  - name: extra_wait
+    options: { ms: 4000 }
