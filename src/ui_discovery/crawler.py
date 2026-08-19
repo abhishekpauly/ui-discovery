@@ -18,6 +18,7 @@ from pathlib import Path
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from . import SCHEMA_VERSION, __version__
+from .auth import check_auth
 from .browser import DOM_FINGERPRINT_JS
 from .extraction import (
     JS,
@@ -279,6 +280,16 @@ async def crawl_site(
             frames=frames,
         )
 
+        # H4: a login page reached *with* a session in hand means that session
+        # is no longer good. Warn per page — a silent crawl of login screens is
+        # the failure mode this exists to prevent.
+        model.auth = check_auth(model)
+        if (model.auth.looks_logged_out or model.auth.looks_empty) and auth_state:
+            context.log.warning(
+                f"Session may be rejected at {url}: "
+                f"{model.auth.signal} ({model.auth.evidence})"
+            )
+
         # Build the page graph from the extracted anchors (deterministic, and
         # independent of Crawlee's internal enqueue bookkeeping).
         hrefs = [
@@ -344,6 +355,12 @@ async def crawl_site(
         key=lambda n: (n.depth if n.depth is not None else 10**9, n.url),
     )
     discovered = set(nodes) | {dst for outs in edges.values() for dst in outs}
+    logged_out = sum(
+        1 for n in nodes.values() if n.page.auth and n.page.auth.looks_logged_out
+    )
+    empty = sum(
+        1 for n in nodes.values() if n.page.auth and n.page.auth.looks_empty
+    )
 
     return Crawl(
         schema_version=SCHEMA_VERSION,
@@ -359,6 +376,7 @@ async def crawl_site(
             dedupe_queries=dedupe_queries,
             hash_routes=hash_routes,
             probe=probe,
+            auth_used=bool(auth_state),
         ),
         stats=CrawlStats(
             pages_crawled=len(nodes),
@@ -366,6 +384,12 @@ async def crawl_site(
             unique_urls=len(discovered),
             links_discovered=len(navigation),
             runtime_seconds=round(runtime, 3),
+            pages_logged_out=logged_out,
+            pages_empty=empty,
+            # Only an expiry if we actually presented a session. A blank app
+            # counts: some SPAs render nothing rather than redirect when their
+            # token is rejected.
+            auth_expired=bool(auth_state) and (logged_out + empty) > 0,
         ),
         navigation=navigation,
         pages=ordered,

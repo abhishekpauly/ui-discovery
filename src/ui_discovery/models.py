@@ -69,6 +69,25 @@ class Heading(BaseModel):
     frame: Optional[str] = None
 
 
+class AuthCheck(BaseModel):
+    """Whether a page looks like a logged-out / login page.
+
+    This is a statement about the *page*, not about the session: a login page
+    is the expected result of crawling without credentials. It only becomes an
+    error when a session was supplied and we landed here anyway — see
+    `CrawlStats.auth_expired`.
+    """
+
+    looks_logged_out: bool = False
+    # A settled page with no headings and no interactive elements at all. Not
+    # a login page — an app that rendered nothing, which is what some SPAs do
+    # when their token is rejected. Tracked separately because the evidence is
+    # different, but it fails a capture just as thoroughly, and more quietly.
+    looks_empty: bool = False
+    signal: Optional[str] = None    # which rule fired
+    evidence: Optional[str] = None  # the matching text/url, for the report
+
+
 class FrameInfo(BaseModel):
     """One iframe seen on the page, and whether we entered it.
 
@@ -108,6 +127,9 @@ class Page(BaseModel):
     # H3: every iframe seen, and whether its contents were merged above.
     frames: list[FrameInfo] = Field(default_factory=list)
 
+    # H4: does this page look like a login / logged-out page?
+    auth: Optional[AuthCheck] = None
+
     # The browser's own ARIA snapshot (YAML) — ground-truth-ish a11y tree,
     # kept alongside the deterministic per-element pass rather than instead of.
     accessibility_tree: Optional[str] = None
@@ -126,6 +148,7 @@ class CrawlConfig(BaseModel):
     dedupe_queries: bool = False  # H1: noise query params collapsed?
     hash_routes: bool = False  # H1: `#/route` fragments treated as pages?
     probe: bool = False  # H2: safe interaction/network probe per page?
+    auth_used: bool = False  # H4: was a saved session supplied?
 
 
 class CrawlStats(BaseModel):
@@ -134,6 +157,12 @@ class CrawlStats(BaseModel):
     unique_urls: int
     links_discovered: int
     runtime_seconds: float
+    # H4: pages that looked logged-out or rendered nothing, and whether that
+    # means the supplied session was rejected (only meaningful when a session
+    # was actually used).
+    pages_logged_out: int = 0
+    pages_empty: int = 0
+    auth_expired: bool = False
 
 
 class PageNode(BaseModel):

@@ -96,6 +96,21 @@ def build_markdown(crawl: Crawl) -> str:
                  f"navigation edges: {s.links_discovered}")
     lines.append("")
 
+    if s.auth_expired:
+        lines.append(f"> ⚠️ **Session rejected.** Of {s.pages_crawled} crawled "
+                     f"pages, {s.pages_logged_out} look logged-out and "
+                     f"{s.pages_empty} rendered nothing — despite a saved "
+                     f"session being supplied. This capture is of the "
+                     f"login/blank state, not the product. Re-capture the "
+                     f"session and crawl again.")
+        lines.append("")
+    elif s.pages_logged_out or s.pages_empty:
+        lines.append(f"> ℹ️ {s.pages_logged_out} page(s) look logged-out and "
+                     f"{s.pages_empty} rendered nothing. No session was "
+                     f"supplied, so this may be expected; pass `--auth-state` "
+                     f"to capture the signed-in product.")
+        lines.append("")
+
     lines.append("## Page graph")
     lines.append("")
     lines.append("Pages by depth from the start URL:")
@@ -202,6 +217,26 @@ def build_html(crawl: Crawl) -> str:
     totals_str = " · ".join(f"{esc(k)}: <b>{esc(v)}</b>"
                             for k, v in sorted(totals.items(), key=lambda kv: -kv[1]))
 
+    # H4: a banner, not a footnote — a crawl of login screens that reports
+    # "42 pages captured" is worse than useless if the reader misses why.
+    auth_html = ""
+    if s.auth_expired:
+        auth_html = (
+            f'<p class="banner error"><b>Session rejected.</b> Of '
+            f'{esc(s.pages_crawled)} crawled pages, '
+            f'{esc(s.pages_logged_out)} look logged-out and '
+            f'{esc(s.pages_empty)} rendered nothing — despite a saved session '
+            f'being supplied. This capture is of the login/blank state, not '
+            f'the product.</p>'
+        )
+    elif s.pages_logged_out or s.pages_empty:
+        auth_html = (
+            f'<p class="banner note">{esc(s.pages_logged_out)} page(s) look '
+            f'logged-out and {esc(s.pages_empty)} rendered nothing. No session '
+            f'was supplied, so this may be expected; pass '
+            f'<code>--auth-state</code> to capture the signed-in product.</p>'
+        )
+
     # H2: probe sections appear only when the crawl actually probed.
     probe_html = ""
     pt = _probe_totals(crawl)
@@ -248,10 +283,14 @@ destructive ones are observed and refused.</p>
   .meta {{ color: #666; font-size: 13px; }}
   .kpis span {{ display:inline-block; background:#f4f4f5; border-radius:6px;
                padding:6px 10px; margin:3px; }}
+  .banner {{ padding: 10px 12px; border-radius: 6px; border-left: 4px solid; }}
+  .banner.error {{ background:#fef2f2; border-color:#b91c1c; color:#7f1d1d; }}
+  .banner.note {{ background:#f4f4f5; border-color:#9ca3af; color:#374151; }}
 </style></head><body>
 <h1>UI Crawl Report</h1>
 <p class="meta">Start <code>{esc(c.start_url)}</code> · crawl <code>{esc(crawl.crawl_id)}</code>
  · engine {esc(crawl.engine_version)} · schema {esc(crawl.schema_version)}</p>
+{auth_html}
 <div class="kpis">
   <span>Pages crawled: <b>{esc(s.pages_crawled)}</b></span>
   <span>Failed: <b>{esc(s.pages_failed)}</b></span>

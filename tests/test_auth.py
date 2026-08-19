@@ -94,6 +94,14 @@ def test_load_storage_state_roundtrip(tmp_path):
     assert load_storage_state(str(p)) == {"cookies": [], "origins": []}
 
 
+def test_load_storage_state_tolerates_a_utf8_bom(tmp_path):
+    # A session file re-saved by a Windows editor (or PowerShell's
+    # `Set-Content -Encoding utf8`) carries a BOM. It is still a valid session.
+    p = tmp_path / "session_bom.json"
+    p.write_text(json.dumps({"cookies": [], "origins": []}), encoding="utf-8-sig")
+    assert load_storage_state(str(p)) == {"cookies": [], "origins": []}
+
+
 def test_load_storage_state_none():
     assert load_storage_state(None) is None
 

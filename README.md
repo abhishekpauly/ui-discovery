@@ -237,6 +237,42 @@ per-page probe line. The same safety rules apply as in single-page `probe`.
 A probe failure never fails the crawl — the page's extraction is still valid
 without it, and the failure is logged as a warning.
 
+## Session expiry (H4)
+
+A saved session eventually goes stale. Without a check, the engine keeps
+crawling and reports "42 pages captured" — of the login screen. Every page is
+checked, and the result recorded on `page.auth`:
+
+| Signal | Meaning |
+| --- | --- |
+| `password-field` | A visible password input — you are not signed in |
+| `login-url` | The final URL is a login/SSO path segment |
+| `logged-out-title` / `-heading` | The page says "sign in", "session expired", … |
+| `empty-page` | Settled, but **nothing rendered** — no headings, no controls |
+
+That last one matters more than it looks. Some SPAs don't redirect when their
+token is rejected; they render a blank screen. Observed on a real portal: a
+crawl with a corrupted token reported `1 pages (0 failed)` and a white
+screenshot, with nothing to indicate the capture was worthless.
+
+Landing on a login page is only an *error* when a session was supplied —
+without one it's expected. When a session was supplied and pages come back
+logged-out or blank, the crawl sets `stats.auth_expired`, banners the report,
+and prints the command to fix it:
+
+```
+[ERROR] Session appears REJECTED — of 1 crawled pages, 1 rendered nothing at all.
+        This capture is of the login/blank state, not the product. Re-capture:
+        python -m ui_discovery.login https://portal.example.com --output session.json
+```
+
+Add `--fail-on-auth-expiry` to exit non-zero (2) instead of just warning —
+useful in CI, where a silent capture of login screens is worse than a failure.
+
+Matching is on word boundaries, deliberately: substring matching would report
+"De**signin**g reports" as a login page, and a false expiry turns a healthy
+crawl into a spurious failure.
+
 ## Authenticated portals
 
 For a portal behind a login, capture a session once, then reuse it. No

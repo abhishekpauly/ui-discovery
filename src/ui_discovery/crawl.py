@@ -61,6 +61,11 @@ def main(argv: list[str] | None = None) -> int:
         "--max-interactions", type=int, default=40,
         help="Per-page interaction budget when --probe is set (default: 40).",
     )
+    parser.add_argument(
+        "--fail-on-auth-expiry", action="store_true",
+        help="Exit non-zero if a saved session turns out to be expired "
+             "(a login page was reached while authenticated).",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -101,6 +106,30 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[INFO] Wrote {paths['json']}")
     print(f"[INFO] Wrote {paths['markdown']}")
     print(f"[INFO] Wrote {paths['html']}")
+
+    # H4: say it loudly. Crawling a wall of login screens and reporting
+    # "success" is the failure this check exists to prevent.
+    if s.auth_expired:
+        symptom = []
+        if s.pages_logged_out:
+            symptom.append(f"{s.pages_logged_out} look logged-out")
+        if s.pages_empty:
+            symptom.append(f"{s.pages_empty} rendered nothing at all")
+        print(
+            f"\n[ERROR] Session appears REJECTED — of {s.pages_crawled} "
+            f"crawled pages, {' and '.join(symptom)}.\n"
+            f"         This capture is of the login/blank state, not the "
+            f"product. Re-capture the session:\n"
+            f"         python -m ui_discovery.login {args.url} "
+            f"--output {args.auth_state}",
+            file=sys.stderr,
+        )
+        if args.fail_on_auth_expiry:
+            return 2
+    elif s.pages_logged_out or s.pages_empty:
+        print(f"[WARN] {s.pages_logged_out} page(s) look logged-out, "
+              f"{s.pages_empty} rendered nothing "
+              f"(no session was supplied).", file=sys.stderr)
     return 0
 
 

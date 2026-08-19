@@ -16,6 +16,7 @@ from playwright.sync_api import sync_playwright
 from urllib.parse import urlparse
 
 from . import SCHEMA_VERSION, __version__
+from .auth import check_auth
 from .browser import aria_snapshot, navigate
 from .models import Element, FrameInfo, Geometry, Heading, Page
 
@@ -239,7 +240,7 @@ def extract_page(
                 page.screenshot(path=screenshot_path, full_page=True)
                 saved_screenshot = screenshot_path
 
-            return assemble_page(
+            page_model = assemble_page(
                 requested_url=url,
                 raw=raw,
                 readiness=readiness,
@@ -248,5 +249,7 @@ def extract_page(
                 viewport=viewport,
                 frames=frames,
             )
+            page_model.auth = check_auth(page_model)
+            return page_model
         finally:
             browser.close()

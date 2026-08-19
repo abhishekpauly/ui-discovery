@@ -81,6 +81,18 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[INFO] Readiness: {page.readiness}")
     print(f"[INFO] Wrote {json_path}")
     print(f"[INFO] Screenshot {screenshot_path}")
+
+    # H4: extracting a login page when you passed a session means it expired.
+    if page.auth and page.auth.looks_logged_out:
+        if auth_state:
+            print(f"\n[ERROR] Session appears EXPIRED — this page looks "
+                  f"logged-out ({page.auth.signal}: {page.auth.evidence}).\n"
+                  f"         Re-capture it:  python -m ui_discovery.login "
+                  f"{args.url} --output {args.auth_state}", file=sys.stderr)
+        else:
+            print(f"[WARN] This page looks logged-out "
+                  f"({page.auth.signal}). Pass --auth-state to crawl as a "
+                  f"signed-in user.", file=sys.stderr)
     return 0
 
 
