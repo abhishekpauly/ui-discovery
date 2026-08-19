@@ -29,6 +29,7 @@ from .cliconfig import (
     resolve_output_dir,
 )
 from .crawler import crawl_site
+from .inventory import write_inventory
 from .reports import (
     write_analysis,
     write_documentation,
@@ -67,8 +68,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="Start URL. Optional if the config sets start_url.")
     add_config_argument(parser)
     parser.add_argument("--output", default=None, help="Output directory.")
-    parser.add_argument("--headed", action="store_true",
-                        help="Run browser headed.")
+    parser.add_argument(
+        "--headless", action="store_true",
+        help="Hide the browser. The crawler runs headed by default so "
+             "you can watch it; use this for CI or unattended runs.",
+    )
     parser.add_argument("--auth-state", default=None,
                         help="Path to a saved session.")
     parser.add_argument("--max-pages", type=int, default=None)
@@ -154,6 +158,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
     crawl.config.config_file = args.config
     write_reports(crawl, str(out_dir))
+    write_inventory(crawl, str(out_dir))
     s = crawl.stats
     print(f"[INFO] Crawled {s.pages_crawled} pages "
           f"({s.pages_failed} failed) in {s.runtime_seconds}s")

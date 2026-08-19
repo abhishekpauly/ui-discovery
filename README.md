@@ -2,11 +2,22 @@
 
 A framework-agnostic UI intelligence engine. It renders a permitted web
 application in a real browser and produces a structured, deterministic model of
-its UI — not scraped text. This repo is at **V3** (extractor + crawler +
-analysis + safe interaction/network probe).
+its UI — not scraped text. The roadmap is **complete** as of 0.12.0:
+extractor, crawler, structural analysis, safe interaction/network probe,
+change diff, scope configs, adapters, source correlation, and generated docs
+and test skeletons.
 
 See `ui-discovery-engine-brief.md` (in the project) for the full vision and the
 V0→V5 phase plan.
+
+**New here?** Two guides:
+
+- [`RUNBOOK.md`](RUNBOOK.md) — step-by-step, copy-pasteable commands to run a crawl.
+- [`PRODUCT_GUIDE.md`](PRODUCT_GUIDE.md) — what it can do, how it works, and how far to trust the output.
+
+Every run writes, into `output/<product>/`: `summary.md` (start here), `urls.txt`,
+`elements.csv`, `endpoints.md`, `screenshots/`, plus the canonical `crawl.json`.
+The browser is **visible by default** — pass `--headless` for CI.
 
 ## What's built
 

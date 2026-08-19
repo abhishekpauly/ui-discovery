@@ -14,6 +14,7 @@ nobody typed is exactly the bug this avoids.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from typing import Optional
 
@@ -99,7 +100,10 @@ def crawl_options(scope: Scope, args) -> CrawlOptions:  # noqa: ANN001
     return CrawlOptions(
         max_pages=pick(flag("max_pages"), scope.budget.max_pages, 25),
         max_depth=pick(flag("max_depth"), scope.budget.max_depth, 3),
-        headless=not getattr(args, "headed", False),
+        # Headed by default from the CLIs: someone running this by hand
+        # should see what it is doing. The library default stays headless,
+        # since programmatic callers and tests do not want windows.
+        headless=bool(getattr(args, "headless", False)),
         dedupe_queries=pick(flag("dedupe_queries"),
                             scope.identity.dedupe_queries, False),
         drop_params=frozenset(drop_params) or None,
@@ -128,9 +132,23 @@ def crawl_options(scope: Scope, args) -> CrawlOptions:  # noqa: ANN001
     )
 
 
+def run_folder_name(scope: Scope, slug: str) -> str:
+    """The per-run folder name: the **product name** when the config gives one
+    (`outputs.run_label`, else `target`), otherwise the URL slug.
+
+    A folder called `acme-portal` is findable months later; one called
+    `portal.example.com_platform_dashboard` is not.
+    """
+    label = scope.outputs.run_label or scope.target
+    if not label:
+        return slug
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", label.strip()).strip("-._")
+    return cleaned[:80] or slug
+
+
 def resolve_output_dir(scope: Scope, cli_output: Optional[str], slug: str) -> str:
-    """`<dir>/<slug>`, or `<dir>/<YYYY-MM-DD>/<slug>` when the config asks to
-    keep history — two snapshots are what `diff` needs, and re-running
+    """`<dir>/<product>`, or `<dir>/<YYYY-MM-DD>/<product>` when the config
+    asks to keep history — two snapshots are what `diff` needs, and re-running
     otherwise overwrites the previous one in place."""
     from datetime import date
     from pathlib import Path
@@ -138,7 +156,7 @@ def resolve_output_dir(scope: Scope, cli_output: Optional[str], slug: str) -> st
     root = Path(pick(cli_output, scope.outputs.dir, "output"))
     if scope.outputs.keep_history:
         root = root / date.today().isoformat()
-    return str(root / slug)
+    return str(root / run_folder_name(scope, slug))
 
 
 def describe(scope: Scope, config_path: Optional[str]) -> list[str]:

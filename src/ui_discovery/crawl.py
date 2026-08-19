@@ -24,6 +24,7 @@ from .cliconfig import (
     resolve_output_dir,
 )
 from .crawler import crawl_site
+from .inventory import write_inventory
 from .reports import write_reports
 from .util import slug_for
 
@@ -43,7 +44,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-pages", type=int, default=None, help="Page budget.")
     parser.add_argument("--max-depth", type=int, default=None, help="Depth budget.")
     parser.add_argument("--output", default=None, help="Output directory.")
-    parser.add_argument("--headed", action="store_true", help="Run browser headed.")
+    parser.add_argument(
+        "--headless", action="store_true",
+        help="Hide the browser. The crawler runs headed by default so "
+             "you can watch it; use this for CI or unattended runs.",
+    )
     parser.add_argument(
         "--auth-state", default=None,
         help="Path to a saved session (see: python -m ui_discovery.login).",
@@ -142,6 +147,8 @@ def main(argv: list[str] | None = None) -> int:
     # for is worthless if the capture doesn't name the scope it ran under.
     crawl.config.config_file = args.config
     paths = write_reports(crawl, str(out_dir))
+    # Every run leaves the plain-facts artifacts behind, not just the model.
+    write_inventory(crawl, str(out_dir))
     s = crawl.stats
     print(f"[INFO] Crawled {s.pages_crawled} pages "
           f"({s.pages_failed} failed) in {s.runtime_seconds}s")
@@ -149,6 +156,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[INFO] Wrote {paths['json']}")
     print(f"[INFO] Wrote {paths['markdown']}")
     print(f"[INFO] Wrote {paths['html']}")
+    print(f"[INFO] Artifacts in {out_dir}: summary.md · urls.txt · "
+          f"elements.csv · endpoints.md · screenshots/")
 
     # H4: say it loudly. Crawling a wall of login screens and reporting
     # "success" is the failure this check exists to prevent.
