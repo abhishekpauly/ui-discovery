@@ -266,6 +266,37 @@ re-crawling:
 Plus the browser's own **ARIA snapshot** (`accessibility_tree`), kept alongside
 the deterministic pass rather than instead of it.
 
+## Use as a library
+
+Every capability above is importable and composable — the CLIs
+(`python -m ui_discovery.crawl`, etc.) are thin wrappers over the same
+functions exported from the top-level `ui_discovery` package:
+
+```python
+import ui_discovery
+
+# V0 -> V1 -> V2, no CLI involved.
+page = ui_discovery.extract_page("https://example.com")
+crawl = ui_discovery.crawl_site("https://example.com", max_pages=10, max_depth=2)
+analysis = ui_discovery.analyze_crawl(crawl)
+paths = ui_discovery.write_analysis(analysis, "output/example.com")
+
+# Authenticated sites: capture a session once, reuse it everywhere.
+ui_discovery.capture_session("https://portal.example.com/login", "session.json")
+auth_state = ui_discovery.load_storage_state("session.json")
+crawl = ui_discovery.crawl_site("https://portal.example.com", auth_state=auth_state)
+
+# V5 (deterministic by default; pass provider_name="anthropic" etc. to refine).
+semantics = ui_discovery.classify_analysis(analysis)
+doc = ui_discovery.generate_documentation(crawl, analysis, semantics)
+qa_plan = ui_discovery.generate_qa_plan(crawl, analysis, semantics, probe=None)
+```
+
+Exports are resolved lazily (`ui_discovery/__init__.py`'s `__getattr__`), so
+`import ui_discovery` stays cheap and AI-free even though `classify_analysis`
+/ `generate_documentation` / `generate_qa_plan` live in V5 modules — nothing
+in the import path pulls in an LLM SDK; see `tests/test_no_ai_runtime.py`.
+
 ## Design invariants (carried from the brief)
 
 - **Structured data is the source of truth.** `page.json` (Pydantic-validated)

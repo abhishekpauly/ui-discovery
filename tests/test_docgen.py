@@ -89,7 +89,7 @@ def test_reports_written(context, tmp_path):
     paths = write_documentation(doc, str(tmp_path))
     for p in paths.values():
         assert Path(p).exists()
-    md = (tmp_path / "documentation.md").read_text()
+    md = (tmp_path / "documentation.md").read_text(encoding="utf-8")
     assert "UI Documentation" in md and "Overview" in md
 
 
