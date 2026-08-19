@@ -32,6 +32,7 @@ SCHEMA_VERSION = "0.1.0"
 _EXTRACTION = "ui_discovery.extraction"
 _CRAWLER = "ui_discovery.crawler"
 _ANALYSIS = "ui_discovery.analysis"
+_DIFF = "ui_discovery.diff"
 _INTERACTIONS = "ui_discovery.interactions"
 _AUTH = "ui_discovery.auth"
 _SEMANTIC = "ui_discovery.semantic"
@@ -48,6 +49,8 @@ _EXPORTS = {
     "analyze_crawl": _ANALYSIS,
     # V3 — safe interaction + network probe over one page.
     "probe_page": _INTERACTIONS,
+    # C1 — deterministic change diff between two analyses.
+    "diff_analyses": _DIFF,
     # Session auth — capture/load a logged-in Playwright storage state.
     "capture_session": _AUTH,
     "load_storage_state": _AUTH,
@@ -66,6 +69,7 @@ _EXPORTS = {
     "write_semantics": _REPORTS,
     "write_documentation": _REPORTS,
     "write_qaplan": _REPORTS,
+    "write_diff": _REPORTS,
 }
 
 # The underlying function names differ from their public alias in two cases

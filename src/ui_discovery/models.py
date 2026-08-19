@@ -208,6 +208,72 @@ class Analysis(BaseModel):
     navigations: list[NavigationMenu] = Field(default_factory=list)
 
 
+# --- C1: change diff between two snapshots ----------------------------------
+
+
+class ElementChange(BaseModel):
+    """One element-level change on a page.
+
+    `kind="renamed"` is the payoff of fingerprinting: the *same* control (same
+    structural identity) carrying a different accessible name. It is reported
+    separately from an add + a remove because it is a different fact about the
+    product — a label changed, not a control appeared.
+    """
+
+    page_url: str
+    kind: str  # added | removed | renamed
+    fingerprint: str
+    category: str = ""
+    role: Optional[str] = None
+    accessible_name: Optional[str] = None
+    previous_name: Optional[str] = None  # renamed only
+    landmark: Optional[str] = None
+    match: Optional[str] = None  # how a rename was matched: fingerprint | structural
+
+
+class PageChange(BaseModel):
+    url: str
+    kind: str  # added | removed | changed
+    title: str = ""
+    previous_title: Optional[str] = None
+    elements_added: int = 0
+    elements_removed: int = 0
+    elements_renamed: int = 0
+
+
+class ComponentChange(BaseModel):
+    kind: str  # added | removed
+    signature: str
+    component_id: str = ""
+    component_kind: str = ""  # shared | repeated
+    label: Optional[str] = None
+    category: str = ""
+    role: Optional[str] = None
+    page_count: int = 0
+
+
+class DiffSide(BaseModel):
+    """Provenance of one side of the comparison."""
+
+    source_crawl_id: str = ""
+    analyzed_at: str = ""
+    start_url: str = ""
+    page_count: int = 0
+    element_count: int = 0
+
+
+class Diff(BaseModel):
+    schema_version: str
+    engine_version: str
+    generated_at: str
+    old: DiffSide
+    new: DiffSide
+    stats: dict[str, int] = Field(default_factory=dict)
+    pages: list[PageChange] = Field(default_factory=list)
+    elements: list[ElementChange] = Field(default_factory=list)
+    components: list[ComponentChange] = Field(default_factory=list)
+
+
 # --- V3: interaction + network models ---------------------------------------
 
 

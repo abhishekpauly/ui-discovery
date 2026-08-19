@@ -25,6 +25,7 @@ semantic = [
 ui-discovery-extract = "ui_discovery.extract:main"
 ui-discovery-crawl = "ui_discovery.crawl:main"
 ui-discovery-analyze = "ui_discovery.analyze:main"
+ui-discovery-diff = "ui_discovery.diff:main"
 ui-discovery-probe = "ui_discovery.probe:main"
 ui-discovery-login = "ui_discovery.login:main"
 ui-discovery-semantic = "ui_discovery.semantic:main"

@@ -145,6 +145,54 @@ output/<slug>/
 V2 never re-crawls and never mutates `crawl.json` — it reads the stored model
 and writes a separate analysis alongside it (append-only).
 
+## Run — C1 (what changed between two snapshots)
+
+```bash
+# Compare two analyses of the same site (older first)
+python -m ui_discovery.diff output/2026-08-01/<slug>/ output/2026-08-19/<slug>/
+```
+
+```
+<newer>/
+  diff.json            canonical diff model (source of truth)
+  diff.md              Markdown change report
+  diff.html            HTML change report
+```
+
+Reports pages added/removed/changed, elements added/removed, components
+gained/lost, and — the payoff of fingerprinting — **controls renamed**:
+
+```
+## Renamed controls
+- “Create customer” → “Add customer” (button) on `/index.html`  (matched by fingerprint)
+- “Filter list” → “Refine list” (button) on `/customers.html`   (matched by structural)
+```
+
+A rename is reported as one change rather than an add plus a remove, because
+it is a different fact about the product — a label moved, not a control
+appeared. Two matching passes find them, since `fingerprint` is deliberately
+name-sensitive:
+
+- controls with a stable `data-testid` / `id` / `name` keep their fingerprint
+  through a relabel → *same fingerprint, different name* (`match: fingerprint`);
+- structurally-identified controls bake the name into the fingerprint, so
+  those are recovered by pairing leftover adds and removes on a
+  name-independent structural key (`match: structural`), **only** when the
+  pairing is unambiguous.
+
+Anything not confidently paired stays an add and a remove — the diff never
+guesses a rename it cannot evidence. Fully deterministic: the same pair of
+snapshots always yields the same diff, with no LLM and no network.
+
+> **Snapshots must share an origin.** Pages are matched by absolute URL, and
+> fingerprints embed the page URL, so this compares the *same site over time*
+> (`prod` on Monday vs `prod` on Friday). Comparing across hosts (staging vs
+> prod) currently reports everything as added + removed.
+>
+> Since re-running a crawl overwrites its output folder in place, keep each
+> run separate to have two snapshots to compare — e.g.
+> `--output output/$(date +%F)`.
+
 ## Run — V3 (safe interaction + network probe)
 
 ```bash

@@ -15,6 +15,7 @@ from .models import (
     Analysis,
     Crawl,
     Documentation,
+    Diff,
     InteractionProbe,
     PageNode,
     QAPlan,
@@ -897,6 +898,217 @@ def write_qaplan(plan: QAPlan, output_dir: str) -> dict[str, str]:
     )
     Path(paths["markdown"]).write_text(build_qaplan_markdown(plan), encoding="utf-8")
     Path(paths["html"]).write_text(build_qaplan_html(plan), encoding="utf-8")
+    return paths
+
+
+# --- C1: change diff reports ------------------------------------------------
+
+
+_CHANGE_MARK = {"added": "+", "removed": "−", "renamed": "→", "changed": "~"}
+
+
+def _diff_headline(diff: Diff) -> str:
+    s = diff.stats
+    if not s.get("total_changes"):
+        return "**No changes detected** between these two snapshots."
+    return (f"**{s['total_changes']} changes**: "
+            f"{s['pages_added']} pages added, {s['pages_removed']} removed, "
+            f"{s['pages_changed']} changed · "
+            f"{s['elements_added']} elements added, {s['elements_removed']} removed, "
+            f"**{s['elements_renamed']} renamed**")
+
+
+def build_diff_markdown(diff: Diff) -> str:
+    lines: list[str] = []
+    lines.append(f"# UI Change Diff — {diff.new.start_url}")
+    lines.append("")
+    lines.append(f"*generated {diff.generated_at} · engine {diff.engine_version} · "
+                 f"schema {diff.schema_version}*")
+    lines.append("")
+    lines.append(f"- Old: crawl `{diff.old.source_crawl_id}` "
+                 f"({diff.old.analyzed_at}) — {diff.old.page_count} pages, "
+                 f"{diff.old.element_count} elements")
+    lines.append(f"- New: crawl `{diff.new.source_crawl_id}` "
+                 f"({diff.new.analyzed_at}) — {diff.new.page_count} pages, "
+                 f"{diff.new.element_count} elements")
+    lines.append("")
+    lines.append(_diff_headline(diff))
+    lines.append("")
+
+    if diff.stats.get("elements_renamed"):
+        lines.append("## Renamed controls")
+        lines.append("")
+        lines.append("The same control carrying a different label — the signal "
+                     "an add/remove pair would hide.")
+        lines.append("")
+        for c in diff.elements:
+            if c.kind != "renamed":
+                continue
+            lines.append(f"- “{c.previous_name}” → **“{c.accessible_name}”** "
+                         f"({c.category}{'/' + c.role if c.role else ''}) "
+                         f"on `{c.page_url}` _(matched by {c.match})_")
+        lines.append("")
+
+    lines.append("## Pages")
+    lines.append("")
+    if not diff.pages:
+        lines.append("_No page-level changes._")
+    for p in diff.pages:
+        mark = _CHANGE_MARK.get(p.kind, "?")
+        title = p.title or "(untitled)"
+        lines.append(f"- `{mark}` **{title}** — `{p.url}`")
+        if p.previous_title:
+            lines.append(f"  - Title: “{p.previous_title}” → “{p.title}”")
+        if p.kind == "changed":
+            lines.append(f"  - Elements: +{p.elements_added} "
+                         f"−{p.elements_removed} →{p.elements_renamed} renamed")
+    lines.append("")
+
+    added_removed = [c for c in diff.elements if c.kind in ("added", "removed")]
+    if added_removed:
+        lines.append("## Elements added / removed")
+        lines.append("")
+        for c in added_removed:
+            mark = _CHANGE_MARK[c.kind]
+            name = c.accessible_name or "(unnamed)"
+            lines.append(f"- `{mark}` “{name}” "
+                         f"({c.category}{'/' + c.role if c.role else ''}) "
+                         f"on `{c.page_url}`")
+        lines.append("")
+
+    if diff.components:
+        lines.append("## Components")
+        lines.append("")
+        for c in diff.components:
+            mark = _CHANGE_MARK[c.kind]
+            label = c.label or "(unlabeled)"
+            lines.append(f"- `{mark}` **{label}** ({c.component_kind}, "
+                         f"{c.category}) — on {c.page_count} page(s)")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def build_diff_html(diff: Diff) -> str:
+    def esc(x: object) -> str:
+        return html.escape(str(x))
+
+    s = diff.stats
+
+    renamed_rows = "".join(
+        f"<tr><td>“{esc(c.previous_name)}”</td>"
+        f"<td><b>“{esc(c.accessible_name)}”</b></td>"
+        f"<td>{esc(c.category)}{esc('/' + c.role if c.role else '')}</td>"
+        f"<td><code>{esc(c.page_url)}</code></td>"
+        f"<td class='meta'>{esc(c.match)}</td></tr>"
+        for c in diff.elements if c.kind == "renamed"
+    )
+    renamed_html = (
+        "<h2>Renamed controls</h2>"
+        "<p class='meta'>The same control carrying a different label — the "
+        "signal an add/remove pair would hide.</p>"
+        "<table><thead><tr><th>Was</th><th>Now</th><th>Kind</th><th>Page</th>"
+        "<th>Matched by</th></tr></thead>"
+        f"<tbody>{renamed_rows}</tbody></table>"
+    ) if renamed_rows else ""
+
+    page_rows = "".join(
+        f"<tr><td class='mark {esc(p.kind)}'>{esc(_CHANGE_MARK.get(p.kind, '?'))}</td>"
+        f"<td>{esc(p.title or '(untitled)')}<br><code>{esc(p.url)}</code></td>"
+        f"<td>{esc(p.kind)}</td>"
+        f"<td>+{esc(p.elements_added)} −{esc(p.elements_removed)} "
+        f"→{esc(p.elements_renamed)}</td></tr>"
+        for p in diff.pages
+    )
+
+    element_rows = "".join(
+        f"<tr><td class='mark {esc(c.kind)}'>{esc(_CHANGE_MARK[c.kind])}</td>"
+        f"<td>{esc(c.accessible_name or '(unnamed)')}</td>"
+        f"<td>{esc(c.category)}{esc('/' + c.role if c.role else '')}</td>"
+        f"<td><code>{esc(c.page_url)}</code></td></tr>"
+        for c in diff.elements if c.kind in ("added", "removed")
+    )
+    elements_html = (
+        "<h2>Elements added / removed</h2><table>"
+        "<thead><tr><th></th><th>Control</th><th>Kind</th><th>Page</th></tr></thead>"
+        f"<tbody>{element_rows}</tbody></table>"
+    ) if element_rows else ""
+
+    component_rows = "".join(
+        f"<tr><td class='mark {esc(c.kind)}'>{esc(_CHANGE_MARK[c.kind])}</td>"
+        f"<td>{esc(c.label or '(unlabeled)')}</td>"
+        f"<td>{esc(c.component_kind)}</td><td>{esc(c.category)}</td>"
+        f"<td>{esc(c.page_count)}</td></tr>"
+        for c in diff.components
+    )
+    components_html = (
+        "<h2>Components</h2><table>"
+        "<thead><tr><th></th><th>Label</th><th>Kind</th><th>Category</th>"
+        "<th>Pages</th></tr></thead>"
+        f"<tbody>{component_rows}</tbody></table>"
+    ) if component_rows else ""
+
+    return f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>UI Change Diff — {esc(diff.new.start_url)}</title>
+<style>
+  body {{ font: 15px/1.5 -apple-system, Segoe UI, Roboto, sans-serif;
+         margin: 2rem auto; max-width: 960px; color: #1a1a1a; }}
+  h1 {{ font-size: 1.5rem; }} h2 {{ margin-top: 2rem; font-size: 1.15rem; }}
+  code {{ background: #f4f4f5; padding: 1px 4px; border-radius: 3px; font-size: 12px; }}
+  table {{ border-collapse: collapse; width: 100%; margin-top: .5rem; }}
+  th, td {{ text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee;
+           vertical-align: top; font-size: 13px; }}
+  th {{ background: #fafafa; }}
+  .meta {{ color: #666; font-size: 13px; }}
+  .kpis span {{ display:inline-block; background:#f4f4f5; border-radius:6px;
+               padding:6px 10px; margin:3px; }}
+  .mark {{ font-weight: 700; width: 1.5rem; text-align: center; }}
+  .mark.added {{ color: #15803d; }}
+  .mark.removed {{ color: #b91c1c; }}
+  .mark.renamed, .mark.changed {{ color: #b45309; }}
+</style></head><body>
+<h1>UI Change Diff</h1>
+<p class="meta">Site <code>{esc(diff.new.start_url)}</code> · generated
+ {esc(diff.generated_at)} · engine {esc(diff.engine_version)}</p>
+<p class="meta">
+  Old: crawl <code>{esc(diff.old.source_crawl_id)}</code>
+  ({esc(diff.old.page_count)} pages, {esc(diff.old.element_count)} elements)<br>
+  New: crawl <code>{esc(diff.new.source_crawl_id)}</code>
+  ({esc(diff.new.page_count)} pages, {esc(diff.new.element_count)} elements)
+</p>
+<div class="kpis">
+  <span>Pages: <b>+{esc(s['pages_added'])}</b> / <b>−{esc(s['pages_removed'])}</b>
+   / <b>~{esc(s['pages_changed'])}</b></span>
+  <span>Elements: <b>+{esc(s['elements_added'])}</b> /
+   <b>−{esc(s['elements_removed'])}</b></span>
+  <span>Renamed: <b>{esc(s['elements_renamed'])}</b></span>
+  <span>Components: <b>+{esc(s['components_added'])}</b> /
+   <b>−{esc(s['components_removed'])}</b></span>
+</div>
+{renamed_html}
+<h2>Pages ({esc(len(diff.pages))})</h2>
+<table><thead><tr><th></th><th>Page</th><th>Change</th><th>Elements</th></tr></thead>
+<tbody>{page_rows}</tbody></table>
+{elements_html}
+{components_html}
+</body></html>"""
+
+
+def write_diff(diff: Diff, output_dir: str) -> dict[str, str]:
+    """Write diff.json + diff.md + diff.html into `output_dir`."""
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    paths = {
+        "json": str(out / "diff.json"),
+        "markdown": str(out / "diff.md"),
+        "html": str(out / "diff.html"),
+    }
+    Path(paths["json"]).write_text(
+        json.dumps(diff.model_dump(), indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    Path(paths["markdown"]).write_text(build_diff_markdown(diff), encoding="utf-8")
+    Path(paths["html"]).write_text(build_diff_html(diff), encoding="utf-8")
     return paths
 
 
