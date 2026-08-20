@@ -58,6 +58,11 @@ class Element(BaseModel):
     frame: Optional[str] = None
     frame_path: Optional[str] = None
 
+    # What kind of control this is (taxonomy.py) — the human-facing axis,
+    # orthogonal to `category`, which stays the coarse DOM-shape bucket
+    # that fingerprints and selectors depend on.
+    ui_type: Optional[str] = None
+
     source: str = "runtime"
 
 

@@ -33,7 +33,7 @@ Check it worked:
 pytest -q
 ```
 
-You want `293 passed, 6 skipped`. If you see that, the engine is healthy.
+You want `374 passed, 6 skipped`. If you see that, the engine is healthy.
 
 ---
 
@@ -174,7 +174,7 @@ Files at either level:
 | --- | --- |
 | `summary.md` | **Start here.** Screen count, elements per screen, file guide |
 | `urls.txt` | Every screen captured, one URL per line |
-| `elements.csv` | Every UI element found — open in Excel, filter, pivot |
+| `elements.csv` | Every UI element found, with its **UI type** (slider, tab, file-upload…) — open in Excel, filter, pivot |
 | `endpoints.md` | The API surface behind the UI *(needs `--probe`)* |
 | `screenshots/` | One full-page screenshot per screen |
 | `report.html` | The readable crawl report |

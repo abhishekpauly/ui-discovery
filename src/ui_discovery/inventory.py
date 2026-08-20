@@ -28,9 +28,10 @@ from typing import Any, Sequence
 from urllib.parse import urlparse
 
 from .models import Crawl
+from .taxonomy import CATALOGUE, coverage
 
 ELEMENT_COLUMNS = (
-    "page_url", "page_title", "depth", "category", "role",
+    "page_url", "page_title", "depth", "category", "ui_type", "role",
     "accessible_name", "text", "visible", "enabled", "landmark",
     "shadow_depth", "frame", "dom_path",
 )
@@ -95,6 +96,15 @@ def _not_captured(crawl: Crawl) -> list[str]:
     return sorted(discovered - captured)
 
 
+def _ui_types(crawl: Crawl) -> dict[str, int]:
+    counter: Counter = Counter()
+    for node in crawl.pages:
+        for el in node.page.elements:
+            if el.ui_type:
+                counter[el.ui_type] += 1
+    return dict(counter)
+
+
 def build_inventory(crawl: Crawl) -> dict[str, Any]:
     """The whole inventory as plain data. Pure — no filesystem access."""
     screens = _screens(crawl)
@@ -119,6 +129,8 @@ def build_inventory(crawl: Crawl) -> dict[str, Any]:
         "endpoints": endpoints,
         "discovered_not_captured": missed,
         "budget_exhausted": bool(missed),
+        "ui_types": dict(sorted(_ui_types(crawl).items(), key=lambda kv: -kv[1])),
+        "ui_coverage": coverage(_ui_types(crawl)),
         "unmarked_clickables": crawl.config.unmarked_clickables,
         "deep_nav": crawl.config.deep_nav,
     }
@@ -132,7 +144,7 @@ def _elements_csv(crawl: Crawl) -> str:
         for el in node.page.elements:
             writer.writerow([
                 node.url, node.page.title, node.depth, el.category,
-                el.role or "", el.accessible_name or "",
+                el.ui_type or "", el.role or "", el.accessible_name or "",
                 (el.text or "")[:120], el.visible, el.enabled,
                 el.landmark or "", el.shadow_depth, el.frame or "",
                 el.dom_path,
@@ -200,6 +212,29 @@ def _summary_markdown(inv: dict[str, Any]) -> str:
         ]
     for kind, count in inv["totals_by_category"].items():
         lines.append(f"- {kind}: {count}")
+    cov = inv["ui_coverage"]
+    lines += ["", "## UI types found", "",
+              f"**{cov['found_count']} of {cov['catalogue_size']}** recognised "
+              f"UI types are present on this app.", ""]
+    for group, members in CATALOGUE.items():
+        present = [(t, cov["found"][t]) for t in members if t in cov["found"]]
+        if not present:
+            continue
+        lines.append(f"- **{group}** — "
+                     + ", ".join(f"{t} ({n})" for t, n in present))
+    if cov["app_declared"]:
+        lines += ["",
+                  "Widget names the app declares for itself "
+                  "(`aria-roledescription`): "
+                  + ", ".join(f"{t} ({n})" for t, n in cov["app_declared"].items())]
+    lines += ["",
+              f"_{len(cov['absent'])} recognised types are absent from this "
+              f"app. A further {len(cov['not_detectable'])} types "
+              f"(cards, widgets, tags, icon meaning, …) are **not "
+              f"deterministically detectable** — they have no standard markup, "
+              f"so their absence here says nothing about your product. See "
+              f"`inventory.json` for the full breakdown._",
+              ""]
     lines += ["", "## Screens", "",
               "| # | Screen | Elements | Visible | Links | Screenshot |",
               "| --- | --- | --- | --- | --- | --- |"]

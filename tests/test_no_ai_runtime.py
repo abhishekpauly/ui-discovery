@@ -46,6 +46,7 @@ CORE_MODULES = [
     "ui_discovery.probe", "ui_discovery.interactions",
     "ui_discovery.safety", "ui_discovery.network",
     "ui_discovery.reports", "ui_discovery.models", "ui_discovery.util",
+    "ui_discovery.taxonomy", "ui_discovery.inventory",
     "ui_discovery.auth", "ui_discovery.login",
     # V5 modules must ALSO import AI-free — providers load their SDK lazily,
     # only when instantiated. Importing these modules never does.

@@ -19,6 +19,7 @@ from . import SCHEMA_VERSION, __version__
 from .auth import check_auth
 from .browser import aria_snapshot, navigate
 from .models import Element, FrameInfo, Geometry, Heading, Page
+from .taxonomy import classify
 
 # The deterministic in-page pass, shared by the sync extractor (V0) and the
 # async Crawlee handler (V1). Public so the crawler can `page.evaluate(JS)`.
@@ -134,6 +135,7 @@ def _element_from_raw(raw: dict) -> Element:
         shadow_depth=int(raw.get("shadow_depth", 0)),
         frame=raw.get("frame"),
         frame_path=raw.get("frame_path"),
+        ui_type=classify(raw),
     )
 
 
@@ -143,6 +145,10 @@ def _counts(elements: list[Element], headings: list[Heading]) -> dict[str, int]:
         counts[el.category] = counts.get(el.category, 0) + 1
     counts["visible_elements"] = sum(1 for el in elements if el.visible)
     counts["total_elements"] = len(elements)
+    # UI types are deliberately NOT folded into `counts`: that dict is
+    # consumed by the crawl report and the per-screen inventory as the
+    # category breakdown, and mixing a second taxonomy into it would corrupt
+    # both. They are derived where they are used, from the elements.
     # H3: how much of the page was only reachable past a boundary.
     shadow = sum(1 for el in elements if el.shadow_depth)
     framed = sum(1 for el in elements if el.frame)

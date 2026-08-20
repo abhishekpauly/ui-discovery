@@ -241,6 +241,12 @@
     "aria-disabled", "disabled",
     // interaction affordances (V3 safety classification):
     "aria-haspopup", "aria-selected", "aria-pressed", "open",
+    // UI-type signals (taxonomy.py): state and behaviour that identify a
+    // control when its role does not.
+    "aria-roledescription", "aria-modal", "aria-sort", "aria-live",
+    "aria-invalid", "aria-required", "required", "contenteditable",
+    "draggable", "target", "download", "accesskey", "aria-keyshortcuts",
+    "class",
   ];
   function attrsOf(el) {
     const o = {};
@@ -249,6 +255,7 @@
         let v = el.getAttribute(a);
         if (v !== null) {
           if (v.length > 300) v = v.slice(0, 300);
+          if (a === "class") v = v.slice(0, 120);
           o[a] = v;
         }
       }
@@ -290,6 +297,21 @@
     ["table", "table, [role=table], [role=grid]"],
     ["dialog", "dialog, [role=dialog], [role=alertdialog]"],
     ["nav", "nav, [role=navigation]"],
+    // Kinds the shape-based groups above miss entirely. Each is a control a
+    // person would name, and each is detectable from standard markup.
+    ["tab", "[role=tab], [role=tablist], [role=tabpanel]"],
+    ["menu", "[role=menu], [role=menubar], [role=menuitem], [role=toolbar]"],
+    ["tree", "[role=tree], [role=treeitem]"],
+    ["disclosure", "details, summary, [aria-expanded]"],
+    ["status", "[role=alert], [role=status], [aria-live], progress, meter, [role=progressbar]"],
+    ["tooltip", "[role=tooltip]"],
+    ["region", "aside, [role=complementary], [role=region][aria-label], [role=search]"],
+    ["columnheader", "th, [role=columnheader], [aria-sort]"],
+    ["editor", "[contenteditable=true], [contenteditable='']"],
+    // Media that carries meaning. Decorative <svg> is deliberately excluded:
+    // an icon with no accessible name is invisible to a screen reader too,
+    // and counting hundreds of them would drown the inventory.
+    ["media", "canvas, video, audio, iframe, svg[aria-label], svg[role=img], svg > title"],
   ];
 
   const roots = collectRoots();

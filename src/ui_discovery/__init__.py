@@ -34,6 +34,7 @@ _CRAWLER = "ui_discovery.crawler"
 _ANALYSIS = "ui_discovery.analysis"
 _DIFF = "ui_discovery.diff"
 _NARRATE = "ui_discovery.narrate"
+_TAXONOMY = "ui_discovery.taxonomy"
 _CONFIG = "ui_discovery.config"
 _SOURCEMAP = "ui_discovery.sourcemap"
 _INTERACTIONS = "ui_discovery.interactions"
@@ -55,6 +56,9 @@ _EXPORTS = {
     "probe_page": _INTERACTIONS,
     # C1 — deterministic change diff between two analyses.
     "diff_analyses": _DIFF,
+    # UI type taxonomy — what kind of control an element is.
+    "classify_ui_type": _TAXONOMY,
+    "ui_coverage": _TAXONOMY,
     # V5.4 — readable change narrative over a diff.
     "build_narrative": _NARRATE,
     "narrate_diff": _NARRATE,
@@ -96,6 +100,8 @@ _ALIASES = {
     # attribute lookup wins over __getattr__, so the function would be
     # unreachable under its own name.
     "narrate_diff": "narrate",
+    "classify_ui_type": "classify",
+    "ui_coverage": "coverage",
 }
 
 __all__ = ["__version__", "SCHEMA_VERSION", *_EXPORTS]

@@ -76,7 +76,33 @@ idle, so this heuristic does all the work alone and can misjudge a pause
 between fetches. Those apps need a fixed settle window — see `extra_wait` in
 *Extending it*.
 
-### 3. It gives every element a stable identity
+### 3. It names what kind of control each element is
+
+Every element carries two labels. `category` is the coarse DOM-shape bucket
+(button, link, input) that fingerprints and selectors are built on. `ui_type`
+is what a person would call it — slider, tab, breadcrumb, file upload,
+rich-text editor, drawer.
+
+The type is resolved deterministically, most authoritative signal first:
+the app's own `aria-roledescription`, then an explicit `role=`, then the
+input's `type`, then the role the HTML element carries implicitly, then
+state signals like `aria-expanded` or `aria-sort`. That fourth step does
+most of the work — a page can resolve to 22 distinct types while declaring
+only 8 roles, because `<nav>`, `<table>` and `<details>` never need to say
+what they are.
+
+Every capture reports **coverage against the full catalogue** in three
+buckets: types found, types absent from this app, and types that are *not
+deterministically detectable at all* — cards, widgets, tags, "what this icon
+means". Those have no standard markup; finding them means guessing at class
+names or asking a model to look. Naming that bucket matters, because "we
+found no cards" and "we cannot detect cards" are different statements and
+only the first is about your product.
+
+A low type count is itself a finding. An app expressing 8 of 64 types is
+largely invisible to Playwright's role selectors and to a screen reader too.
+
+### 4. It gives every element a stable identity
 
 Each element gets a fingerprint built from the most durable signal available:
 a hand-written `data-testid`, else an `id`, else its structural position plus
@@ -87,7 +113,7 @@ This is what makes diffing possible. It is also why a *renamed* control can
 be recognised as the same control rather than reported as one thing vanishing
 and another appearing.
 
-### 4. It sees past boundaries other tools miss
+### 5. It sees past boundaries other tools miss
 
 - **Open shadow roots** are traversed — component libraries put real controls
   there. Closed roots are not, and cannot be: the browser does not expose them.
@@ -95,7 +121,7 @@ and another appearing.
 - **Cross-origin iframes** are recorded but *not* entered — a scoping choice,
   not a technical limit. Third-party embedded content is not your product.
 
-### 5. Everything is append-only and versioned
+### 6. Everything is append-only and versioned
 
 `crawl.json` is the source of truth; every report is rendered *from* it, never
 the other way round. Each snapshot carries a schema version, so old captures
