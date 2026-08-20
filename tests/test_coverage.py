@@ -177,3 +177,79 @@ def test_a_capture_says_when_it_may_be_incomplete(serve, tmp_path):
         encoding="utf-8")
     assert "There may be more screens" in text
     assert "--deep-nav" in text
+
+
+# --- pinning the two bugs found while building deep-nav ----------------------
+
+def test_global_nav_is_clicked_once_per_crawl_not_once_per_page(serve, tmp_path):
+    """Regression: deep-nav re-clicked the same sidebar on every page.
+
+    Site-wide navigation is identical everywhere, so without a shared cache a
+    60-page crawl performs thousands of pointless clicks — it turned a
+    3-minute capture into a timeout.
+
+    Measured by the click budget, which decrements once per element actually
+    clicked. An earlier version of this test counted entries added to the
+    label cache instead, and passed with the bug reintroduced: the cache stays
+    size-1 either way, because the duplicate clicks happen *after* that point.
+    """
+    import ui_discovery.crawler as crawler_mod
+
+    spent: list[int] = []
+    original = crawler_mod._discover_by_clicking
+
+    async def measuring(page, url, log, policy, tried, budget):
+        before = budget[0]
+        result = await original(page, url, log, policy, tried, budget)
+        spent.append(before - budget[0])
+        return result
+
+    crawler_mod._discover_by_clicking = measuring
+    try:
+        site = serve("fixtures/hidden_nav")
+        crawl = asyncio.run(crawl_site(
+            site.url("shared-nav.html"), max_depth=2, max_pages=5,
+            output_dir=str(tmp_path), deep_nav=True))
+    finally:
+        crawler_mod._discover_by_clicking = original
+
+    assert len(crawl.pages) >= 3, "need several pages to prove the caching"
+    assert sum(spent) == 1, (
+        f"{sum(spent)} clicks across {len(crawl.pages)} pages "
+        f"(per-page: {spent}) — the same global nav is being re-clicked")
+
+
+def test_deep_nav_reuses_routes_it_already_found(serve, tmp_path):
+    """The flip side of the cache: clicking once must not mean discovering
+    once. A route found on page one is still worth queueing."""
+    site = serve("fixtures/hidden_nav")
+    crawl = asyncio.run(crawl_site(
+        site.url("shared-nav.html"), max_depth=2, max_pages=6,
+        output_dir=str(tmp_path), deep_nav=True))
+    assert "revealed.html" in _urls(crawl)
+
+
+def test_deep_nav_discoveries_still_respect_scope(serve, tmp_path):
+    """Regression: enqueueing our own resolved links bypassed the transform
+    where scope filtering used to live, so an excluded area would have been
+    crawled anyway. Deep-nav is the sharpest version of this — it finds URLs
+    nothing else would, and those must still obey the config."""
+    site = serve("fixtures/hidden_nav")
+    crawl = asyncio.run(crawl_site(
+        site.url("deep.html"), max_depth=2, output_dir=str(tmp_path),
+        deep_nav=True, exclude=["/alpha.html"]))
+    found = _urls(crawl)
+    assert "alpha.html" not in found, "excluded route was crawled anyway"
+    # ...while the rest of deep-nav's discovery still works.
+    assert "beta.html" in found
+
+
+def test_deep_nav_discoveries_respect_adapter_vetoes(serve, tmp_path):
+    from ui_discovery.adapters import build
+
+    site = serve("fixtures/hidden_nav")
+    veto = build([{"name": "skip_paths", "options": {"patterns": [r"beta\.html"]}}])
+    crawl = asyncio.run(crawl_site(
+        site.url("deep.html"), max_depth=2, output_dir=str(tmp_path),
+        deep_nav=True, adapters=veto))
+    assert "beta.html" not in _urls(crawl)

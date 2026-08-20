@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Shared nav</title></head>
+<body>
+  <!-- The same unmarked sidebar appears on every page of the site, which is
+       what global navigation looks like. Clicking it once per crawl is the
+       point; clicking it once per page is what made a 3-minute crawl time
+       out. -->
+  <div id="side">
+    <div class="item" data-reveal="1" style="cursor:pointer">Sections</div>
+    <div id="sub"></div>
+  </div>
+  <main>
+    <h1>three</h1>
+    <a href="two.html">Two</a>
+    <a href="three.html">Three</a>
+  </main>
+  <script>
+    document.querySelector('.item').addEventListener('click', function () {
+      document.getElementById('sub').innerHTML =
+        '<a href="revealed.html">Revealed</a>';
+    });
+  </script>
+</body>
+</html>
