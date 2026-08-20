@@ -431,13 +431,17 @@ class CrawlOptions:
     # are limited to navigation landmarks and pass the same safety gates as
     # the probe, so the worst case is an opened menu.
     reveal_nav: bool = True
-    # Last resort for navigation the app never marked up: click elements that
-    # only `cursor: pointer` identifies as clickable, and record where they
-    # navigate. Off by default — clicking unmarked elements is qualitatively
-    # different from opening a labelled menu — but the crawl always *counts*
-    # them, so a capture can say it may be incomplete rather than silently
-    # being so.
-    deep_nav: bool = False
+    # Click elements the app never marked up as links — no anchor, no button,
+    # no ARIA role, only a pointer cursor — and record where they lead.
+    #
+    # On by default. It was off while unproven; it is now the difference
+    # between reaching 0 of 7 requested screens on a real portal and reaching
+    # 7 of 7, the click budget is per-crawl rather than per-page, and every
+    # label still passes the same safety classifier, so a "Delete workspace"
+    # in a sidebar is refused here exactly as anywhere else. A capture that
+    # silently omits whole sections is worse than one that takes a minute
+    # longer.
+    deep_nav: bool = True
     # Politeness (X5)
     max_requests_per_minute: float | None = None
     # None means 'leave Crawlee's own default alone'. That default is

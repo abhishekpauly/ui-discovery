@@ -72,6 +72,11 @@ BLOCK_WORDS = {
     "deactivate", "disable", "archive", "revoke", "unsubscribe",
     "logout", "log out", "sign out", "reset", "cancel subscription",
     "confirm", "publish", "merge", "transfer", "withdraw",
+    # Words substring matching used to catch by accident, kept deliberately
+    # now that matching is on word boundaries. Re-doing an action is still
+    # doing it, and these are the ones a real portal actually surfaces.
+    "resend", "resubmit", "republish", "redeploy", "rerun", "retry",
+    "terminate", "decommission", "suspend", "impersonate", "restore",
 }
 # Ambiguous / mutating verbs -> observed, not executed (conservative in early phases).
 CAUTION_WORDS = {
@@ -81,19 +86,44 @@ CAUTION_WORDS = {
 }
 
 _WS = re.compile(r"\s+")
+# `DeleteAll` and `SaveChanges` are one word to a regex but two to a reader.
+# Splitting at the case transition is what lets word-boundary matching stay
+# strict without letting a camelCase label slip past it.
+_CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def normalize_label(name: str | None) -> str:
+    """Lower-cased, whitespace-collapsed, camelCase split into words."""
+    if not name:
+        return ""
+    return _WS.sub(" ", _CAMEL.sub(" ", name).strip().lower())
+
+
+def _matches(word: str, text: str) -> bool:
+    return re.search(rf"\b{re.escape(word)}\b", text) is not None
 
 
 def classify_label(name: str | None, policy: SafetyPolicy = DEFAULT_POLICY) -> str:
-    """SAFE / CAUTION / BLOCK from an accessible name or text."""
-    if not name:
+    """SAFE / CAUTION / BLOCK from an accessible name or text.
+
+    Both lists match on **word boundaries**. They did not always: BLOCK used
+    substring matching, so on a real portal it refused "Crunchbase" (contains
+    "run"), "Omnisend" and "Resend Email" ("send"), "Payments" and "Payroll"
+    ("pay") — thirteen refusals, several of them nonsense.
+
+    Erring toward refusal is right; erring toward refusing *arbitrary* things
+    is not. It costs probe coverage on every run, and it trains a reader to
+    discount the refusals that are real. The fix is to name the words we mean:
+    anything genuinely destructive that substring matching used to catch by
+    luck is now an explicit entry in BLOCK_WORDS.
+    """
+    text = normalize_label(name)
+    if not text:
         return "SAFE"
-    text = _WS.sub(" ", name.strip().lower())
-    for w in policy.blocks():
-        if w in text:
-            return "BLOCK"
-    for w in policy.cautions():
-        if re.search(rf"\b{re.escape(w)}\b", text):
-            return "CAUTION"
+    if any(_matches(w, text) for w in policy.blocks()):
+        return "BLOCK"
+    if any(_matches(w, text) for w in policy.cautions()):
+        return "CAUTION"
     return "SAFE"
 
 

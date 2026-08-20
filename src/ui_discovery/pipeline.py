@@ -99,11 +99,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         help=f"Skip a stage (repeatable). One of: {', '.join(STAGES)}",
     )
     parser.add_argument(
-        "--deep-nav", action="store_true", default=None,
-        help="Click elements the app never marked up as links (no anchor, no "
-             "button, no ARIA role — just a pointer cursor) to find routes "
-             "nothing else can reach. Labels are still safety-checked, so "
-             "destructive controls are refused.",
+        "--no-deep-nav", action="store_true",
+        help="Do not click elements the app never marked up as links. "
+             "Deep navigation is on by default because some portals put "
+             "whole sections behind them; turn it off for a faster, "
+             "link-following-only capture.",
     )
     parser.add_argument(
         "--seed", action="append", default=None, metavar="URL",

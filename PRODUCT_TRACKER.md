@@ -81,37 +81,41 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 ### Infrastructure baseline
 | ID | Feature | Scope | Pri | Status |
 |----|---------|-------|-----|--------|
-| X0 | Git baseline + branch-per-feature | commit current green state; one branch per item | P0 | 📋 |
+| X0 | Git baseline + branch-per-feature | commit current green state; one branch per item | P0 | ✅ 0.12.0 |
 
 ### Hardening (make real portals crawl cleanly)
 | ID | Feature | Scope | Pri | Status |
 |----|---------|-------|-----|--------|
-| H1 | Query-string & SPA route normalization | dedupe `?x=1`/`?x=2`; hash/history route identity | P0 | 📋 |
-| H2 | Probe-in-crawl (authenticated) | run safe probe on every crawled page as logged-in user | P0 | 📋 |
-| H3 | Shadow DOM & iframe traversal | extract inside open shadow roots + same-origin frames | P1 | 📋 |
-| H4 | Session-expiry detection | warn/abort when a saved session is stale, not silently crawl login | P1 | 📋 |
-| H5 | Config file + capability adapters | per-site YAML: budgets, URL patterns, auth signals | P2 | 📋 |
+| H1 | Query-string & SPA route normalization | dedupe `?x=1`/`?x=2`; hash/history route identity | P0 | ✅ 0.12.0 |
+| H2 | Probe-in-crawl (authenticated) | run safe probe on every crawled page as logged-in user | P0 | ✅ 0.12.0 |
+| H3 | Shadow DOM & iframe traversal | extract inside open shadow roots + same-origin frames | P1 | ✅ 0.12.0 |
+| H4 | Session-expiry detection | warn/abort when a saved session is stale, not silently crawl login | P1 | ✅ 0.12.0 |
+| H5 | Config file + capability adapters | per-site YAML: budgets, URL patterns, auth signals | P2 | ✅ 0.12.0 |
 
 ### Deliverables (deterministic, high value)
 | ID | Feature | Scope | Pri | Status |
 |----|---------|-------|-----|--------|
-| C1 | Change diff between two crawls | pages/elements/components added/removed/renamed (by fingerprint) | P1 | 📋 |
+| D1 | Run artifacts on every crawl | `summary.md`, `urls.txt`, `elements.csv`, `endpoints.md` | P1 | ✅ 0.13.0 |
+| D2 | Downloads + module-wise layout | product folder; one self-contained folder per module | P1 | ✅ 0.13.0 |
+| D3 | UI type taxonomy + coverage | 64 types; found / absent / not-detectable | P1 | ✅ 0.13.0 |
+| D4 | Deep navigation discovery | reach routes the app never marked up as links | P0 | ✅ 0.13.0 |
+| C1 | Change diff between two crawls | pages/elements/components added/removed/renamed (by fingerprint) | P1 | ✅ 0.12.0 |
 | C2 | Playwright test-skeleton export | runnable `.py`/`.spec.ts` stubs from captured selectors; destructive skipped | P1 | ✅ (via V5.3) |
 
 ### Reusability / configurability / scoping (first-class goals)
 | ID | Feature | Scope | Pri | Status |
 |----|---------|-------|-----|--------|
-| R1 | Library/SDK surface | every capability importable & composable; CLIs are thin wrappers | P1 | 📋 |
-| R2 | Capability toggles | each feature switchable/tunable via config; defaults = today's behavior | P1 | 📋 |
-| R3 | Capability/adapter plugin seam | site-specific behavior registers without editing core | P2 | 📋 |
-| S1 | Operator intake → scope config | questionnaire → validated `scope.yaml`; scoping front door + audit record | P1 | 📋 |
+| R1 | Library/SDK surface | every capability importable & composable; CLIs are thin wrappers | P1 | ✅ 0.12.0 |
+| R2 | Capability toggles | each feature switchable/tunable via config; defaults = today's behavior | P1 | ✅ 0.12.0 |
+| R3 | Capability/adapter plugin seam | site-specific behavior registers without editing core | P2 | ✅ 0.12.0 |
+| S1 | Operator intake → scope config | questionnaire → validated `scope.yaml`; scoping front door + audit record | P1 | ✅ 0.12.0 |
 | DOC | Operator intake questionnaire | `INTAKE_QUESTIONNAIRE.md` template (use by hand until S1 ships) | P1 | ✅ |
 
 ### V4 — Source-code correlation (optional)
 | ID | Feature | Scope | Pri | Status |
 |----|---------|-------|-----|--------|
-| V4.1 | Repo ingest + component/route/API index | static parse of a frontend repo (no execution) | P2 | 📋 |
-| V4.2 | Runtime→source correlation | link elements/routes/APIs to components, confidence + evidence | P2 | 📋 |
+| V4.1 | Repo ingest + component/route/API index | static parse of a frontend repo (no execution) | P2 | ✅ 0.12.0 |
+| V4.2 | Runtime→source correlation | link elements/routes/APIs to components, confidence + evidence | P2 | ✅ 0.12.0 |
 
 ### V5 — Semantic / LLM layer (optional, opt-in, additive)
 | ID | Feature | Scope | Pri | Status | Tests |
@@ -119,17 +123,17 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | V5.1 | Semantic element classification | labels by fingerprint; **deterministic default (0 tokens)** + optional LLM refine (quarantined `[semantic]`) | P2 | ✅ | ✔ |
 | V5.2 | Documentation generation | UI reference doc (overview, per-page, controls-by-role); **deterministic default** + optional LLM prose | P2 | ✅ | ✔ |
 | V5.3 | QA / test-scenario generation | scenarios (smoke/nav/form/guard) + Playwright skeletons; **deterministic default** + optional LLM strategy | P3 | ✅ | ✔ |
-| V5.4 | LLM change narrative | human summary over C1's deterministic diff | P3 | 📋 | — |
+| V5.4 | LLM change narrative | human summary over C1's deterministic diff | P3 | ✅ 0.12.0 | — |
 
 ### Cross-cutting / infra
 | ID | Feature | Scope | Pri | Status |
 |----|---------|-------|-----|--------|
-| X1 | `pipeline` command | one-shot login→crawl→analyze(+probe)→reports | P2 | 📋 |
-| X2 | CHANGELOG + version discipline | bump product/schema versions per release | P1 | 🚧 |
-| X3 | CI (GitHub Actions) | run pytest + playwright install on push | P2 | 📋 |
-| X4 | Incremental / resumable crawl | skip pages unchanged since last crawl | P2 | 🗄️ |
-| X5 | Politeness | robots.txt + rate limit + concurrency cap | P2 | 🗄️ |
-| X6 | Storage backend seam | interface so SQLite/Postgres can slot in later (no DB now) | P3 | 🗄️ |
+| X1 | `pipeline` command | one-shot login→crawl→analyze(+probe)→reports | P2 | ✅ 0.12.0 |
+| X2 | CHANGELOG + version discipline | bump product/schema versions per release | P1 | ✅ 0.13.0 |
+| X3 | CI (GitHub Actions) | run pytest + playwright install on push — needs a git remote to exist first | P2 | 🗄️ deferred |
+| X4 | Incremental / resumable crawl | skip pages unchanged since last crawl — speculative until crawl times actually hurt | P2 | 🗄️ deferred |
+| X5 | Politeness | robots.txt + rate limit + concurrency cap | P2 | ✅ 0.12.0 |
+| X6 | Storage backend seam | interface so SQLite/Postgres can slot in later (no DB now) — deferred by ROADMAP until data volume demands it | P3 | 🗄️ deferred |
 
 ---
 

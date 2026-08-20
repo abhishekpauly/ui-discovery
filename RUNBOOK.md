@@ -33,7 +33,7 @@ Check it worked:
 pytest -q
 ```
 
-You want `374 passed, 6 skipped`. If you see that, the engine is healthy.
+You want `377 passed, 7 skipped`. If you see that, the engine is healthy.
 
 ---
 
@@ -252,12 +252,13 @@ Otherwise the screens were never *discovered*, and there are three reasons:
    may be more screens"* when it spots them. Add `--deep-nav`:
 
 ```powershell
-python -m ui_discovery.crawl <url> --deep-nav
+python -m ui_discovery.crawl <url> --no-deep-nav   # to turn it OFF
 ```
 
-   It clicks elements that only a pointer cursor identifies as clickable and
-   records where they go. Labels are still safety-checked, so a "Delete
-   workspace" item is refused. Costs a few minutes on a large portal.
+   This is **on by default** — it clicks elements that only a pointer cursor
+   identifies as clickable and records where they go. Labels are still
+   safety-checked, so a "Delete workspace" item is refused. Pass
+   `--no-deep-nav` for a faster, link-following-only capture.
 4. **Nothing links to them.** Portals with a *contextual* sidebar only render
    the current section's links, so whole areas can be islands. `--deep-nav`
    usually reaches these too; if not, seed them:

@@ -25,6 +25,73 @@ backend) is explicitly deferred in `ROADMAP.md` until data volume demands it.
 
 ---
 
+## [0.13.0] — 2026-08-20  ·  Coverage, deliverables, and a UI taxonomy  (minor)
+
+Driven by running the engine against a live portal rather than fixtures.
+Every item below started as something the capture got wrong or left out.
+
+### Added
+- **Deep navigation discovery.** Some apps build a sidebar from plain `<div>`s
+  with click handlers — no anchor, no button, no ARIA role — so link-following
+  cannot see where they lead, and neither can a screen reader. The crawler now
+  clicks elements that only `cursor: pointer` identifies as clickable and
+  records both outcomes that matter: navigating, and revealing links by
+  expanding a submenu. **On by default**; `--no-deep-nav` opts out. Took a
+  real portal from 0 of 7 requested screens to 7 of 7 with no seeds.
+- **Navigation reveal** — collapsed menus are expanded before links are read.
+- **Seed URLs** — `--seed`, and `modules:` in a config, which had been declared
+  in the schema since the config bundle while being consumed by nothing.
+- **UI type taxonomy** (`taxonomy.py`) — every element carries a `ui_type`
+  alongside `category`: slider, tab, breadcrumb, file upload, rich-text
+  editor, drawer. 64 types, resolved deterministically from
+  `aria-roledescription` → explicit `role` → input `type` → implicit element
+  role → state signals. `summary.md` reports coverage in three buckets:
+  found, absent from this app, and **not deterministically detectable**.
+- **Run artifacts on every crawl** — `summary.md`, `urls.txt`, `elements.csv`
+  (with `ui_type`), `endpoints.md`, `inventory.json`, written unconditionally.
+- **Captures go to Downloads**, in a product folder split module by module,
+  each module folder self-contained. `crawl.json` is never split.
+- **X1 `pipeline`** — crawl → analyze → semantic → docgen → qagen in one
+  command. **X5 politeness** — rate cap, concurrency cap, robots.txt.
+- **Headed by default** from the CLIs; `--headless` for CI.
+- `RUNBOOK.md` and `PRODUCT_GUIDE.md`.
+- Guards against three classes of recurring defect: dead config fields
+  (`test_no_dead_config.py`), version/changelog drift
+  (`test_release_hygiene.py`), and features whose tests pass without them
+  (paired negative controls).
+
+### Changed
+- **Destructive-label matching is on word boundaries.** `BLOCK_WORDS` used
+  substring matching, so a real portal refused "Crunchbase" (contains "run"),
+  "Omnisend" and "Resend Email" ("send"), "Payments" and "Payroll" ("pay") —
+  thirteen refusals, six of them nonsense. Erring toward refusal is right;
+  erring toward refusing arbitrary things costs coverage on every run and
+  teaches a reader to discount the refusals that are real. camelCase is split
+  first, so `DeleteAll` still blocks, and words substring matching had been
+  catching by luck (`resend`, `rerun`, `terminate`, …) are now explicit.
+- `crawl_site` takes a `CrawlOptions` object instead of 23 keyword arguments.
+  Existing keyword calls are unaffected.
+- A truncated crawl says so: `summary.md` leads with "This capture is
+  incomplete" and lists the screens it found but never visited.
+
+### Fixed
+- **X5 silently raised browser concurrency from 1 to 10**, starving page
+  rendering. One page dropped from 528 elements to 28, and two crawls of an
+  *unchanged* site diffed to 594 phantom removals.
+- **A page that had not begun rendering was mistaken for a settled one** — an
+  app shell has an unchanging DOM, so stability fired after ~500ms and every
+  later stage recorded zero elements. Stability now requires rendered content.
+- Stability was accepted after 500ms of quiet even when the network had never
+  gone idle, which under load is just a gap between render bursts.
+- Deep-nav re-clicked the same global sidebar on every page, turning a
+  three-minute crawl into a timeout.
+- Enqueueing our own resolved links bypassed the scope gate, so an excluded
+  area would have been crawled anyway.
+- `extract.js` pre-computed a role that flattened every exotic input to
+  "textbox", hiding file uploads and date pickers.
+
+---
+
 ## [0.12.0] — 2026-08-19  ·  Roadmap complete: hardening, config, adapters, source correlation  (minor)
 
 Everything from `ROADMAP.md` except the three deferred items above. This

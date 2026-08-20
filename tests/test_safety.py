@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from ui_discovery.network import classify, endpoint_pattern, redact_url
 from ui_discovery.safety import classify_label, decide, interaction_type, should_execute
 
@@ -103,3 +105,59 @@ def test_classify_api_and_graphql():
     assert is_api and is_gql
     is_api2, is_gql2, _ = classify("GET", "https://x.com/page.html", "document")
     assert not is_api2 and not is_gql2
+
+
+# --- word-boundary matching --------------------------------------------------
+#
+# BLOCK used substring matching, which on a real portal refused thirteen
+# controls — six of them nonsense. These pin both halves: what must still be
+# refused, and what must stop being refused.
+
+@pytest.mark.parametrize("label", [
+    "Delete", "Delete account", "DeleteAll", "Delete All Records",
+    "Pay now", "PayPal", "Publish", "Approve request", "Reset password",
+    "Cancel subscription", "Sign out", "Revoke access",
+    # Previously caught only by accident; now explicit entries.
+    "Resend Email", "Rerun pipeline", "Terminate instance", "Suspend user",
+])
+def test_destructive_labels_are_still_refused(label):
+    assert classify_label(label) == "BLOCK", label
+
+
+@pytest.mark.parametrize("label", [
+    "Crunchbase",           # contains "run"
+    "Omnisend",             # contains "send"
+    "Payments", "Payroll",  # contain "pay"
+    "Hyperwallet Payouts",
+    "Rungs",                # contains "run"
+    "Confirmation number",  # contains "confirm" but is a label, not an action
+])
+def test_words_that_merely_contain_a_block_word_are_not_refused(label):
+    """Erring toward refusal is right; refusing arbitrary things is not — it
+    costs coverage on every run and teaches a reader to discount the real
+    refusals."""
+    assert classify_label(label) != "BLOCK", label
+
+
+def test_camelcase_is_split_before_matching():
+    """`DeleteAll` is one word to a regex and two to a reader. Without the
+    split, strict boundaries would let it through."""
+    from ui_discovery.safety import normalize_label
+
+    assert normalize_label("DeleteAll") == "delete all"
+    assert normalize_label("SaveChanges") == "save changes"
+    assert normalize_label("Crunchbase") == "crunchbase"
+
+
+def test_caution_matching_is_unchanged():
+    assert classify_label("Save changes") == "CAUTION"
+    assert classify_label("Create app") == "CAUTION"
+    assert classify_label("Go to customers") == "SAFE"
+
+
+def test_config_added_words_also_match_on_boundaries():
+    from ui_discovery.safety import SafetyPolicy
+
+    policy = SafetyPolicy(block_words_extra=frozenset({"decommission"}))
+    assert classify_label("Decommission cluster", policy) == "BLOCK"
+    assert classify_label("Decommissioning guide", policy) != "BLOCK"

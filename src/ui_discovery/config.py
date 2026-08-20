@@ -86,7 +86,7 @@ class Capabilities(BaseModel):
     network: bool = True  # only meaningful with probe
     # Click elements the app never marked up as links, to find routes
     # nothing else can reach. See CrawlOptions.deep_nav.
-    deep_nav: bool = False
+    deep_nav: bool = True
 
 
 class Safety(BaseModel):

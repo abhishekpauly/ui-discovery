@@ -140,6 +140,10 @@ independent gates must **both** pass before it clicks anything:
    coverage", never "clicked something destructive".
 2. **The label** must not read as destructive. "Delete", "Pay", "Publish",
    "Send" and their relatives are refused *even when the type is safe*.
+   Matching is on **word boundaries**, with camelCase split first — so
+   `DeleteAll` is refused while `Crunchbase` (which merely contains "run")
+   is not. Refusing arbitrary things is not extra caution; it costs coverage
+   and teaches you to discount the refusals that matter.
 
 Anything failing either gate is **observed and recorded, not executed**.
 Elements inside iframes are never clicked at all, because a frame-relative
