@@ -33,7 +33,7 @@ Check it worked:
 pytest -q
 ```
 
-You want `274 passed`. If you see that, the engine is healthy.
+You want `322 passed`. If you see that, the engine is healthy.
 
 ---
 
@@ -210,12 +210,23 @@ Otherwise the screens were never *discovered*, and there are three reasons:
 1. **They're deeper than you crawled.** `--max-depth 1` only follows one hop.
    A route linked from a section page is at depth 2. Try `--max-depth 3`.
 2. **They're behind a collapsed menu.** The crawler expands navigation
-   automatically before reading links, so this is usually handled — but if a
-   nav item is a plain `<div>` with a click handler (no link, no ARIA role),
-   nothing standards-based can see it. That is an accessibility defect in the
-   app, and no crawler setting fixes it.
-3. **Nothing links to them.** Portals with a *contextual* sidebar only render
-   the current section's links, so whole areas can be islands. Seed them:
+   automatically before reading links, so this is usually handled.
+3. **The nav isn't marked up as links at all.** Some apps build a sidebar
+   from plain `<div>`s with click handlers — no anchor, no button, no ARIA
+   role. Link-following cannot see those, and neither can a screen reader
+   (it's an accessibility defect in the app). `summary.md` will say *"There
+   may be more screens"* when it spots them. Add `--deep-nav`:
+
+```powershell
+python -m ui_discovery.crawl <url> --deep-nav
+```
+
+   It clicks elements that only a pointer cursor identifies as clickable and
+   records where they go. Labels are still safety-checked, so a "Delete
+   workspace" item is refused. Costs a few minutes on a large portal.
+4. **Nothing links to them.** Portals with a *contextual* sidebar only render
+   the current section's links, so whole areas can be islands. `--deep-nav`
+   usually reaches these too; if not, seed them:
 
 ```powershell
 python -m ui_discovery.crawl <url> --seed https://portal.example.com/reports `

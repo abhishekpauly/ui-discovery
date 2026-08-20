@@ -136,6 +136,7 @@ def crawl_options(scope: Scope, args) -> CrawlOptions:  # noqa: ANN001
         seeds=tuple(m.start_url for m in scope.modules if m.start_url)
               + tuple(getattr(args, "seed", None) or ()),
         reveal_nav=not getattr(args, "no_reveal_nav", False),
+        deep_nav=pick(flag("deep_nav"), scope.capabilities.deep_nav, False),
     )
 
 

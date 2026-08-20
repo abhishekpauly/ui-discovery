@@ -83,6 +83,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip screenshots.",
     )
     parser.add_argument(
+        "--deep-nav", action="store_true", default=None,
+        help="Click elements the app never marked up as links (no anchor, no "
+             "button, no ARIA role — just a pointer cursor) to find routes "
+             "nothing else can reach. Labels are still safety-checked, so "
+             "destructive controls are refused.",
+    )
+    parser.add_argument(
         "--seed", action="append", default=None, metavar="URL",
         help="Extra start URL (repeatable). Use for routes nothing links to "
              "— a contextual sidebar, or a nav item that is a click handler "

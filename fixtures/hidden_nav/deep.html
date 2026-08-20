@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"/><title>Deep nav</title></head>
+<body>
+  <!-- A sidebar built the way the real portal builds it: plain divs with a
+       pointer cursor and a click handler. No anchor, no button, no ARIA role,
+       so it is invisible to link-following AND to the accessibility tree. -->
+  <div id="side">
+    <div class="item" data-go="alpha.html" style="cursor:pointer">Alpha section</div>
+    <div class="item" data-reveal="1" style="cursor:pointer">Knowledge Hub</div>
+    <div id="sub"></div>
+    <div class="item" data-go="danger.html" style="cursor:pointer">Delete workspace</div>
+  </div>
+  <main><h1>Home</h1></main>
+  <script>
+    document.querySelectorAll(".item").forEach(function (el) {
+      el.addEventListener("click", function () {
+        if (el.dataset.go) { location.href = el.dataset.go; return; }
+        if (el.dataset.reveal) {
+          document.getElementById("sub").innerHTML =
+            '<a href="beta.html">Beta</a>';
+        }
+      });
+    });
+  </script>
+</body>
+</html>

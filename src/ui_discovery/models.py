@@ -154,6 +154,10 @@ class CrawlConfig(BaseModel):
     include: list[str] = Field(default_factory=list)
     exclude: list[str] = Field(default_factory=list)
     config_file: Optional[str] = None
+    deep_nav: bool = False
+    # Clickable-but-unmarked elements seen across the crawl. Non-zero
+    # means routes may exist that link-following cannot reach.
+    unmarked_clickables: int = 0
     capabilities: dict[str, bool] = Field(default_factory=dict)
 
 

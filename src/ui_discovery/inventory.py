@@ -116,6 +116,8 @@ def build_inventory(crawl: Crawl) -> dict[str, Any]:
         "endpoints": endpoints,
         "discovered_not_captured": missed,
         "budget_exhausted": bool(missed),
+        "unmarked_clickables": crawl.config.unmarked_clickables,
+        "deep_nav": crawl.config.deep_nav,
     }
 
 
@@ -175,6 +177,15 @@ def _summary_markdown(inv: dict[str, Any]) -> str:
         "",
         "## Elements by kind (all screens)", "",
     ]
+    if inv["unmarked_clickables"] and not inv["deep_nav"]:
+        lines[6:6] = [
+            f"> ℹ️ **There may be more screens.** {inv['unmarked_clickables']} "
+            f"element(s) are clickable but were never marked up as links "
+            f"(no anchor, no button, no ARIA role), so link-following cannot "
+            f"see where they go. Re-run with `--deep-nav` to click them, or "
+            f"seed those areas with `modules:`.",
+            "",
+        ]
     if inv["discovered_not_captured"]:
         missed = inv["discovered_not_captured"]
         lines[6:6] = [

@@ -84,6 +84,9 @@ class Capabilities(BaseModel):
     accessibility_tree: bool = True
     probe: bool = False
     network: bool = True  # only meaningful with probe
+    # Click elements the app never marked up as links, to find routes
+    # nothing else can reach. See CrawlOptions.deep_nav.
+    deep_nav: bool = False
 
 
 class Safety(BaseModel):

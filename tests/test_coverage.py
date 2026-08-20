@@ -15,6 +15,7 @@ success anyway.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 from ui_discovery.crawler import crawl_site
 from ui_discovery.inventory import build_inventory
@@ -115,3 +116,64 @@ def test_a_complete_crawl_reports_no_truncation(serve, tmp_path):
     inv = build_inventory(crawl)
     assert inv["budget_exhausted"] is False
     assert inv["discovered_not_captured"] == []
+
+
+# --- deep nav: routes the app never marked up as links -----------------------
+#
+# Each test below is paired with a negative control that runs the same
+# scenario with the feature OFF. That pairing is not ceremony: the first
+# version of the hidden-nav fixture did not actually reproduce the bug — it
+# marked the links `hidden` instead of removing them, so they stayed in the
+# DOM and the test passed against code that had no feature in it. The
+# "turn it off" test is what exposed that.
+
+def test_deep_nav_finds_routes_behind_unmarked_clickables(serve, tmp_path):
+    site = serve("fixtures/hidden_nav")
+    crawl = asyncio.run(crawl_site(
+        site.url("deep.html"), max_depth=2, output_dir=str(tmp_path),
+        deep_nav=True))
+    found = _urls(crawl)
+    assert "alpha.html" in found, f"click-navigation not followed; got {found}"
+    assert "beta.html" in found, f"click-revealed link not followed; got {found}"
+
+
+def test_without_deep_nav_those_routes_are_missed(serve, tmp_path):
+    """Negative control. If this ever passes, the fixture has stopped
+    reproducing the problem and the test above proves nothing."""
+    site = serve("fixtures/hidden_nav")
+    crawl = asyncio.run(crawl_site(
+        site.url("deep.html"), max_depth=2, output_dir=str(tmp_path),
+        deep_nav=False))
+    found = _urls(crawl)
+    assert "alpha.html" not in found
+    assert "beta.html" not in found
+
+
+def test_deep_nav_still_refuses_destructive_labels(serve, tmp_path):
+    """"Delete workspace" is an unmarked clickable exactly like the others.
+    Being unmarked must not buy it a free pass through the safety gate."""
+    site = serve("fixtures/hidden_nav")
+    crawl = asyncio.run(crawl_site(
+        site.url("deep.html"), max_depth=2, output_dir=str(tmp_path),
+        deep_nav=True))
+    assert "danger.html" not in _urls(crawl)
+
+
+def test_a_capture_says_when_it_may_be_incomplete(serve, tmp_path):
+    """Without deep-nav the crawl cannot see those routes — but it can see
+    that something clickable was never followed, and say so."""
+    from ui_discovery.inventory import build_inventory
+
+    site = serve("fixtures/hidden_nav")
+    crawl = asyncio.run(crawl_site(
+        site.url("deep.html"), max_depth=0, max_pages=1,
+        output_dir=str(tmp_path), deep_nav=False))
+    inv = build_inventory(crawl)
+    assert inv["unmarked_clickables"] > 0
+    assert inv["deep_nav"] is False
+    from ui_discovery.inventory import write_inventory
+
+    text = Path(write_inventory(crawl, str(tmp_path))["summary"]).read_text(
+        encoding="utf-8")
+    assert "There may be more screens" in text
+    assert "--deep-nav" in text

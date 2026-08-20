@@ -32,7 +32,13 @@ from .extraction import (
 )
 from .interactions import attach_network_async, probe_open_page_async
 from .models import Crawl, CrawlConfig, CrawlStats, NetworkRequest, PageNode
-from .safety import DEFAULT_POLICY, SafetyPolicy, decide, should_execute
+from .safety import (
+    DEFAULT_POLICY,
+    SafetyPolicy,
+    classify_label,
+    decide,
+    should_execute,
+)
 from .util import bfs_depths, normalize_url, resolve_links, slug_for, url_in_scope
 
 
@@ -128,6 +134,7 @@ async def _extract_frames_async(page, raw: dict) -> list:
 # around the page, only opening the navigation.
 _NAV_LANDMARKS = {"navigation", "banner", "complementary"}
 _MAX_REVEALS = 12
+_MAX_DEEP_CLICKS = 40  # per crawl, not per page
 
 
 async def _reveal_nav_links(page, raw: dict, log) -> list[str]:
@@ -183,6 +190,157 @@ async def _reveal_nav_links(page, raw: dict, log) -> list[str]:
     if revealed:
         log.info(f"Revealed {len(revealed)} link(s) behind {opened} nav control(s)")
     return revealed
+
+
+
+# Elements the app treats as clickable but did not mark up as such: no anchor,
+# no button, no ARIA role — just `cursor: pointer` and a handler. They are
+# invisible to link-following *and* to the accessibility tree, which is an
+# accessibility defect in the app, but they still hide real routes behind
+# them. `cursor: pointer` is the one standards-based signal that survives:
+# it is the app telling the browser "this is clickable".
+CLICKABLE_CANDIDATES_JS = r"""
+() => {
+  const out = [];
+  const seen = new Set();
+  document.querySelectorAll('*').forEach(el => {
+    if (el.matches('a[href],button,input,select,textarea,[role=button],[role=link],[role=tab]')) return;
+    if (el.closest('a[href],button,[role=button],[role=link]')) return;
+    if (getComputedStyle(el).cursor !== 'pointer') return;
+    const text = (el.innerText || '').replace(/\s+/g, ' ').trim();
+    // A readable label is required, not cosmetic: it is what lets the safety
+    // classifier refuse "Delete workspace". Unlabelled means unjudgeable,
+    // so we leave it alone.
+    if (!text || text.length > 40) return;
+    if (seen.has(text)) return;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    // Prefer the outermost element still carrying only this label, so we
+    // click the row rather than the text node inside it.
+    let target = el;
+    while (target.parentElement
+           && getComputedStyle(target.parentElement).cursor === 'pointer'
+           && (target.parentElement.innerText || '').replace(/\s+/g, ' ').trim() === text) {
+      target = target.parentElement;
+    }
+    seen.add(text);
+    out.push({text, path: cssPathFor(target)});
+  });
+  return out;
+
+  function cssPathFor(el) {
+    const parts = [];
+    while (el && el.nodeType === 1 && parts.length < 40) {
+      let sel = el.nodeName.toLowerCase();
+      if (el.id && document.querySelectorAll('#' + CSS.escape(el.id)).length === 1) {
+        parts.unshift(sel + '#' + CSS.escape(el.id));
+        break;
+      }
+      let nth = 1, sib = el;
+      while ((sib = sib.previousElementSibling)) {
+        if (sib.nodeName === el.nodeName) nth++;
+      }
+      parts.unshift(sel + ':nth-of-type(' + nth + ')');
+      el = el.parentElement;
+    }
+    return parts.join(' > ');
+  }
+}
+"""
+
+
+async def _count_unmarked_clickables(page) -> int:
+    """How many clickable-but-unmarked elements this page has. Recorded even
+    when deep discovery is off, so a capture can *say* it may be incomplete
+    instead of just being incomplete."""
+    try:
+        return len(await page.evaluate(CLICKABLE_CANDIDATES_JS))
+    except Exception:
+        return 0
+
+
+async def _discover_by_clicking(
+    page, url: str, log, policy,
+    tried: set[str], budget: list[int],
+) -> list[str]:
+    """Click unmarked clickables and record any route they navigate to.
+
+    This is the last resort for navigation that link-following cannot see.
+    Each candidate must carry a readable label, and that label goes through
+    the same safety classifier as everything else — so "Delete workspace" is
+    refused here exactly as it would be in the probe.
+
+    After each click we return to `url`, so the crawl stays where it was.
+
+    `tried` is shared across the whole crawl. Site-wide navigation is
+    identical on every page, so without it the same sidebar gets clicked once
+    per page — which on a 60-page crawl is thousands of pointless clicks and
+    turns a two-minute capture into an hour.
+    """
+    try:
+        candidates = await page.evaluate(CLICKABLE_CANDIDATES_JS)
+    except Exception:
+        return []
+
+    async def hrefs_now() -> set[str]:
+        try:
+            return set(await page.evaluate(
+                "() => [...document.querySelectorAll('a[href]')]"
+                ".map(a => a.getAttribute('href')).filter(Boolean)"))
+        except Exception:
+            return set()
+
+    baseline = await hrefs_now()
+    found: list[str] = []
+    attempted = 0
+    for cand in candidates:
+        if attempted >= _MAX_DEEP_CLICKS:
+            break
+        if budget[0] <= 0:
+            break
+        label = cand.get("text", "")
+        if label in tried:
+            continue
+        tried.add(label)
+        if classify_label(label, policy) != "SAFE":
+            log.info(f"deep-nav: refusing {label!r} (not classified safe)")
+            continue
+        budget[0] -= 1
+        try:
+            handle = await page.query_selector(cand["path"])
+            if handle is None:
+                continue
+            attempted += 1
+            await handle.click(timeout=2000)
+            await page.wait_for_timeout(600)
+
+            # Two ways a click can reveal a route, and both count. Navigating
+            # is the obvious one; the commoner one in a sidebar is expanding a
+            # submenu, which puts new anchors in the DOM without moving.
+            landed = page.url
+            if normalize_url(landed) != normalize_url(url):
+                found.append(landed)
+                log.info(f"deep-nav: {label!r} navigated -> {landed}")
+                await page.goto(url, wait_until="domcontentloaded")
+                await page.wait_for_timeout(400)
+                baseline = await hrefs_now()
+                continue
+
+            revealed = await hrefs_now() - baseline
+            if revealed:
+                found.extend(revealed)
+                baseline |= revealed
+                log.info(f"deep-nav: {label!r} revealed {len(revealed)} link(s)")
+        except Exception:
+            # A click that fails or lands somewhere unusable is not worth
+            # failing the page over; get back and carry on.
+            try:
+                await page.goto(url, wait_until="domcontentloaded")
+                await page.wait_for_timeout(300)
+                baseline = await hrefs_now()
+            except Exception:
+                break
+    return found
 
 
 async def _aria(page) -> str | None:
@@ -273,6 +431,13 @@ class CrawlOptions:
     # are limited to navigation landmarks and pass the same safety gates as
     # the probe, so the worst case is an opened menu.
     reveal_nav: bool = True
+    # Last resort for navigation the app never marked up: click elements that
+    # only `cursor: pointer` identifies as clickable, and record where they
+    # navigate. Off by default — clicking unmarked elements is qualitatively
+    # different from opening a labelled menu — but the crawl always *counts*
+    # them, so a capture can say it may be incomplete rather than silently
+    # being so.
+    deep_nav: bool = False
     # Politeness (X5)
     max_requests_per_minute: float | None = None
     # None means 'leave Crawlee's own default alone'. That default is
@@ -335,13 +500,13 @@ async def crawl_site(
     logged_out_signals = opts.logged_out_signals
     policy, redact_keys = opts.policy, opts.redact_keys
     adapters = opts.adapters
-    seeds, reveal_nav = opts.seeds, opts.reveal_nav
+    seeds, reveal_nav, deep_nav = opts.seeds, opts.reveal_nav, opts.deep_nav
     max_requests_per_minute = opts.max_requests_per_minute
     max_concurrency = opts.max_concurrency
     respect_robots_txt = opts.respect_robots_txt
     # Imported here so the module imports cleanly even if crawlee isn't
     # installed (V0-only environments).
-    from crawlee import service_locator
+    from crawlee import Request, service_locator
     from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
     from crawlee.storage_clients import MemoryStorageClient
 
@@ -383,19 +548,6 @@ async def crawl_site(
             return False
         return adapter_hooks.should_visit(active_adapters, u)
 
-    def _transform_request(req):  # noqa: ANN001, ANN202
-        # Route Crawlee's own dedup/queue identity through the same
-        # normalization as our page graph, so counts match (H1). Setting
-        # unique_key explicitly bypasses Crawlee's own (fragment-stripping
-        # by default) computation entirely.
-        req["url"] = _normalize(req["url"])
-        req["unique_key"] = req["url"]
-        # Out-of-scope URLs are dropped before they are ever queued, so an
-        # excluded area is never fetched — not fetched-then-discarded.
-        if not _in_scope(req["url"]):
-            return "skip"
-        return req
-
     root = _normalize(start_url)
     shots_dir = Path(output_dir) / "screenshots"
     shots_dir.mkdir(parents=True, exist_ok=True)
@@ -406,6 +558,13 @@ async def crawl_site(
     # from a pre-navigation hook so page-load traffic is captured, then read
     # by the handler once that page has been extracted.
     net_sinks: dict[int, list[NetworkRequest]] = {}
+    # Per page: clickable elements the app never marked up as links.
+    unmarked_total: dict[str, int] = {}
+    # Shared across the crawl: labels already deep-clicked, the routes
+    # they revealed, and a global click budget.
+    deep_tried: set[str] = set()
+    deep_found: set[str] = set()
+    deep_budget = [_MAX_DEEP_CLICKS]
 
     crawler = PlaywrightCrawler(
         headless=headless,
@@ -536,6 +695,17 @@ async def crawl_site(
         if reveal_nav:
             hrefs = hrefs + await _reveal_nav_links(page, raw, context.log)
 
+        # Routes behind elements the app never marked up as links.
+        unmarked = await _count_unmarked_clickables(page)
+        if deep_nav:
+            if unmarked:
+                deep_found.update(await _discover_by_clicking(
+                    page, url, context.log, policy, deep_tried, deep_budget))
+            # Routes found anywhere are worth trying from here too: the same
+            # global nav is on every page, and Crawlee dedups the rest.
+            hrefs = hrefs + sorted(deep_found)
+        unmarked_total[url] = unmarked
+
         out_links = resolve_links(
             model.final_url or url, hrefs, root,
             dedupe_queries=dedupe_queries,
@@ -546,12 +716,27 @@ async def crawl_site(
         node = PageNode(url=url, out_links=out_links, page=model)
         nodes[url] = node
 
-        # Let Crawlee discover + enqueue same-domain links (it handles dedup,
-        # depth and the page budget). `transform_request_function` routes its
-        # dedup identity through the same normalization as our page graph.
-        await context.enqueue_links(
-            strategy="same-domain", transform_request_function=_transform_request
-        )
+        # Enqueue the links *we* resolved, rather than letting Crawlee
+        # re-scan the DOM. Two reasons: our list already carries everything
+        # revealed by expanding navigation or by deep-nav clicks, and by this
+        # point the page has been interacted with, so a fresh scan can see a
+        # collapsed menu — or nothing at all. Passing the list explicitly
+        # makes the queue and the page graph the same set by construction.
+        #
+        # These are already normalized and scope-filtered; Crawlee still owns
+        # dedup, depth and the page budget.
+        # Scope and adapter vetoes are applied here, at the queue. They used
+        # to live in the enqueue transform, which passing an explicit request
+        # list bypasses — an excluded area would otherwise be crawled anyway.
+        # The page graph still records every link the page really has.
+        queueable = [u for u in out_links if _in_scope(u)]
+        if queueable:
+            # Explicit unique_key, because Crawlee's default strips the
+            # fragment — which would collapse every `#/route` of a
+            # hash-routed SPA into a single request (H1).
+            await context.enqueue_links(requests=[
+                Request.from_url(u, unique_key=u) for u in queueable
+            ])
 
         # H2: probe last — after extraction, the screenshot and link discovery
         # have all seen the pristine page. Interactions only ever mutate state
@@ -622,6 +807,8 @@ async def crawl_site(
             auth_used=bool(auth_state),
             include=list(include or []),
             exclude=list(exclude or []),
+            deep_nav=deep_nav,
+            unmarked_clickables=sum(unmarked_total.values()),
             capabilities={
                 "screenshots": screenshots,
                 "accessibility_tree": accessibility_tree,
