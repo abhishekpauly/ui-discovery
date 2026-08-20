@@ -15,8 +15,10 @@ V0→V5 phase plan.
 - [`RUNBOOK.md`](RUNBOOK.md) — step-by-step, copy-pasteable commands to run a crawl.
 - [`PRODUCT_GUIDE.md`](PRODUCT_GUIDE.md) — what it can do, how it works, and how far to trust the output.
 
-Every run writes, into `output/<product>/`: `summary.md` (start here), `urls.txt`,
-`elements.csv`, `endpoints.md`, `screenshots/`, plus the canonical `crawl.json`.
+Every run writes into `~/Downloads/<Product>/`: `summary.md` (start here),
+`urls.txt`, `elements.csv`, `endpoints.md`, `screenshots/`, the canonical
+`crawl.json` — plus a self-contained folder per module when the config
+defines them.
 The browser is **visible by default** — pass `--headless` for CI.
 
 ## What's built

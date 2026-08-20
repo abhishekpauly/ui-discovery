@@ -161,7 +161,9 @@ def resolve_output_dir(scope: Scope, cli_output: Optional[str], slug: str) -> st
     from datetime import date
     from pathlib import Path
 
-    root = Path(pick(cli_output, scope.outputs.dir, "output"))
+    from .config import DOWNLOADS
+
+    root = Path(pick(cli_output, scope.outputs.dir or None, DOWNLOADS))
     if scope.outputs.keep_history:
         root = root / date.today().isoformat()
     return str(root / run_folder_name(scope, slug))

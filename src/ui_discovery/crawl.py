@@ -24,7 +24,7 @@ from .cliconfig import (
     resolve_output_dir,
 )
 from .crawler import crawl_site
-from .inventory import write_inventory
+from .inventory import write_inventory, write_module_artifacts
 from .reports import write_reports
 from .util import slug_for
 
@@ -168,6 +168,8 @@ def main(argv: list[str] | None = None) -> int:
     paths = write_reports(crawl, str(out_dir))
     # Every run leaves the plain-facts artifacts behind, not just the model.
     write_inventory(crawl, str(out_dir))
+    modules = write_module_artifacts(
+        crawl, str(out_dir), [(m.name, m.start_url) for m in scope.modules])
     s = crawl.stats
     print(f"[INFO] Crawled {s.pages_crawled} pages "
           f"({s.pages_failed} failed) in {s.runtime_seconds}s")
@@ -177,6 +179,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[INFO] Wrote {paths['html']}")
     print(f"[INFO] Artifacts in {out_dir}: summary.md · urls.txt · "
           f"elements.csv · endpoints.md · screenshots/")
+    if modules:
+        print("[INFO] Module folders: "
+              + " · ".join(f"{name}/" for name in sorted(modules)))
 
     # H4: say it loudly. Crawling a wall of login screens and reporting
     # "success" is the failure this check exists to prevent.

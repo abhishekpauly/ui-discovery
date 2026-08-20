@@ -108,7 +108,7 @@ def build_interactively() -> Scope:
     block_extra = _ask_list("Extra destructive words to refuse")
 
     print("\n-- Outputs -----------------------------------------------------")
-    out_dir = _ask("Artifact root", "output")
+    out_dir = _ask("Artifact root (blank = your Downloads folder)", "")
     keep_history = _ask_bool("Keep one folder per run (needed to diff)?", False)
 
     return Scope(

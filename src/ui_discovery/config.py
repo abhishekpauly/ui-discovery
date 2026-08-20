@@ -116,8 +116,16 @@ class Privacy(BaseModel):
     redact_network_keys: list[str] = Field(default_factory=list)
 
 
+# Captures are deliverables, not build output: you open them, attach them to
+# a ticket, hand them to someone. Downloads is where a person looks for a file
+# they just generated, and it keeps 9MB of screenshots out of the repo.
+DOWNLOADS = str(Path.home() / "Downloads")
+
+
 class Outputs(BaseModel):
-    dir: str = "output"
+    # Empty means "the Downloads folder" — resolved at use, not import, so a
+    # config written on one machine still works on another.
+    dir: str = ""
     # One folder per run (dated) instead of overwriting in place, so two
     # snapshots exist to compare with `diff` (C1).
     keep_history: bool = False

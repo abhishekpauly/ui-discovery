@@ -20,9 +20,12 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
+import shutil
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
+from urllib.parse import urlparse
 
 from .models import Crawl
 
@@ -245,3 +248,83 @@ def write_inventory(crawl: Crawl, output_dir: str) -> dict[str, str]:
     Path(paths["summary"]).write_text(
         _summary_markdown(inv), encoding="utf-8")
     return paths
+
+
+# --- module-wise layout ------------------------------------------------------
+
+GENERAL_FOLDER = "general"
+
+
+def _folder_name(label: str, fallback: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", (label or "").strip()).strip("-._")
+    return cleaned[:60] or fallback
+
+
+def assign_modules(
+    crawl: Crawl, modules: Sequence[tuple[str, str]],
+) -> dict[str, list]:
+    """Group captured pages by module, by URL path.
+
+    `modules` is (name, start_url) pairs. A page belongs to the module whose
+    start path is the longest prefix of its own — longest wins, so a module at
+    `/platform/rag/containers` beats one at `/platform`. Anything matching no
+    module lands in `general`, which is most pages on most sites and is not a
+    failure.
+    """
+    prefixes = []
+    for name, start_url in modules:
+        path = (urlparse(start_url).path or "/").rstrip("/")
+        if path:
+            prefixes.append((path, _folder_name(name, path.strip("/") or "module")))
+
+    grouped: dict[str, list] = {}
+    for node in crawl.pages:
+        page_path = (urlparse(node.url).path or "/").rstrip("/")
+        best = ""
+        folder = GENERAL_FOLDER
+        for prefix, name in prefixes:
+            if (page_path == prefix or page_path.startswith(prefix + "/")) \
+                    and len(prefix) > len(best):
+                best, folder = prefix, name
+        grouped.setdefault(folder, []).append(node)
+    return grouped
+
+
+def write_module_artifacts(
+    crawl: Crawl, product_dir: str, modules: Sequence[tuple[str, str]],
+) -> dict[str, str]:
+    """Write a per-module folder of artifacts under the product folder.
+
+    Each module folder is a self-contained view of its own screens — the same
+    files as the product-level capture, scoped to that module, with copies of
+    just those screenshots. Self-contained on purpose: a module folder is the
+    thing you hand to the team that owns that module.
+
+    The whole-crawl artifacts stay at the product level; `crawl.json` is never
+    split, because it is the canonical model and a partial one would be a
+    different, lesser artifact wearing the same name.
+    """
+    root = Path(product_dir)
+    written: dict[str, str] = {}
+
+    for folder, nodes in sorted(assign_modules(crawl, modules).items()):
+        if not nodes:
+            continue
+        sub = root / folder
+        sub.mkdir(parents=True, exist_ok=True)
+
+        # A Crawl carrying only this module's pages, so every existing
+        # renderer works on it unchanged.
+        scoped = crawl.model_copy(update={"pages": nodes})
+        write_inventory(scoped, str(sub))
+
+        shots = sub / "screenshots"
+        for node in nodes:
+            src = node.page.screenshot_path
+            if not src or not Path(src).exists():
+                continue
+            shots.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, shots / Path(src).name)
+        written[folder] = str(sub)
+
+    return written

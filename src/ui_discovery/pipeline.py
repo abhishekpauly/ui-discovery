@@ -29,7 +29,7 @@ from .cliconfig import (
     resolve_output_dir,
 )
 from .crawler import crawl_site
-from .inventory import write_inventory
+from .inventory import write_inventory, write_module_artifacts
 from .reports import (
     write_analysis,
     write_documentation,
@@ -178,6 +178,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     crawl.config.config_file = args.config
     write_reports(crawl, str(out_dir))
     write_inventory(crawl, str(out_dir))
+    modules = write_module_artifacts(
+        crawl, str(out_dir), [(m.name, m.start_url) for m in scope.modules])
     s = crawl.stats
     print(f"[INFO] Crawled {s.pages_crawled} pages "
           f"({s.pages_failed} failed) in {s.runtime_seconds}s")

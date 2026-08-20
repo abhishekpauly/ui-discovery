@@ -33,7 +33,7 @@ Check it worked:
 pytest -q
 ```
 
-You want `322 passed`. If you see that, the engine is healthy.
+You want `293 passed, 6 skipped`. If you see that, the engine is healthy.
 
 ---
 
@@ -59,7 +59,7 @@ Nothing to configure. A browser window opens and you can watch it work.
 python -m ui_discovery.crawl https://demo.playwright.dev/todomvc --max-depth 2
 ```
 
-Results land in `output\<product>\`. Open `summary.md` first.
+Results land in `Downloads\<product>\`. Open `summary.md` first.
 
 ---
 
@@ -134,7 +134,41 @@ them. Skip stages you don't want: `--skip docgen --skip qagen`.
 
 ## 6. What you get
 
-One folder per product, e.g. `output\acme-builder-qa\`:
+Captures go to your **Downloads** folder, one folder per product — they are
+deliverables, not build output, and it keeps screenshots out of the repo.
+
+```
+Downloads\Acme-Portal\
+  summary.md  urls.txt  elements.csv  endpoints.md     <- the whole capture
+  crawl.json  report.html  screenshots\
+  RAG\                                                 <- one folder per module
+    summary.md  urls.txt  elements.csv  endpoints.md
+    screenshots\
+  Knowledge-Hub\
+  App-Builder\
+  general\                                             <- screens in no module
+```
+
+Each module folder is self-contained — the same files, scoped to that
+module's screens, with its own screenshots. It is the thing you hand to the
+team that owns that module. `crawl.json` is never split: it is the canonical
+model, and a partial one would be a different artifact wearing the same name.
+
+Define modules in the config:
+
+```yaml
+modules:
+  - name: RAG
+    start_url: https://portal.example.com/platform/rag
+  - name: Knowledge Hub
+    start_url: https://portal.example.com/platform/knowledge-store
+```
+
+Pages are assigned by URL path, longest match wins. With no modules
+configured you get one flat capture, exactly as before. Use `--output <dir>`
+to write somewhere else.
+
+Files at either level:
 
 | File | Open this when you want… |
 | --- | --- |
@@ -249,5 +283,6 @@ python -m ui_discovery.crawl <url> --max-requests-per-minute 60 --max-concurrenc
 ```
 
 **Where did my last run go?**
-`output\<product>\` — named from `target` / `outputs.run_label` in the config,
-or from the URL if you didn't use one.
+Your `Downloads\<Product>\` folder — named from `target` /
+`outputs.run_label` in the config, or from the URL if you didn't use one.
+Override with `--output <dir>`, or `outputs.dir` in the config.
