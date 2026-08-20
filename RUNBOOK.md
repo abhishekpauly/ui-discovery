@@ -33,7 +33,7 @@ Check it worked:
 pytest -q
 ```
 
-You want `377 passed, 7 skipped`. If you see that, the engine is healthy.
+You want `412 passed, 7 skipped`. If you see that, the engine is healthy.
 
 ---
 
@@ -220,18 +220,20 @@ The venv isn't active. Your prompt must show `(.venv)`. Re-run step 1.
 The saved session expired. Re-run step 3a.
 
 **A capture looks thin — far fewer elements than the site has.**
-The site is probably still rendering when we look. Add a settle window:
+Apps that hold a websocket or SSE stream open never reach "network idle", so
+the crawler has only the DOM to go on. It **detects that automatically** and
+waits considerably longer; `readiness.held_open_connection` in `crawl.json`
+says whether it applied.
+
+If a capture still looks thin, compare `elements_count` in `summary.md`
+across two runs of an unchanged site. If it moves, force a fixed settle
+window on top:
 
 ```yaml
 adapters:
   - name: extra_wait
     options: { ms: 4000 }
 ```
-
-This is required for apps that hold a websocket open (the Acme portal is
-one), because they never reach "network idle". Compare `screens_count` and
-`elements_count` in `summary.md` across two runs — if they move on an
-unchanged site, you need this.
 
 **Some screens are missing from the capture.**
 

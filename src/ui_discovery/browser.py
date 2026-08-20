@@ -60,10 +60,60 @@ def has_rendered(fingerprint: str) -> bool:
     return text_len >= RENDERED_TEXT_FLOOR or interactive >= 1
 
 
+
+# Apps that hold a connection open never reach `networkidle` — a websocket or
+# an SSE stream keeps traffic flowing forever. That is not a stalled page, but
+# it does mean the network signal is useless there, leaving DOM-plateau
+# detection to do all the work alone. It is not reliable alone: a pause
+# between fetches looks exactly like being finished.
+#
+# So detect the condition rather than asking the operator to know about it.
+# Wrapping the constructors catches both connected and attempted sockets,
+# needs no cooperation from the page, and works identically in the sync and
+# async paths.
+LIVE_CONNECTION_PROBE_JS = """
+(() => {
+  if (window.__uid_conn) return;
+  window.__uid_conn = { ws: 0, sse: 0 };
+  const WS = window.WebSocket;
+  if (WS) {
+    window.WebSocket = function (...args) {
+      window.__uid_conn.ws++;
+      return new WS(...args);
+    };
+    window.WebSocket.prototype = WS.prototype;
+    Object.assign(window.WebSocket, WS);
+  }
+  const ES = window.EventSource;
+  if (ES) {
+    window.EventSource = function (...args) {
+      window.__uid_conn.sse++;
+      return new ES(...args);
+    };
+    window.EventSource.prototype = ES.prototype;
+    Object.assign(window.EventSource, ES);
+  }
+})();
+"""
+
+READ_LIVE_CONNECTIONS_JS = (
+    "() => window.__uid_conn "
+    "? window.__uid_conn.ws + window.__uid_conn.sse : 0"
+)
+
+# How long a page holding a connection open must stay unchanged before we
+# believe it. Deliberately much stricter than the default: this is the case
+# where the network signal tells us nothing, so the DOM has to carry the
+# whole argument.
+STREAMING_STABLE_POLLS = 6
+STREAMING_TIMEOUT_MS = 20000
+
+
 def wait_for_dom_stable(
     page: Page,
     *,
     networkidle: bool = True,
+    live_connections: int = 0,
     timeout_ms: int = 8000,
     interval_ms: int = 250,
     required_stable_polls: int = 2,
@@ -92,6 +142,11 @@ def wait_for_dom_stable(
         # Still fetching: require a full second of quiet, and allow longer.
         required_stable_polls = max(required_stable_polls, 4)
         timeout_ms = max(timeout_ms, 15000)
+    # A held-open connection is re-checked every poll rather than decided
+    # here: the socket usually opens a second or two into page load, so
+    # sampling once up front races it and reads zero on a page that is about
+    # to hold one open for the rest of its life.
+    strict = False
 
     t0 = time.monotonic()
     deadline = t0 + timeout_ms / 1000
@@ -104,12 +159,22 @@ def wait_for_dom_stable(
         except Exception:
             break
         saw_content = saw_content or has_rendered(fp)
+        if not strict:
+            try:
+                if int(page.evaluate(READ_LIVE_CONNECTIONS_JS) or 0):
+                    strict = True
+                    required_stable_polls = max(
+                        required_stable_polls, STREAMING_STABLE_POLLS)
+                    deadline = max(deadline, t0 + STREAMING_TIMEOUT_MS / 1000)
+            except Exception:
+                pass
         if fp == last and has_rendered(fp):
             stable_polls += 1
             if stable_polls >= required_stable_polls:
                 return {
                     "dom_stable": True,
                     "dom_stable_wait_ms": round((time.monotonic() - t0) * 1000),
+                    "held_open_connection": strict,
                 }
         else:
             stable_polls = 0
@@ -121,6 +186,7 @@ def wait_for_dom_stable(
         # Distinguishes "never rendered anything" from "rendered but kept
         # changing" — very different problems with the same timeout.
         "dom_content_seen": saw_content,
+        "held_open_connection": strict,
     }
 
 

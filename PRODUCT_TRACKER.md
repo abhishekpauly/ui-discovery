@@ -99,6 +99,8 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | D2 | Downloads + module-wise layout | product folder; one self-contained folder per module | P1 | ✅ 0.13.0 |
 | D3 | UI type taxonomy + coverage | 64 types; found / absent / not-detectable | P1 | ✅ 0.13.0 |
 | D4 | Deep navigation discovery | reach routes the app never marked up as links | P0 | ✅ 0.13.0 |
+| D5 | Held-open connection detection | websocket/SSE apps settle correctly without a hand-written adapter | P0 | ✅ 0.14.0 |
+| D6 | Session pre-flight | read a saved session's expiry before crawling, not after | P1 | ✅ 0.14.0 |
 | C1 | Change diff between two crawls | pages/elements/components added/removed/renamed (by fingerprint) | P1 | ✅ 0.12.0 |
 | C2 | Playwright test-skeleton export | runnable `.py`/`.spec.ts` stubs from captured selectors; destructive skipped | P1 | ✅ (via V5.3) |
 

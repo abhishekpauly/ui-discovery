@@ -71,10 +71,14 @@ calls a blank page settled. Every readiness signal is recorded in the
 snapshot (`dom_stable`, `dom_stable_wait_ms`, `networkidle`) so you can judge
 whether a capture was taken against a settled page.
 
-**Known limit:** an app that holds a websocket open never reaches network
-idle, so this heuristic does all the work alone and can misjudge a pause
-between fetches. Those apps need a fixed settle window — see `extra_wait` in
-*Extending it*.
+Apps that hold a websocket or SSE stream open never reach network idle, so
+there the DOM plateau is the only evidence available — and a pause between
+render bursts looks exactly like being finished. The engine detects that
+case (it wraps the `WebSocket` and `EventSource` constructors, so it sees
+the connection regardless of whether it succeeds) and demands far more
+stability before believing the page. Measured on such a portal: two
+consecutive crawls went from differing by 565 elements to differing by one,
+on the page with a live-updating list.
 
 ### 3. It names what kind of control each element is
 
@@ -155,7 +159,16 @@ is rejected outright.
 
 **Secrets** never enter the model: no request or response headers or bodies
 are stored, and sensitive-looking query values are redacted. Saved sessions
-live only on your machine and are gitignored.
+live only on your machine and are gitignored — treat the file as the
+credential it is.
+
+Before a run, the engine reads the session's own expiry and refuses early if
+it has already lapsed, rather than spending twenty minutes crawling login
+screens. It consults **only the target origin's token**: a storage state
+captured through an SSO provider also holds that provider's cookies, and one
+of those expiring says nothing about your session. Where no expiry is
+readable it reports "unknown" rather than guessing, and the in-crawl check
+remains the backstop.
 
 **Politeness** is available for shared environments: request-rate caps,
 concurrency limits, and robots.txt.

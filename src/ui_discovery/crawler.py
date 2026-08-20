@@ -22,7 +22,14 @@ from . import SCHEMA_VERSION, __version__
 from . import adapters as adapter_hooks
 from .adapters import Adapter
 from .auth import check_auth
-from .browser import DOM_FINGERPRINT_JS, has_rendered
+from .browser import (
+    DOM_FINGERPRINT_JS,
+    LIVE_CONNECTION_PROBE_JS,
+    READ_LIVE_CONNECTIONS_JS,
+    STREAMING_STABLE_POLLS,
+    STREAMING_TIMEOUT_MS,
+    has_rendered,
+)
 from .extraction import (
     JS,
     assemble_page,
@@ -46,6 +53,7 @@ async def _wait_for_dom_stable_async(
     page,
     *,
     networkidle: bool = True,
+    live_connections: int = 0,
     timeout_ms: int = 8000,
     interval_ms: int = 250,
     required_stable_polls: int = 2,
@@ -56,6 +64,11 @@ async def _wait_for_dom_stable_async(
         # Still fetching: require a full second of quiet, and allow longer.
         required_stable_polls = max(required_stable_polls, 4)
         timeout_ms = max(timeout_ms, 15000)
+    # A held-open connection is re-checked every poll rather than decided
+    # here: the socket usually opens a second or two into page load, so
+    # sampling once up front races it and reads zero on a page that is about
+    # to hold one open for the rest of its life.
+    strict = False
 
     t0 = time.monotonic()
     deadline = t0 + timeout_ms / 1000
@@ -68,12 +81,22 @@ async def _wait_for_dom_stable_async(
         except Exception:
             break
         saw_content = saw_content or has_rendered(fp)
+        if not strict:
+            try:
+                if int(await page.evaluate(READ_LIVE_CONNECTIONS_JS) or 0):
+                    strict = True
+                    required_stable_polls = max(
+                        required_stable_polls, STREAMING_STABLE_POLLS)
+                    deadline = max(deadline, t0 + STREAMING_TIMEOUT_MS / 1000)
+            except Exception:
+                pass
         if fp == last and has_rendered(fp):
             stable_polls += 1
             if stable_polls >= required_stable_polls:
                 return {
                     "dom_stable": True,
                     "dom_stable_wait_ms": round((time.monotonic() - t0) * 1000),
+                    "held_open_connection": strict,
                 }
         else:
             stable_polls = 0
@@ -83,6 +106,7 @@ async def _wait_for_dom_stable_async(
         "dom_stable": False,
         "dom_stable_wait_ms": round((time.monotonic() - t0) * 1000),
         "dom_content_seen": saw_content,
+        "held_open_connection": strict,
     }
 
 
@@ -620,6 +644,13 @@ async def crawl_site(
                         await pctx.add_init_script(js)
                     except Exception:
                         pass
+
+    @crawler.pre_navigation_hook
+    async def _install_connection_probe(context) -> None:  # noqa: ANN001
+        try:
+            await context.page.context.add_init_script(LIVE_CONNECTION_PROBE_JS)
+        except Exception:
+            pass
 
     # H2: start observing network traffic before the page navigates, so the
     # probe's record includes page-load requests, not just those triggered by

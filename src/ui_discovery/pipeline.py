@@ -20,7 +20,7 @@ import sys
 from typing import Callable, Optional
 
 from .analysis import analyze_crawl
-from .auth import load_storage_state
+from .auth import describe_session, load_storage_state, session_status
 from .cliconfig import (
     add_config_argument,
     crawl_options,
@@ -153,6 +153,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     except (FileNotFoundError, ValueError) as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
+    # Pre-flight: a session that has already lapsed should cost a second,
+    # not a full crawl of login screens.
+    for line in describe_session(auth_state, auth_path, start_url):
+        print(line, file=sys.stderr if line.startswith("[ERROR]") else None)
+    if auth_state and session_status(auth_state, start_url).get("expired"):
+        return 2
+
     if scope.auth.required and not auth_state:
         print("[ERROR] Config sets auth.required: true but no session was "
               "supplied.", file=sys.stderr)

@@ -25,6 +25,43 @@ backend) is explicitly deferred in `ROADMAP.md` until data volume demands it.
 
 ---
 
+## [0.14.0] — 2026-08-20  ·  Two things the operator no longer has to know  (minor)
+
+Both of these were previously documented workarounds. A workaround only helps
+someone who already knows the problem exists, which is the wrong bar.
+
+### Added
+- **Held-open connections are detected, and change how long we wait.** An app
+  keeping a websocket or SSE stream open never reaches `networkidle`, so the
+  DOM plateau is the only evidence available — and a pause between render
+  bursts looks exactly like being finished. The engine now wraps the
+  `WebSocket` and `EventSource` constructors, so it sees the connection
+  whether or not it succeeds, and demands six consecutive quiet polls instead
+  of two. Reported as `readiness.held_open_connection`.
+
+  This removes the need for a hand-written `extra_wait` adapter on such apps.
+  On the portal that motivated it, two consecutive crawls went from differing
+  by **565 elements to differing by one** (on the page with a live-updating
+  list), and captured *more* than the manual adapter did — 106 elements per
+  page against 101.
+
+  The check runs on every poll rather than once up front: the socket opens a
+  beat into page load, so sampling it early read zero on a page about to hold
+  one open for its lifetime.
+- **Session pre-flight.** A saved session's own expiry is read before the
+  crawl starts, so a lapsed one costs a second rather than a full crawl of
+  login screens. Exits 2 when expired, and prints the re-capture command.
+
+### Fixed
+- The first version of that pre-flight took the earliest expiry across every
+  credential in the storage state and declared a **working** session dead: a
+  session captured through Google SSO also holds that provider's cookies, and
+  one had lapsed while the portal's own token had 16 hours left. It now
+  consults only the target origin's bearer token, and reports "unknown"
+  rather than guessing for cookie-only sessions.
+
+---
+
 ## [0.13.0] — 2026-08-20  ·  Coverage, deliverables, and a UI taxonomy  (minor)
 
 Driven by running the engine against a live portal rather than fixtures.

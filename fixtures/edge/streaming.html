@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Streaming app</title></head>
+<body>
+  <div id="root"></div>
+  <script>
+    // Holds a connection open, so `networkidle` never fires. The socket is
+    // opened a beat after load, which is what defeated sampling the counter
+    // once up front instead of on every poll.
+    setTimeout(function () { try { new WebSocket("wss://127.0.0.1:9/x"); } catch (e) {} }, 400);
+    // Content arrives in two bursts with a gap longer than the default
+    // stability window — the second burst is what a lenient settle misses.
+    setTimeout(function () {
+      document.getElementById("root").innerHTML =
+        '<main><h1>First burst</h1><button>Early</button></main>';
+    }, 300);
+    setTimeout(function () {
+      document.querySelector("main").innerHTML +=
+        '<button id="late">Late arrival</button><p>' + "x".repeat(300) + '</p>';
+    }, 1900);
+  </script>
+</body>
+</html>

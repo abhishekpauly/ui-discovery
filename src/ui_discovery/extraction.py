@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 from . import SCHEMA_VERSION, __version__
 from .auth import check_auth
-from .browser import aria_snapshot, navigate
+from .browser import LIVE_CONNECTION_PROBE_JS, aria_snapshot, navigate
 from .models import Element, FrameInfo, Geometry, Heading, Page
 from .taxonomy import classify
 
@@ -233,6 +233,10 @@ def extract_page(
         browser = p.chromium.launch(headless=headless, args=["--no-sandbox"])
         try:
             context = browser.new_context(viewport=viewport, storage_state=auth_state)
+            # Must be installed before any navigation: it wraps the WebSocket
+            # and EventSource constructors so a held-open connection can be
+            # detected, which is what selects the stricter settle profile.
+            context.add_init_script(LIVE_CONNECTION_PROBE_JS)
             page = context.new_page()
 
             readiness = navigate(page, url, timeout_ms=timeout_ms)

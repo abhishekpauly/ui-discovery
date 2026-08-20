@@ -15,8 +15,10 @@ grants access to your logged-in session until it expires.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
+import time
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -183,3 +185,106 @@ def capture_session(
             return output
         finally:
             browser.close()
+
+
+# --- session pre-flight ------------------------------------------------------
+
+def _jwt_expiry(token: str) -> Optional[float]:
+    """The `exp` claim of a JWT, or None if this is not one.
+
+    No signature check and no library: we are reading a timestamp the token
+    carries about itself, purely to warn earlier than the crawl would. A
+    forged token is not the threat here — an expired one is.
+    """
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+    payload = parts[1] + "=" * (-len(parts[1]) % 4)
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+    except Exception:
+        return None
+    exp = claims.get("exp")
+    return float(exp) if isinstance(exp, (int, float)) else None
+
+
+def session_status(
+    state: Optional[dict[str, Any]], target_url: Optional[str] = None,
+) -> dict[str, Any]:
+    """What a saved session says about its own lifetime, best-effort.
+
+    Sessions expire, and finding out *after* a twenty-minute crawl of login
+    screens is an expensive way to learn it.
+
+    Only **bearer tokens for the target origin** are consulted. An earlier
+    version took the earliest expiry across every credential in the file and
+    promptly declared a working session dead: logging in through Google
+    leaves that provider's cookies in the same storage state, and one of them
+    had lapsed while the portal's own token had 16 hours left. Refusing to
+    crawl on that basis would be the same crying-wolf failure this project
+    keeps guarding against.
+
+    Cookie-only sessions are reported as unknown rather than guessed at:
+    which cookie actually carries the session is not knowable from disk, and
+    the crawl's own H4 check is the backstop either way.
+    """
+    if not state:
+        return {"known": False}
+
+    want_host = urlparse(target_url).netloc.lower() if target_url else None
+
+    best: Optional[tuple[float, str]] = None
+    for origin in state.get("origins") or []:
+        origin_host = urlparse(origin.get("origin", "")).netloc.lower()
+        if want_host and origin_host and origin_host != want_host:
+            continue
+        for item in origin.get("localStorage") or []:
+            exp = _jwt_expiry(str(item.get("value", "")))
+            if exp is None:
+                continue
+            # The longest-lived token for this origin is the one that keeps
+            # the session alive; a short-lived access token sitting beside a
+            # refresh token does not end it.
+            if best is None or exp > best[0]:
+                best = (exp, f"{item.get('name')} for {origin_host or 'this app'}")
+
+    if best is None:
+        return {"known": False}
+
+    when, source = best
+    remaining = when - time.time()
+    return {
+        "known": True,
+        "expires_at": when,
+        "seconds_remaining": remaining,
+        "expired": remaining <= 0,
+        "source": source,
+    }
+
+
+def describe_session(
+    state: Optional[dict[str, Any]], path: Optional[str],
+    target_url: Optional[str] = None,
+) -> list[str]:
+    """Lines to print before a run. Empty when there is nothing worth saying."""
+    if not state:
+        return []
+    status = session_status(state, target_url)
+    if not status["known"]:
+        # Nothing readable said when this expires. Say so plainly rather than
+        # inferring from unrelated credentials in the same file.
+        return [f"[INFO] Using session {path} (it records no expiry we can "
+                f"read; a rejected session is still detected during the run)."]
+    remaining = status["seconds_remaining"]
+    if status["expired"]:
+        return [
+            f"[ERROR] The saved session {path} expired "
+            f"{abs(remaining) / 3600:.1f}h ago ({status['source']}).",
+            f"[ERROR] Re-capture it before crawling:  "
+            f"python -m ui_discovery.login <login-url> --output {path}",
+        ]
+    if remaining < 1800:
+        return [f"[WARN] Session {path} expires in {remaining / 60:.0f} minutes "
+                f"({status['source']}) — it may lapse mid-crawl."]
+    return [f"[INFO] Session {path} valid for another "
+            f"{remaining / 3600:.1f}h ({status['source']})."]
