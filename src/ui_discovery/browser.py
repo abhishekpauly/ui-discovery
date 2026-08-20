@@ -7,6 +7,7 @@ the snapshot was taken against a settled page.
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 
@@ -231,13 +232,38 @@ def navigate(page: Page, url: str, timeout_ms: int = 30000) -> dict[str, Any]:
     return signals
 
 
+# Roles whose rendered "value" in an ARIA snapshot is text a person typed.
+# Playwright renders it inline — `- textbox "API token": hunter2` — which put
+# passwords and email addresses into every snapshot we have ever written.
+_TYPED_VALUE_ROLES = ("textbox", "searchbox")
+_TYPED_VALUE_LINE = re.compile(
+    r'^(\s*-\s+(?:' + "|".join(_TYPED_VALUE_ROLES) + r')\b[^:]*):\s*\S.*$'
+)
+
+
+def redact_aria_snapshot(tree: str | None) -> str | None:
+    """Strip typed text out of an ARIA snapshot, keeping its structure.
+
+    The tree is worth having; what someone typed into a field is not ours to
+    keep (CLAUDE.md: never persist secrets). The line keeps its role and
+    accessible name and loses only the value, so the shape of the page — and
+    the fact that the field exists — is unchanged.
+    """
+    if not tree:
+        return tree
+    return "\n".join(
+        _TYPED_VALUE_LINE.sub(r"\1:", line) for line in tree.splitlines()
+    )
+
+
 def aria_snapshot(page: Page) -> str | None:
     """The browser's own ARIA snapshot (YAML) for the document body.
 
     This is Playwright's current accessibility-tree API. Kept alongside the
-    deterministic per-element pass, not instead of it.
+    deterministic per-element pass, not instead of it. Typed field values are
+    redacted; see `redact_aria_snapshot`.
     """
     try:
-        return page.locator("body").aria_snapshot()
+        return redact_aria_snapshot(page.locator("body").aria_snapshot())
     except Exception:
         return None

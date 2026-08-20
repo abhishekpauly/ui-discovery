@@ -83,7 +83,10 @@ def test_probe_folded_into_crawl_report(probed, tmp_path):
     md = build_markdown(probed)
     assert "## Interaction & network probe (all pages)" in md
     assert "Refused as destructive (BLOCK):" in md
-    assert "- Probe:" in md  # per-page line
+    # Per-screen, and in words rather than a terse stats line: a reader has to
+    # be able to tell "the probe ran here and nothing opened" apart from "the
+    # probe never ran here".
+    assert "**Interaction probe:**" in md
 
     page_html = build_html(probed)
     assert "Interaction &amp; network probe" in page_html

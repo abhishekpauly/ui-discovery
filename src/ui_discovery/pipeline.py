@@ -30,6 +30,7 @@ from .cliconfig import (
 )
 from .crawler import crawl_site
 from .inventory import write_inventory, write_module_artifacts
+from .relations import build_relations
 from .reports import (
     write_analysis,
     write_documentation,
@@ -77,8 +78,28 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="Path to a saved session.")
     parser.add_argument("--max-pages", type=int, default=None)
     parser.add_argument("--max-depth", type=int, default=None)
-    parser.add_argument("--probe", action="store_true", default=None,
-                        help="Run the safe interaction probe on every page.")
+    parser.add_argument(
+        "--probe", action="store_true", default=None,
+        help="Force the safe interaction probe on, overriding a config that "
+             "disables it. On by default.")
+    parser.add_argument(
+        "--no-probe", action="store_true", default=None,
+        help="Do not interact with the target at all: no clicking, so no "
+             "modals, menus or tab panels are opened and no API traffic is "
+             "observed. Probing is on by default because a capture that never "
+             "clicks anything misses most of what a portal is. To keep it on "
+             "but scope it down, use the `probe:` block in a scope config.",
+    )
+    parser.add_argument(
+        "--no-state-capture", action="store_true", default=None,
+        help="Probe as usual, but do not photograph the modals, menus and "
+             "panels that open.",
+    )
+    parser.add_argument(
+        "--no-component-screenshots", action="store_true", default=None,
+        help="Do not take cropped screenshots of forms, dialogs, tab panels "
+             "and data tables.",
+    )
     parser.add_argument("--max-interactions", type=int, default=None)
     parser.add_argument("--dedupe-queries", action="store_true", default=None)
     parser.add_argument("--drop-param", action="append", default=None)
@@ -183,7 +204,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"[ERROR] Crawl failed: {exc}", file=sys.stderr)
         return 1
     crawl.config.config_file = args.config
-    write_reports(crawl, str(out_dir))
+    # Computed once and reused: the report, the relations artifact and docgen
+    # must describe the same graph, not three independently-derived ones.
+    relations = build_relations(crawl)
+    write_reports(crawl, str(out_dir), relations=relations)
     write_inventory(crawl, str(out_dir))
     modules = write_module_artifacts(
         crawl, str(out_dir), [(m.name, m.start_url) for m in scope.modules])
@@ -223,7 +247,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         def _docgen():
             from .docgen import generate as generate_doc
 
-            doc = generate_doc(crawl, analysis, semantics, args.provider, args.model)
+            doc = generate_doc(crawl, analysis, semantics, args.provider,
+                               args.model, relations=relations)
             write_documentation(doc, str(out_dir))
             print(f"[INFO] Documented {len(doc.pages)} pages")
         _run_stage("docgen", _docgen, results)

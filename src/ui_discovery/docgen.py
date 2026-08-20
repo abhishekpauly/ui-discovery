@@ -24,7 +24,7 @@ from typing import Optional
 
 from . import SCHEMA_VERSION, __version__
 from .llm import get_text_provider
-from .models import Analysis, Crawl, DocPage, Documentation, Semantics
+from .models import Analysis, Crawl, DocPage, Documentation, Relations, Semantics
 
 
 def _load(path: Path, model):
@@ -52,9 +52,35 @@ def _controls_from_page(page) -> dict[str, list[str]]:
     return out
 
 
-def _det_purpose(title: str, controls: dict[str, list[str]]) -> str:
+def _det_purpose(title: str, controls: dict[str, list[str]], screen=None) -> str:
+    """A sentence about what a screen is for, built from what is on it.
+
+    When the relationship layer is available this names the actual forms,
+    tables and columns — "lets you fill in the New order form (7 fields) and
+    lists Recent orders by Order, Customer, Status" — which is a description.
+    Without it, it falls back to the shape-only summary, which is a category.
+    """
     base = f"The “{title or 'untitled'}” page"
-    parts: list[str] = []
+    if screen is not None:
+        parts: list[str] = []
+        real_forms = [f for f in screen.forms if f.fields]
+        for form in real_forms[:3]:
+            name = "" if form.name.startswith("(") else f" “{form.name}”"
+            parts.append(f"lets you fill in the{name} form "
+                         f"({len(form.fields)} field"
+                         f"{'s' if len(form.fields) != 1 else ''})")
+        for table in screen.tables[:3]:
+            columns = ", ".join(table.columns[:5])
+            parts.append(f"lists “{table.name}”"
+                         + (f" by {columns}" if columns else ""))
+        if screen.outbound:
+            targets = [e.label for e in screen.outbound[:4] if e.label]
+            if targets:
+                parts.append("links onward to " + ", ".join(targets))
+        if parts:
+            return f"{base} " + "; ".join(parts) + "."
+
+    parts = []
     if controls.get("primary_action"):
         parts.append("primary actions (" + ", ".join(controls["primary_action"][:4]) + ")")
     if controls.get("data_display") or controls.get("table"):
@@ -84,6 +110,7 @@ def generate(
     semantics: Optional[Semantics] = None,
     provider_name: str = "none",
     model: Optional[str] = None,
+    relations: Optional[Relations] = None,
 ) -> Documentation:
     regions_by_url = {}
     if analysis:
@@ -102,18 +129,37 @@ def generate(
             if c.kind == "shared" and c.label
         ][:12]
 
+    if relations is None:
+        from .relations import build_relations
+
+        relations = build_relations(crawl)
+    screens = {s.url: s for s in relations.screens}
+    titles = {n.url: (n.page.title or n.url) for n in crawl.pages}
+
     doc_pages: list[DocPage] = []
     for node in crawl.pages:
         page = node.page
         controls = (_controls_from_semantics(semantics, node.url)
                     if semantics else _controls_from_page(page))
+        screen = screens.get(node.url)
         doc_pages.append(DocPage(
             url=node.url, title=page.title, depth=node.depth,
-            purpose=_det_purpose(page.title, controls),
+            purpose=_det_purpose(page.title, controls, screen),
             regions=regions_by_url.get(node.url, []),
             controls=controls,
             links=[u.rsplit("/", 1)[-1] or u for u in node.out_links],
             screenshot=(Path(page.screenshot_path).name if page.screenshot_path else None),
+            reached_from=[
+                f"“{e.label or '(unlabelled)'}” on {titles.get(e.source, e.source)}"
+                for e in (screen.inbound[:6] if screen else [])
+            ],
+            leads_to=[
+                f"“{e.label or '(unlabelled)'}” → {titles.get(e.target, e.target)}"
+                for e in (screen.outbound[:8] if screen else [])
+            ],
+            forms=[f for f in (screen.forms if screen else []) if f.fields],
+            tables=list(screen.tables) if screen else [],
+            states=list(node.probe.states) if node.probe else [],
         ))
 
     inventory = _inventory(crawl)
@@ -183,10 +229,13 @@ def main(argv: list[str] | None = None) -> int:
     crawl = _load(crawl_json, Crawl)
     analysis = _load(base / "analysis.json", Analysis) if (base / "analysis.json").exists() else None
     semantics = _load(base / "semantics.json", Semantics) if (base / "semantics.json").exists() else None
+    relations = (_load(base / "relations.json", Relations)
+                 if (base / "relations.json").exists() else None)
     print(f"[INFO] Documenting {len(crawl.pages)} pages "
           f"(analysis: {'yes' if analysis else 'no'}, semantics: {'yes' if semantics else 'no'})")
 
-    doc = generate(crawl, analysis, semantics, args.provider, args.model)
+    doc = generate(crawl, analysis, semantics, args.provider, args.model,
+                   relations=relations)
     paths = write_documentation(doc, str(base))
     print(f"[INFO] Provider: {doc.provider} "
           f"(overview: {doc.overview_source})")

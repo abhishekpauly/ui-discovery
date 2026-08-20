@@ -15,8 +15,10 @@ about a UI.
 
 Built so far: **V0** single-page extractor · **V1** Crawlee crawler + UI Crawl
 Report · **V2** analysis (fingerprints, regions, components, navigation) · **V3**
-safe interaction + network probe · **session-based auth** for logged-in portals.
-**84 tests pass.**
+safe interaction + network probe · **session-based auth** for logged-in portals ·
+**V4** source correlation · **V5** semantic/docs/QA layer (deterministic-first) ·
+**V6** relationships, control options and visual capture.
+**533 tests pass.** See `PRODUCT_TRACKER.md` for the authoritative status.
 
 ## Non-negotiable principles (do not violate these when adding features)
 
@@ -69,10 +71,13 @@ src/ui_discovery/
   reports.py                                       # ALL Markdown/HTML renderers
   analyze.py analysis/                             # V2 fingerprint/regions/components/nav
   probe.py interactions.py safety.py network.py    # V3 interaction + network
+  relations.py                                     # V6 screen/element relationships (pure)
+  uistate.py                                       # V6 revealed states + component crops (pure)
   login.py auth.py                                 # session-based auth
 fixtures/            # local HTML — the PRIMARY test surface
 fixtures/site/       # multi-page linked site (crawl tests)
 fixtures/interactive/# tabs/menu/dialog + fetch (probe tests)
+fixtures/forms/      # forms, options, fieldsets, tabs, tables (relations tests)
 fixtures/edge/       # adversarial inputs (edge tests)
 tests/               # pytest; conftest.py has a localhost server helper
 ```

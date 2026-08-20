@@ -16,7 +16,7 @@ importing this package never pulls one in.
 from __future__ import annotations
 
 # Product/package version (see CHANGELOG.md). Bump on each release.
-__version__ = "0.14.0"
+__version__ = "0.15.0"
 # Data-schema version — bump ONLY when the JSON model shape changes in a way
 # that affects readers of past snapshots. Still 0.1.0: all growth so far has
 # been additive (new optional fields / new models), not breaking.
@@ -32,6 +32,7 @@ SCHEMA_VERSION = "0.1.0"
 _EXTRACTION = "ui_discovery.extraction"
 _CRAWLER = "ui_discovery.crawler"
 _ANALYSIS = "ui_discovery.analysis"
+_RELATIONS = "ui_discovery.relations"
 _DIFF = "ui_discovery.diff"
 _NARRATE = "ui_discovery.narrate"
 _TAXONOMY = "ui_discovery.taxonomy"
@@ -52,6 +53,12 @@ _EXPORTS = {
     "CrawlOptions": _CRAWLER,
     # V2 — structural analysis over a crawl (fingerprints, regions, components).
     "analyze_crawl": _ANALYSIS,
+    # How screens and elements connect — the relationship layer over a crawl.
+    "build_relations": _RELATIONS,
+    "screen_edges": _RELATIONS,
+    "element_links": _RELATIONS,
+    "forms_of": _RELATIONS,
+    "tables_of": _RELATIONS,
     # V3 — safe interaction + network probe over one page.
     "probe_page": _INTERACTIONS,
     # C1 — deterministic change diff between two analyses.
@@ -83,6 +90,7 @@ _EXPORTS = {
     # Report writers — JSON/Markdown/HTML for each model above.
     "write_reports": _REPORTS,
     "write_analysis": _REPORTS,
+    "write_relations": _REPORTS,
     "write_probe": _REPORTS,
     "write_semantics": _REPORTS,
     "write_documentation": _REPORTS,

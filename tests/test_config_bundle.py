@@ -50,14 +50,31 @@ def test_empty_include_means_everything_not_excluded():
 
 # --- config loading ---------------------------------------------------------
 
-def test_defaults_reproduce_todays_behaviour():
+def test_zero_config_captures_the_product():
+    """A bare run should produce a capture worth reading.
+
+    `probe` deliberately defaults to **on**: a crawl that never clicks anything
+    cannot see a modal, a menu, a tab panel or an API call, which is most of
+    what a portal is. It is scoped down per module with the `probe:` block, or
+    off entirely with `--no-probe` — see tests/test_probe_config.py.
+    """
     s = Scope()
     assert s.budget.max_pages == 25
     assert s.budget.max_depth == 3
     assert s.capabilities.screenshots is True
-    assert s.capabilities.probe is False
+    assert s.capabilities.probe is True
     assert s.identity.dedupe_queries is False
     assert s.scope.include == [] and s.scope.exclude == []
+
+
+def test_probe_settings_default_to_inherit():
+    """Every ProbeSettings field is None until someone sets it, which is what
+    makes "state only what differs from the level above" work."""
+    s = Scope()
+    assert s.probe.enabled is None
+    assert s.probe.tabs is None
+    assert s.probe.max_interactions is None
+    assert s.probe.tab_labels == []
 
 
 def test_no_config_path_gives_defaults():

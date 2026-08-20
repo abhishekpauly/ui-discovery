@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Order Intake</title></head>
+<body>
+  <header>
+    <nav aria-label="Primary">
+      <a href="index.html">Intake</a>
+      <a href="orders.html">Orders</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Order Intake</h1>
+
+    <!-- A form with every field kind the report needs to describe:
+         a labelled text input, a required field, a select with options,
+         a radio group inside a fieldset, a checkbox, and help text. -->
+    <form id="intake" aria-label="New order">
+      <p>
+        <label for="customer">Customer name</label>
+        <input id="customer" name="customer" type="text" required
+               placeholder="Acme Ltd" aria-describedby="customer-help" />
+        <span id="customer-help">Use the registered trading name.</span>
+      </p>
+
+      <p>
+        <label for="email">Contact email</label>
+        <input id="email" name="email" type="email" value="ops@acme.example" />
+      </p>
+
+      <p>
+        <label for="secret">API token</label>
+        <input id="secret" name="secret" type="password" value="hunter2-should-never-be-captured" />
+      </p>
+
+      <p>
+        <label for="status">Status</label>
+        <select id="status" name="status">
+          <option value="open">Open</option>
+          <option value="progress" selected>In progress</option>
+          <option value="closed">Closed</option>
+        </select>
+      </p>
+
+      <p>
+        <label for="quantity">Quantity</label>
+        <input id="quantity" name="quantity" type="number" value="3" />
+      </p>
+
+      <fieldset>
+        <legend>Delivery speed</legend>
+        <label><input type="radio" name="speed" value="standard" checked /> Standard</label>
+        <label><input type="radio" name="speed" value="express" /> Express</label>
+        <label><input type="radio" name="speed" value="courier" /> Courier</label>
+      </fieldset>
+
+      <p>
+        <label><input type="checkbox" name="giftwrap" /> Gift wrap</label>
+      </p>
+
+      <button type="submit">Create order</button>
+    </form>
+
+    <!-- Tabs: the trigger owns its panel via aria-controls. -->
+    <div role="tablist" aria-label="Order views">
+      <button role="tab" id="t-summary" aria-selected="true"
+              aria-controls="p-summary">Summary</button>
+      <button role="tab" id="t-history" aria-selected="false"
+              aria-controls="p-history">History</button>
+    </div>
+    <section id="p-summary" role="tabpanel" aria-label="Summary">
+      <p>Three orders awaiting dispatch.</p>
+    </section>
+    <section id="p-history" role="tabpanel" aria-label="History" hidden>
+      <p>No history yet.</p>
+    </section>
+
+    <!-- A data table with per-row actions. -->
+    <table aria-label="Recent orders">
+      <thead>
+        <tr><th>Order</th><th>Customer</th><th>Status</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1001</td><td>Acme Ltd</td><td>Open</td>
+          <td><a href="orders.html">View</a></td>
+        </tr>
+        <tr>
+          <td>1002</td><td>Globex</td><td>Closed</td>
+          <td><a href="orders.html">View</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </main>
+
+  <script>
+    document.querySelectorAll('[role=tab]').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        document.querySelectorAll('[role=tab]').forEach(function (t) {
+          t.setAttribute('aria-selected', 'false');
+          document.getElementById(t.getAttribute('aria-controls')).hidden = true;
+        });
+        tab.setAttribute('aria-selected', 'true');
+        document.getElementById(tab.getAttribute('aria-controls')).hidden = false;
+      });
+    });
+  </script>
+</body>
+</html>

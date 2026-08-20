@@ -127,8 +127,11 @@ Crawl **and** analyze, label, document and generate test scenarios:
 python -m ui_discovery.pipeline --config scope.yaml
 ```
 
-Add `--probe` to also click the safe controls and record the API calls behind
-them. Skip stages you don't want: `--skip docgen --skip qagen`.
+The safe interaction probe runs by default: it clicks the safe controls, opens
+and photographs the modals, menus and tab panels behind them, and records the
+API calls. Pass `--no-probe` to touch nothing, or scope it per module and per
+tab in the config (`probe:` — see README). Skip stages you don't want:
+`--skip docgen --skip qagen`.
 
 ---
 
@@ -174,10 +177,14 @@ Files at either level:
 | --- | --- |
 | `summary.md` | **Start here.** Screen count, elements per screen, file guide |
 | `urls.txt` | Every screen captured, one URL per line |
-| `elements.csv` | Every UI element found, with its **UI type** (slider, tab, file-upload…) — open in Excel, filter, pivot |
-| `endpoints.md` | The API surface behind the UI *(needs `--probe`)* |
+| `elements.csv` | Every UI element found, with its **UI type** (slider, tab, file-upload…), options and state — open in Excel, filter, pivot |
+| `controls.csv` | Every clickable: label, type, region, options, and where it leads |
+| `relations.json` | How screens connect, and how elements relate within a screen |
+| `endpoints.md` | The API surface behind the UI *(empty with `--no-probe`)* |
 | `screenshots/` | One full-page screenshot per screen |
-| `report.html` | The readable crawl report |
+| `screenshots/components/` | Forms, dialogs, tab panels and tables, cropped |
+| `screenshots/states/` | Modals, menus and panels revealed by clicking |
+| `report.html` | **The readable walkthrough** — site map, how screens connect, every screen's controls, forms and modals |
 | `crawl.json` | The canonical model everything else derives from |
 
 With the pipeline you also get `analysis.*`, `semantics.*`, `documentation.*`,

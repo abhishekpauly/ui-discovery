@@ -70,9 +70,28 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--probe", action="store_true", default=None,
-        help="Also run the safe interaction + network probe on every crawled "
+        help="Force the safe interaction + network probe on, overriding a "
+             "config that disables it. On by default. Original: run on every crawled "
              "page. Only structurally-safe, reversible controls are clicked; "
              "destructive ones are never executed.",
+    )
+    parser.add_argument(
+        "--no-probe", action="store_true", default=None,
+        help="Do not interact with the target at all: no clicking, so no "
+             "modals, menus or tab panels are opened and no API traffic is "
+             "observed. Probing is on by default because a capture that never "
+             "clicks anything misses most of what a portal is. To keep it on "
+             "but scope it down, use the `probe:` block in a scope config.",
+    )
+    parser.add_argument(
+        "--no-state-capture", action="store_true", default=None,
+        help="Probe as usual, but do not photograph the modals, menus and "
+             "panels that open.",
+    )
+    parser.add_argument(
+        "--no-component-screenshots", action="store_true", default=None,
+        help="Do not take cropped screenshots of forms, dialogs, tab panels "
+             "and data tables.",
     )
     parser.add_argument(
         "--max-interactions", type=int, default=None,

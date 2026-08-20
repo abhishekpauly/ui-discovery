@@ -60,6 +60,30 @@ deterministic gates (no LLM):
 
 Execute iff *type ∈ allow-list* **and** *label == SAFE*.
 
+**V6 = the relationship layer + visual capture.** The layers above could say
+*what* is on a screen. This one says what it is *connected to*, and shows you
+the parts a screenshot of a settled page cannot:
+
+- **Screen relationships** — every navigation edge carries the label of the
+  control that reaches it, so the page graph answers "how do I get from here to
+  there?" ("click *Ada Lovelace* in the table on Customers") rather than just
+  listing URLs.
+- **Element relationships** — computed per screen from standard markup:
+  containment (`parent_path`), `aria-controls` (tab → panel, button → dialog),
+  and form ownership (which fields belong to which form).
+- **What controls offer** — a `<select>`'s options and which one it arrives on,
+  a radio set reported as *one* choice rather than three controls, required
+  flags, help text, table columns and per-row actions.
+- **Component screenshots** — every form, dialog, tab panel, data table and
+  labelled region cropped to itself, alongside the full-page shot.
+- **Revealed states** — the modal behind "Add customer", the menu behind the
+  overflow button, the panel behind the second tab: each opened by the existing
+  safe probe, photographed, and recorded with *what opens it*.
+
+All of it is deterministic and framework-agnostic, and none of it introduces a
+new interaction — state capture rides on clicks the probe already makes, under
+the same two safety gates.
+
 The split is deliberate: **Crawlee is infrastructure, our code is the product.**
 Everywhere, it observes **the browser and web standards**, never the frontend
 framework — there is no React/Angular/Vue branch anywhere.
@@ -458,6 +482,94 @@ Skeletons use the stable role + accessible-name selectors the engine captured.
 `--provider` adds an LLM test-strategy narrative on top (quarantined), leaving
 the scenarios unchanged.
 
+## Reading a capture
+
+The crawl report is written for someone who has never seen the portal. Open
+`report.html` (or `report.md`) and it walks the product:
+
+1. **What this capture contains** — screens, entry points, forms, tables, and
+   how many modals/panels were opened.
+2. **Site map** — a Mermaid graph of screens, with the control you click as the
+   edge label.
+3. **How the screens connect** — a table reading "to get *to* this screen, click
+   *that* control on *that* screen".
+4. **Screens** — per screen: its screenshot, what's on it, how you get there and
+   where it leads, the actions available (with the engine's safety verdict on
+   each), every form as a field table (type, required, options, default, help
+   text), every data table with its columns and per-row actions, and every
+   modal/menu/panel with a picture and what opens it.
+5. **Not captured** — budget exhaustion, areas the config chose not to probe,
+   tabs deliberately left unopened, and the kinds of thing the engine cannot
+   detect at all.
+
+That last point is a rule, not a footnote: **cards, tiles, widgets, badges and
+icon meaning have no standard markup**. The engine will not guess at class
+names, so it reports them as *undetectable* rather than reporting zero. Name
+them with a CSS selector (`probe.component_selectors`) and they get
+photographed like anything else.
+
+Artifacts written on every run, alongside `crawl.json`:
+
+| File | What it is |
+| --- | --- |
+| `report.md` / `report.html` | The readable walkthrough above |
+| `relations.json` | Screen and element relationships as data |
+| `controls.csv` | Every clickable: label, type, region, options, destination |
+| `elements.csv` | Every element, one row each, with options and state |
+| `screenshots/` | One full-page shot per screen |
+| `screenshots/components/` | Forms, dialogs, tab panels and tables, cropped |
+| `screenshots/states/` | Modals, menus and panels revealed by clicking |
+| `summary.md`, `urls.txt`, `endpoints.md`, `inventory.json` | Plain-facts inventory |
+
+## Scoping the probe (per module, per tab)
+
+Interaction is **on by default** — a capture that never clicks anything cannot
+see a modal, a menu, a tab panel or an API call, which is most of what a portal
+is. On a large portal you scope it down rather than off:
+
+```yaml
+capabilities:
+  probe: true                  # master switch
+
+probe:                         # defaults for every module
+  max_interactions: 40
+  state_capture: true          # photograph what opens
+  component_screenshots: true  # crop forms / dialogs / tables
+  component_selectors: []      # CSS for cards, tiles, widgets
+  tabs: all                    # all | none | listed
+  tab_exclude: [Audit Log]     # never opened, in any mode
+
+modules:
+  - name: Orders
+    start_url: https://portal.acme.example/orders
+    probe:                     # state only what differs
+      max_interactions: 60
+      tabs: listed
+      tab_labels: [Overview, Activity]
+  - name: Reports
+    start_url: https://portal.acme.example/reports
+    probe:
+      enabled: false           # read, never clicked
+```
+
+Pages are matched to a module by longest URL-path prefix — the same rule that
+decides which module folder a page's artifacts are written to, so a page is
+never probed with one module's settings and filed under another's.
+
+Precedence is the usual **flags > module > top-level `probe:` > capabilities**.
+Flags are deliberately coarse and win everywhere:
+
+```bash
+python -m ui_discovery.crawl <url> --no-probe                    # touch nothing
+python -m ui_discovery.crawl <url> --no-state-capture            # probe, don't photograph
+python -m ui_discovery.crawl <url> --no-component-screenshots    # no crops
+```
+
+The tab policy can only ever **narrow** what gets clicked. There is no setting
+that widens the safety allow-list — the same rule as `safety:`, which has no
+`block_words_remove`. And whatever you scope out, the report says so by name, so
+a tab nobody opened never reads as a tab that does not exist.
+
 ## What gets captured
 
 Per page: `schema_version`, title, requested vs. final URL, viewport, and a
@@ -478,9 +590,24 @@ re-crawling:
 - stable `attributes` (id, name, type, href, role, data-testid, aria-\*, …)
 - `dom_path` and `sibling_ordinal` (distinguishes same-named siblings)
 - `landmark` (which nav / header / main / dialog it lives in)
+- `options` + `option_count` — what a dropdown, radio group, menu or tab strip
+  offers, and which entry is selected
+- `states` — checked / selected / expanded / required / readonly / sorted, read
+  from DOM **properties** (frameworks often set `.checked` without reflecting
+  it to an attribute)
+- `value` — **only** for controls whose value is a choice (checkbox, radio,
+  select, number, date, colour). Free text, email and passwords are never
+  persisted; `states["has_value"]` records that a field arrives populated
+  without recording what is in it
+- `parent_path`, `controls`, `owner_form`, `group`, `described_by` — the
+  relationship signals `relations.py` computes from
+- `columns` + `row_count` on tables; `clip_screenshot` when the component was
+  cropped
 
 Plus the browser's own **ARIA snapshot** (`accessibility_tree`), kept alongside
-the deterministic pass rather than instead of it.
+the deterministic pass rather than instead of it. Typed field values are
+redacted out of it — Playwright renders them inline (`- textbox "API token":
+hunter2`), and a snapshot must never carry someone's password.
 
 ### Shadow DOM & iframes (H3)
 

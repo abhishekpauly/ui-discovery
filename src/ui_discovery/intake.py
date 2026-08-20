@@ -24,6 +24,8 @@ from .config import (
     AuthSettings,
     Budget,
     Capabilities,
+    Module,
+    ProbeSettings,
     Identity,
     Outputs,
     Privacy,
@@ -101,7 +103,15 @@ def build_interactively() -> Scope:
 
     print("\n-- Capture -----------------------------------------------------")
     screenshots = _ask_bool("Capture screenshots?", True)
-    probe = _ask_bool("Run the safe interaction probe on every page?", False)
+    probe = _ask_bool(
+        "Interact with the app — open modals, menus and tabs safely?", True)
+    tab_exclude: list[str] = []
+    if probe:
+        # Asked because it is the setting most likely to matter and least
+        # likely to be discovered: opening one heavy tab on sixty screens is
+        # sixty slow clicks nobody wanted.
+        tab_exclude = _ask_list(
+            "Tabs that should never be opened (e.g. Audit Log)")
 
     print("\n-- Safety ------------------------------------------------------")
     never_touch = _ask_list("Controls that must NEVER be interacted with")
@@ -122,6 +132,7 @@ def build_interactively() -> Scope:
         budget=Budget(max_pages=max_pages, max_depth=max_depth),
         identity=Identity(dedupe_queries=dedupe_queries, hash_routes=hash_routes),
         capabilities=Capabilities(screenshots=screenshots, probe=probe),
+        probe=ProbeSettings(tab_exclude=tab_exclude),
         safety=Safety(never_touch=never_touch, block_words_extra=block_extra),
         privacy=Privacy(),
         outputs=Outputs(dir=out_dir, keep_history=keep_history,
@@ -144,6 +155,16 @@ def build_template() -> Scope:
         budget=Budget(),
         identity=Identity(dedupe_queries=True, drop_params=["tab"]),
         capabilities=Capabilities(),
+        # Probing is on by default. This block is how you scope it down: the
+        # top level sets the norm, and a module states only what differs.
+        probe=ProbeSettings(tabs="all", tab_exclude=["Audit Log"]),
+        modules=[
+            Module(name="Orders", start_url="https://portal.acme.example/orders",
+                   probe=ProbeSettings(max_interactions=60, tabs="listed",
+                                       tab_labels=["Overview", "Activity"])),
+            Module(name="Reports", start_url="https://portal.acme.example/reports",
+                   probe=ProbeSettings(enabled=False)),
+        ],
         safety=Safety(block_words_extra=["deactivate account"],
                       never_touch=["#danger-zone"]),
         privacy=Privacy(redact_network_keys=["account", "ssn"]),

@@ -23,6 +23,21 @@ class Geometry(BaseModel):
     height: float
 
 
+class Option(BaseModel):
+    """One choice a control offers — a `<select>` option, an ARIA listbox
+    option, a radio in a group, a tab in a tablist, an item in a menu.
+
+    Captured because "1 dropdown" is not an inventory: what a person needs to
+    know is that the Status dropdown offers Open / In progress / Closed, and
+    which one it arrives on.
+    """
+
+    label: str
+    value: Optional[str] = None
+    selected: bool = False
+    disabled: bool = False
+
+
 class Element(BaseModel):
     # What kind of thing this is, from a browser/standards point of view.
     category: str  # button|link|input|select|textarea|form|image|table|dialog|nav
@@ -62,6 +77,43 @@ class Element(BaseModel):
     # orthogonal to `category`, which stays the coarse DOM-shape bucket
     # that fingerprints and selectors depend on.
     ui_type: Optional[str] = None
+
+    # --- what this control offers and what state it is in -------------------
+    #
+    # `options` is capped (see extract.js MAX_OPTIONS); `option_count` is not,
+    # so a truncated list still reports its true size.
+    options: list[Option] = Field(default_factory=list)
+    option_count: int = 0
+    # checked / selected / expanded / required / readonly / invalid / pressed /
+    # current / sort / open / multiple / has_value. Values are strings so the
+    # dict stays serializable and open to signals we have not met yet.
+    states: dict[str, str] = Field(default_factory=dict)
+    # Recorded ONLY for controls whose value is a choice (checkbox, radio,
+    # select, range, number, date, colour). Free text, email and passwords are
+    # what a person typed; `states["has_value"]` says the field is populated
+    # without persisting what is in it.
+    value: Optional[str] = None
+
+    # --- how this element relates to others on the same screen --------------
+    #
+    # All of these are `dom_path` references to OTHER captured elements, so the
+    # relationship graph survives serialization and can be rebuilt later with
+    # no browser (see relations.py). An element whose parent was not itself
+    # captured has an empty `parent_path` — it is a root of the captured tree.
+    parent_path: str = ""
+    controls: list[str] = Field(default_factory=list)   # aria-controls/-owns
+    described_by: Optional[str] = None                  # aria-describedby text
+    group: Optional[str] = None      # fieldset legend / ARIA group / radio name
+    owner_form: Optional[str] = None                    # ancestor form
+
+    # Set on `table`-category elements only.
+    columns: list[str] = Field(default_factory=list)
+    row_count: int = 0
+
+    # A clipped screenshot of just this component (forms, dialogs, tab panels,
+    # tables, labelled regions). Written by the crawler; None when component
+    # screenshots are off or the crop failed.
+    clip_screenshot: Optional[str] = None
 
     source: str = "runtime"
 
@@ -164,6 +216,11 @@ class CrawlConfig(BaseModel):
     # means routes may exist that link-following cannot reach.
     unmarked_clickables: int = 0
     capabilities: dict[str, bool] = Field(default_factory=dict)
+    # The resolved probe settings per module prefix. Present so a capture can
+    # say which areas were exercised and which tabs were deliberately left
+    # unopened — otherwise "no Audit tab here" is indistinguishable from "we
+    # skipped it".
+    probe_profiles: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class CrawlStats(BaseModel):
@@ -206,6 +263,112 @@ class Crawl(BaseModel):
     stats: CrawlStats
     navigation: list[dict[str, str]] = Field(default_factory=list)  # {"from","to"}
     pages: list[PageNode] = Field(default_factory=list)
+
+
+# --- Relationships: how screens and elements connect -------------------------
+#
+# The engine could always say *what* it found. These models say what it found
+# is connected to — which is the difference between an inventory and a
+# description of a product. Every field is derived from signals already
+# captured on `Element` (parent_path, controls, owner_form, group, columns),
+# so relations are computed, never re-crawled.
+
+
+class NavEdge(BaseModel):
+    """One labelled way to get from one screen to another.
+
+    `label` is the point. A graph of bare URLs cannot answer "how do I reach
+    the customer detail screen?"; the answer is "click the customer's name in
+    the table on Customers", and that is what this records.
+    """
+
+    source: str
+    target: str
+    label: str = ""
+    region: Optional[str] = None   # the landmark the control sits in
+    control: str = "link"          # link | button | deep-nav
+
+
+class ElementLink(BaseModel):
+    """One relationship between two elements on the same screen.
+
+    Both ends are `dom_path`s of captured elements, so a reader can follow a
+    link back to the full element record.
+    """
+
+    kind: str  # contains | labels | controls | describes | groups | column-of
+    source: str
+    target: str
+    source_label: str = ""
+    target_label: str = ""
+
+
+class FormField(BaseModel):
+    """One input in a form, described the way documentation would describe it."""
+
+    label: str
+    ui_type: str = ""
+    dom_path: str = ""
+    required: bool = False
+    placeholder: Optional[str] = None
+    help_text: Optional[str] = None
+    options: list[str] = Field(default_factory=list)
+    option_count: int = 0
+    default: Optional[str] = None
+    group: Optional[str] = None
+    enabled: bool = True
+
+
+class FormGroup(BaseModel):
+    """A form and everything in it: its fields, and the actions that submit it."""
+
+    name: str
+    dom_path: str = ""
+    region: Optional[str] = None
+    fields: list[FormField] = Field(default_factory=list)
+    actions: list[str] = Field(default_factory=list)
+    screenshot: Optional[str] = None
+
+
+class TableGroup(BaseModel):
+    """A data table: what its columns are, how many rows, and what you can do
+    to a row."""
+
+    name: str
+    dom_path: str = ""
+    region: Optional[str] = None
+    columns: list[str] = Field(default_factory=list)
+    row_count: int = 0
+    row_actions: list[str] = Field(default_factory=list)
+    screenshot: Optional[str] = None
+
+
+class ScreenRelations(BaseModel):
+    """Everything about one screen that is a relationship rather than a count."""
+
+    url: str
+    title: str = ""
+    depth: Optional[int] = None
+    inbound: list[NavEdge] = Field(default_factory=list)
+    outbound: list[NavEdge] = Field(default_factory=list)
+    forms: list[FormGroup] = Field(default_factory=list)
+    tables: list[TableGroup] = Field(default_factory=list)
+    element_links: list[ElementLink] = Field(default_factory=list)
+
+
+class Relations(BaseModel):
+    schema_version: str
+    engine_version: str
+    generated_at: str
+    source_crawl_id: Optional[str] = None
+    start_url: Optional[str] = None
+    stats: dict[str, int] = Field(default_factory=dict)
+    # Screens nothing links to. Either a real entry point, or a screen only
+    # reachable by a route the crawl could not see — and the difference
+    # matters, so they are listed rather than silently ranked last.
+    entry_points: list[str] = Field(default_factory=list)
+    orphans: list[str] = Field(default_factory=list)
+    screens: list[ScreenRelations] = Field(default_factory=list)
 
 
 # --- V2: analysis models ----------------------------------------------------
@@ -483,6 +646,30 @@ class NetworkRequest(BaseModel):
     duration_ms: Optional[float] = None
 
 
+class UIState(BaseModel):
+    """A UI state that only exists after an interaction.
+
+    A modal, a drawer, an opened menu, a switched tab panel, an expanded
+    disclosure — the parts of a product that a screenshot of a settled page
+    can never show, because they are not on it until something is clicked.
+
+    `trigger_label` is the answer to "how do I see this?", which is the fact a
+    reader needs and a bare screenshot cannot carry.
+    """
+
+    kind: str  # modal | drawer | menu | tab-panel | disclosure | tooltip | popover
+    name: str = ""
+    trigger_label: str = ""
+    trigger_path: str = ""
+    page_url: str = ""
+    dom_path: str = ""
+    screenshot: Optional[str] = None
+    headings: list[str] = Field(default_factory=list)
+    # The controls this state reveals — the ones that were not visible before.
+    controls: list[Element] = Field(default_factory=list)
+    fields: list["FormField"] = Field(default_factory=list)
+
+
 class InteractionProbe(BaseModel):
     schema_version: str
     engine_version: str
@@ -494,6 +681,9 @@ class InteractionProbe(BaseModel):
     stats: dict[str, int] = Field(default_factory=dict)
     interactions: list[Interaction] = Field(default_factory=list)
     network: list[NetworkRequest] = Field(default_factory=list)
+    # Modals, menus and panels the executed interactions revealed. Empty when
+    # state capture is off, or when nothing opened anything.
+    states: list[UIState] = Field(default_factory=list)
 
 
 # --- V5: semantic layer (optional; deterministic by default) ----------------
@@ -544,6 +734,13 @@ class DocPage(BaseModel):
     controls: dict[str, list[str]] = Field(default_factory=dict)  # label -> names
     links: list[str] = Field(default_factory=list)
     screenshot: Optional[str] = None
+    # The relationship layer, so a page description can say what the page is
+    # for rather than how many controls it has.
+    reached_from: list[str] = Field(default_factory=list)
+    leads_to: list[str] = Field(default_factory=list)
+    forms: list[FormGroup] = Field(default_factory=list)
+    tables: list[TableGroup] = Field(default_factory=list)
+    states: list[UIState] = Field(default_factory=list)
 
 
 class Documentation(BaseModel):
@@ -603,3 +800,7 @@ class QAPlan(BaseModel):
 # further down this module. Resolve it explicitly so the reference is bound at
 # import time rather than lazily on first validation.
 PageNode.model_rebuild()
+# `UIState.fields` forward-references FormField, which is defined above it in
+# source order but after UIState's own module-level definition point once the
+# relationship block moved. Resolve it explicitly, for the same reason.
+UIState.model_rebuild()

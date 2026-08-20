@@ -60,6 +60,13 @@ Each question notes a **default** you can keep if it doesn't matter yet.
 21. **Accessibility tree?** yes / no  *(default: yes)*
 22. **Network / API observation?** yes / no  *(default: yes)*
 23. **Interaction probe (safe-only)?** yes / no  *(default: yes)*
+    - 23a. **Any module that must be read but never clicked?** (name + start URL)
+    - 23b. **Any tabs that must never be opened?** (e.g. Audit Log — heavy, or
+      noisy on every screen)
+    - 23c. **Photograph modals/menus/panels as they open?** yes / no  *(default: yes)*
+    - 23d. **Crop screenshots of forms, dialogs and tables?** yes / no  *(default: yes)*
+    - 23e. **CSS selectors for cards/tiles/widgets** you want photographed
+      *(these have no standard markup, so the engine cannot find them for you)*
 24. **Component/fingerprint analysis?** yes / no  *(default: yes)*
 25. **Playwright test-skeleton export?** yes / no  *(default: no)*
 

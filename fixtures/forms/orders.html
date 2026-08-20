@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Orders</title></head>
+<body>
+  <header>
+    <nav aria-label="Primary">
+      <a href="index.html">Intake</a>
+      <a href="orders.html">Orders</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Orders</h1>
+    <form aria-label="Filter orders">
+      <label for="q">Search orders</label>
+      <input id="q" name="q" type="search" placeholder="Order number" />
+      <label for="state">State</label>
+      <select id="state" name="state">
+        <option value="all" selected>All</option>
+        <option value="open">Open</option>
+        <option value="closed">Closed</option>
+      </select>
+    </form>
+    <table aria-label="All orders">
+      <thead><tr><th>Order</th><th>Customer</th><th>Total</th></tr></thead>
+      <tbody>
+        <tr><td>1001</td><td>Acme Ltd</td><td>120.00</td></tr>
+        <tr><td>1002</td><td>Globex</td><td>80.00</td></tr>
+        <tr><td>1003</td><td>Initech</td><td>45.00</td></tr>
+      </tbody>
+    </table>
+    <p><a href="index.html">Back to intake</a></p>
+  </main>
+</body>
+</html>

@@ -157,6 +157,53 @@ def resolve_links(
     return out
 
 
+def resolve_labelled_links(
+    base_url: str,
+    links: list[dict],
+    root: str,
+    *,
+    dedupe_queries: bool = False,
+    drop_params: frozenset[str] | None = None,
+    hash_routes: bool = False,
+) -> list[dict]:
+    """`resolve_links`, but carrying each link's label through the resolution.
+
+    A page graph of bare URLs cannot answer the question people actually ask
+    of a capture — "how do I get from here to there?". The answer is the
+    control you click, so the label, the region it sits in and the kind of
+    control are kept alongside the resolved target.
+
+    `links` are `{"href", "label", "region", "control"}` dicts. The return is
+    the same shape with `href` replaced by a resolved `url`, deduped on the
+    target: the first control that reaches a screen is the one reported, which
+    is stable because extraction order is document order.
+
+    Resolution, scoping and dedup are delegated to `resolve_links` so the two
+    cannot disagree about which links are navigable.
+    """
+    by_url: dict[str, dict] = {}
+    for link in links:
+        href = link.get("href") or ""
+        resolved = resolve_links(
+            base_url, [href], root,
+            dedupe_queries=dedupe_queries,
+            drop_params=drop_params,
+            hash_routes=hash_routes,
+        )
+        if not resolved:
+            continue
+        url = resolved[0]
+        if url in by_url:
+            continue
+        by_url[url] = {
+            "url": url,
+            "label": (link.get("label") or "").strip(),
+            "region": link.get("region") or "",
+            "control": link.get("control") or "link",
+        }
+    return list(by_url.values())
+
+
 def bfs_depths(root: str, edges: dict[str, list[str]]) -> dict[str, int]:
     """Depth of each node from `root` over the discovered edge set."""
     depths = {root: 0}
@@ -168,3 +215,31 @@ def bfs_depths(root: str, edges: dict[str, list[str]]) -> dict[str, int]:
                 depths[nxt] = depths[node] + 1
                 queue.append(nxt)
     return depths
+
+def module_for_path(page_path: str, prefixes: list[tuple[str, object]],
+                    default=None):
+    """Which module a page belongs to, by longest matching URL-path prefix.
+
+    A module at `/platform/rag/containers` beats one at `/platform`, so the
+    most specific declaration wins.
+
+    This is shared, rather than written twice, because two answers to "which
+    module is this page in" would drift — and a page could then land in the
+    Orders folder while being probed with the Reports settings, which is the
+    kind of bug nobody finds by reading the output.
+    """
+    page_path = (page_path or "/").rstrip("/")
+    best_len, best = -1, default
+    for prefix, value in prefixes:
+        prefix = (prefix or "").rstrip("/")
+        if not prefix:
+            continue
+        if (page_path == prefix or page_path.startswith(prefix + "/")) \
+                and len(prefix) > best_len:
+            best_len, best = len(prefix), value
+    return best
+
+
+def path_of(url: str) -> str:
+    """The path component of a URL, for module matching."""
+    return urlparse(url).path or "/"

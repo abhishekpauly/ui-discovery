@@ -5,7 +5,7 @@ The single source of truth for **what exists, what's in flight, and what's next*
 `CHANGELOG.md` (version history) and `ROADMAP.md` (detailed specs + acceptance
 criteria). Keep this file updated as work lands (see *Maintenance* at the end).
 
-**Current product version: `0.8.0`** · Schema `0.1.0` · **110 tests passing**
+**Current product version: `0.15.0`** · Schema `0.1.0` · **533 tests passing**
 
 ## Legend
 
@@ -68,11 +68,29 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 
 \* `login` opens a visible browser for manual sign-in — validated by use, not by a headless test.
 
+### V6 — Relationships, controls & visual capture · v0.15.0
+| ID | Capability | Scope | Pri | Status | Tests |
+|----|-----------|-------|-----|--------|-------|
+| F6.1 | Labelled screen graph | every navigation edge carries the control label, region and kind that reaches it | P0 | ✅ | ✔ |
+| F6.2 | Element relationships | containment (`parent_path`), `aria-controls`, form ownership — computed, per screen | P0 | ✅ | ✔ |
+| F6.3 | Control options & state | select/listbox/radiogroup/menu/tablist options + selected; checked/required/expanded/sorted from DOM properties | P0 | ✅ | ✔ |
+| F6.4 | Forms & tables as data | fields with type/required/options/default/help; radios merged into one choice; table columns + row actions | P0 | ✅ | ✔ |
+| F6.5 | Component screenshots | forms, dialogs, tab panels, tables, labelled regions cropped to themselves | P1 | ✅ | ✔ |
+| F6.6 | Revealed-state capture | modal/drawer/menu/tab-panel/disclosure opened by the probe, photographed, with what opens it | P0 | ✅ | ✔ |
+| F6.7 | Readable crawl report | site map, screen-connection table, per-screen walkthrough; HTML with TOC + dark mode | P0 | ✅ | ✔ |
+| F6.8 | Per-module / per-tab probe config | `ProbeSettings`, longest-prefix module matching, `--no-probe` family | P0 | ✅ | ✔ |
+| F6.9 | `relations.json` + `controls.csv` | relationships and clickables as plain data, every run | P1 | ✅ | ✔ |
+| F6.10 | Typed-value redaction | password/free-text values kept out of `attributes` **and** the ARIA snapshot | P0 | ✅ | ✔ |
+
+---
+
 ### Needs real-world validation
 | ID | Capability | Scope | Pri | Status | Tests |
 |----|-----------|-------|-----|--------|-------|
 | QA.1 | Run on a real **public** site | crawl/analyze/probe a live external app from the user's machine | P0 | 🧪 | — |
 | QA.2 | Run on a real **authenticated** portal | `login` → `--auth-state` against an actual SSO/login portal | P0 | 🧪 | — |
+| QA.3 | Probe-on-by-default runtime | confirm a real portal still captures in acceptable time now that every crawl interacts | P0 | 🧪 | — |
+| QA.4 | Report reviewed as product documentation | someone unfamiliar with the portal reads `report.html` and can describe it | P0 | 🧪 | — |
 
 ---
 

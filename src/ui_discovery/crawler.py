@@ -9,6 +9,7 @@ assembled into a page graph. There is no framework-specific logic here.
 from __future__ import annotations
 
 import json
+import pathlib
 import tempfile
 import time
 import uuid
@@ -29,6 +30,7 @@ from .browser import (
     STREAMING_STABLE_POLLS,
     STREAMING_TIMEOUT_MS,
     has_rendered,
+    redact_aria_snapshot,
 )
 from .extraction import (
     JS,
@@ -37,8 +39,14 @@ from .extraction import (
     plan_frames,
     skipped_frame,
 )
-from .interactions import attach_network_async, probe_open_page_async
+from .interactions import (
+    DEFAULT_PROBE_PROFILE,
+    ProbeProfile,
+    attach_network_async,
+    probe_open_page_async,
+)
 from .models import Crawl, CrawlConfig, CrawlStats, NetworkRequest, PageNode
+from .uistate import component_filename, component_targets
 from .safety import (
     DEFAULT_POLICY,
     SafetyPolicy,
@@ -46,7 +54,15 @@ from .safety import (
     decide,
     should_execute,
 )
-from .util import bfs_depths, normalize_url, resolve_links, slug_for, url_in_scope
+from .util import (
+    bfs_depths,
+    module_for_path,
+    normalize_url,
+    path_of,
+    resolve_labelled_links,
+    slug_for,
+    url_in_scope,
+)
 
 
 async def _wait_for_dom_stable_async(
@@ -153,6 +169,24 @@ async def _extract_frames_async(page, raw: dict) -> list:
 
 
 
+def _link_record(el: dict, control: str = "link") -> dict:
+    """One navigable link, with the label a person would click.
+
+    The page graph used to be built from bare hrefs, which made every edge
+    anonymous: a reader could see that Customers reaches Customer-1 but not
+    that you get there by clicking "Ada Lovelace" in the main table. The label,
+    its region and the kind of control are what make the graph readable.
+    """
+    attrs = el.get("attributes", {}) or {}
+    label = (el.get("accessible_name") or el.get("text") or "").strip()
+    return {
+        "href": attrs.get("href", ""),
+        "label": label[:120],
+        "region": el.get("landmark") or "",
+        "control": control,
+    }
+
+
 # Landmarks whose collapsed controls plausibly hide routes. Restricting the
 # reveal pass to these is what keeps it safe and cheap: we are not clicking
 # around the page, only opening the navigation.
@@ -170,8 +204,9 @@ async def _reveal_nav_links(page, raw: dict, log) -> list[str]:
     sit in a navigation landmark *and* pass the same safety gates as the
     probe, so a "Delete" button in a sidebar is still refused.
 
-    Returns the newly-revealed hrefs. Used for discovery only; the captured
-    page model still describes the page as it arrived.
+    Returns the newly-revealed links as `_link_record` dicts. Used for
+    discovery only; the captured page model still describes the page as it
+    arrived.
     """
     before = {e.get("attributes", {}).get("href")
               for e in raw.get("elements", [])
@@ -207,10 +242,13 @@ async def _reveal_nav_links(page, raw: dict, log) -> list[str]:
         after_raw = await page.evaluate(JS)
     except Exception:
         return []
-    after = {e.get("attributes", {}).get("href")
-             for e in after_raw.get("elements", [])
-             if e.get("attributes", {}).get("href")}
-    revealed = sorted(h for h in after - before if h)
+    revealed = []
+    for el in after_raw.get("elements", []):
+        href = (el.get("attributes", {}) or {}).get("href")
+        if not href or href in before:
+            continue
+        before.add(href)
+        revealed.append(_link_record(el))
     if revealed:
         log.info(f"Revealed {len(revealed)} link(s) behind {opened} nav control(s)")
     return revealed
@@ -286,7 +324,7 @@ async def _count_unmarked_clickables(page) -> int:
 async def _discover_by_clicking(
     page, url: str, log, policy,
     tried: set[str], budget: list[int],
-) -> list[str]:
+) -> list[dict]:
     """Click unmarked clickables and record any route they navigate to.
 
     This is the last resort for navigation that link-following cannot see.
@@ -343,7 +381,10 @@ async def _discover_by_clicking(
             # submenu, which puts new anchors in the DOM without moving.
             landed = page.url
             if normalize_url(landed) != normalize_url(url):
-                found.append(landed)
+                # The label of the thing we clicked is the only description
+                # this route will ever have — nothing links to it.
+                found.append({"href": landed, "label": label,
+                              "region": "", "control": "deep-nav"})
                 log.info(f"deep-nav: {label!r} navigated -> {landed}")
                 await page.goto(url, wait_until="domcontentloaded")
                 await page.wait_for_timeout(400)
@@ -352,7 +393,8 @@ async def _discover_by_clicking(
 
             revealed = await hrefs_now() - baseline
             if revealed:
-                found.extend(revealed)
+                found.extend({"href": h, "label": label, "region": "",
+                              "control": "deep-nav"} for h in sorted(revealed))
                 baseline |= revealed
                 log.info(f"deep-nav: {label!r} revealed {len(revealed)} link(s)")
         except Exception:
@@ -367,9 +409,64 @@ async def _discover_by_clicking(
     return found
 
 
+
+async def _capture_components(page, raw: dict, shots_dir, url: str,
+                              extra_selectors, log) -> dict[str, str]:
+    """Photograph each component on the page, cropped to just that component.
+
+    A full-page screenshot answers "what does this screen look like?". It does
+    not answer "what is in the New Order form?" on a screen with four forms and
+    a table, which is the question someone writing product documentation has.
+
+    Returns `dom_path -> file`, folded onto the elements by the caller. Never
+    raises: a crop that fails is a missing picture, not a failed page.
+    """
+    targets = component_targets(raw)
+
+    # Site-specific components the standards cannot name — a card, a tile, a
+    # dashboard widget. `taxonomy.NOT_DETECTABLE` records that these have no
+    # standard markup; a CSS selector in the scope config is where that
+    # knowledge belongs, rather than guessed-at class names in the core.
+    for selector in extra_selectors or ():
+        try:
+            handles = await page.query_selector_all(selector)
+        except Exception:
+            continue
+        for index, handle in enumerate(handles[:10], start=1):
+            targets.append({
+                "kind": "component",
+                "dom_path": "",
+                "name": f"{selector} #{index}",
+                "handle": handle,
+            })
+
+    shot_paths: dict[str, str] = {}
+    components_dir = pathlib.Path(shots_dir) / "components"
+    for index, target in enumerate(targets, start=1):
+        path = components_dir / component_filename(
+            slug_for(url), index, target["kind"])
+        try:
+            components_dir.mkdir(parents=True, exist_ok=True)
+            handle = target.get("handle")
+            if handle is not None:
+                await handle.screenshot(path=str(path), timeout=5000)
+            else:
+                await page.locator(target["dom_path"]).first.screenshot(
+                    path=str(path), timeout=5000)
+        except Exception:
+            continue
+        if target["dom_path"]:
+            shot_paths[target["dom_path"]] = str(path)
+    if shot_paths:
+        log.info(f"Captured {len(shot_paths)} component screenshot(s)")
+    return shot_paths
+
+
 async def _aria(page) -> str | None:
+    """Async twin of `browser.aria_snapshot` — same redaction, so a crawled
+    page never carries typed field values the single-page extractor strips."""
     try:
-        return await page.locator("body").aria_snapshot()
+        return redact_aria_snapshot(await page.locator("body").aria_snapshot())
     except Exception:
         return None
 
@@ -431,9 +528,34 @@ class CrawlOptions:
     include: list[str] | None = None
     exclude: list[str] | None = None
     # Capabilities (R2)
+    # Off for the *library*, on for the *product*. `crawl_site(url)` is the
+    # low-level API: a programmatic caller should have to ask before the engine
+    # starts clicking things. The CLIs and scope configs default it on
+    # (`Capabilities.probe`), because a capture that never clicks anything
+    # cannot see a modal, a menu, a tab panel or an API call.
+    #
+    # Same split, same reason, as `headless` below — see `cliconfig`.
     probe: bool = False
     screenshots: bool = True
     accessibility_tree: bool = True
+    # Cropped screenshots of the components already on a page — forms, open
+    # dialogs, visible tab panels, data tables, labelled regions. Costs one
+    # extra shot per component and clicks nothing.
+    component_screenshots: bool = True
+    # CSS for components standard markup cannot name (cards, tiles, widgets).
+    component_selectors: tuple[str, ...] = ()
+    # Photograph the modal / drawer / menu / tab panel each probed click
+    # reveals. Requires `probe`, since it rides on clicks the probe makes.
+    state_capture: bool = True
+    # How thoroughly to probe, per area of the product. `probe_default` applies
+    # to any page no rule matches; `probe_rules` is (url-path prefix, profile),
+    # longest prefix winning — the same matching that decides which module
+    # folder a page's artifacts go to, so the two can never disagree.
+    #
+    # The plain `probe` / `max_interactions` fields above still work and seed
+    # the default profile, so `crawl_site(url, probe=True)` is unchanged.
+    probe_default: ProbeProfile | None = None
+    probe_rules: tuple[tuple[str, ProbeProfile], ...] = ()
     # Auth-expiry signals (H4) — these extend the built-ins, never replace them
     login_url_patterns: tuple[str, ...] | None = None
     logged_out_signals: tuple[str, ...] | None = None
@@ -524,6 +646,22 @@ async def crawl_site(
     hash_routes, include, exclude = opts.hash_routes, opts.include, opts.exclude
     probe, screenshots = opts.probe, opts.screenshots
     accessibility_tree = opts.accessibility_tree
+    component_screenshots = opts.component_screenshots
+    component_selectors = opts.component_selectors
+    state_capture = opts.state_capture
+    # A caller that passed only the plain flags still gets a coherent profile.
+    probe_default = opts.probe_default or ProbeProfile(
+        enabled=probe,
+        max_interactions=max_interactions,
+        state_capture=state_capture,
+        component_screenshots=component_screenshots,
+        component_selectors=tuple(component_selectors),
+    )
+    probe_rules = opts.probe_rules
+
+    def profile_for(page_url: str) -> ProbeProfile:
+        return module_for_path(path_of(page_url), list(probe_rules),
+                               default=probe_default)
     login_url_patterns = opts.login_url_patterns
     logged_out_signals = opts.logged_out_signals
     policy, redact_keys = opts.policy, opts.redact_keys
@@ -591,8 +729,11 @@ async def crawl_site(
     # Shared across the crawl: labels already deep-clicked, the routes
     # they revealed, and a global click budget.
     deep_tried: set[str] = set()
-    deep_found: set[str] = set()
+    deep_found: dict[str, dict] = {}
     deep_budget = [_MAX_DEEP_CLICKS]
+    # Per page: its outgoing links with the label of the control that reaches
+    # each one. `edges` stays a plain url->urls map so BFS is unchanged.
+    edge_labels: dict[str, list[dict]] = {}
 
     crawler = PlaywrightCrawler(
         headless=headless,
@@ -655,7 +796,7 @@ async def crawl_site(
     # H2: start observing network traffic before the page navigates, so the
     # probe's record includes page-load requests, not just those triggered by
     # the interactions we execute.
-    if probe:
+    if probe or any(rule.enabled for _, rule in probe_rules):
         @crawler.pre_navigation_hook
         async def _attach_probe_network(context) -> None:  # noqa: ANN001
             sink: list[NetworkRequest] = []
@@ -681,13 +822,20 @@ async def crawl_site(
         frames = await _extract_frames_async(page, raw)
         aria = await _aria(page) if accessibility_tree else None
 
+        profile = profile_for(url)
+
         shot: str | None = None
+        component_shots: dict[str, str] = {}
         if screenshots:
             shot = str(shots_dir / f"{slug_for(url)}.png")
             try:
                 await page.screenshot(path=shot, full_page=True)
             except Exception:
                 shot = None
+            if profile.component_screenshots:
+                component_shots = await _capture_components(
+                    page, raw, shots_dir, url, profile.component_selectors,
+                    context.log)
 
         model = assemble_page(
             requested_url=url,
@@ -697,6 +845,10 @@ async def crawl_site(
             screenshot_path=shot,
             frames=frames,
         )
+
+        for element in model.elements:
+            if element.dom_path in component_shots:
+                element.clip_screenshot = component_shots[element.dom_path]
 
         # H4: a login page reached *with* a session in hand means that session
         # is no longer good. Warn per page — a silent crawl of login screens is
@@ -721,33 +873,39 @@ async def crawl_site(
             )
 
         # Build the page graph from the extracted anchors (deterministic, and
-        # independent of Crawlee's internal enqueue bookkeeping).
-        hrefs = [
-            e.attributes.get("href", "")
-            for e in model.elements
-            if e.category in ("link", "button") and e.attributes.get("href")
+        # independent of Crawlee's internal enqueue bookkeeping). Each entry
+        # carries the label of the control that leads there, so the graph can
+        # say *how* one screen reaches another.
+        links = [
+            _link_record(e, control=e.get("category", "link"))
+            for e in raw.get("elements", [])
+            if e.get("category") in ("link", "button")
+            and (e.get("attributes", {}) or {}).get("href")
         ]
         if reveal_nav:
-            hrefs = hrefs + await _reveal_nav_links(page, raw, context.log)
+            links = links + await _reveal_nav_links(page, raw, context.log)
 
         # Routes behind elements the app never marked up as links.
         unmarked = await _count_unmarked_clickables(page)
         if deep_nav:
             if unmarked:
-                deep_found.update(await _discover_by_clicking(
-                    page, url, context.log, policy, deep_tried, deep_budget))
+                for record in await _discover_by_clicking(
+                        page, url, context.log, policy, deep_tried, deep_budget):
+                    deep_found[record["href"]] = record
             # Routes found anywhere are worth trying from here too: the same
             # global nav is on every page, and Crawlee dedups the rest.
-            hrefs = hrefs + sorted(deep_found)
+            links = links + [deep_found[h] for h in sorted(deep_found)]
         unmarked_total[url] = unmarked
 
-        out_links = resolve_links(
-            model.final_url or url, hrefs, root,
+        labelled = resolve_labelled_links(
+            model.final_url or url, links, root,
             dedupe_queries=dedupe_queries,
             drop_params=drop_params,
             hash_routes=hash_routes,
         )
+        out_links = [link["url"] for link in labelled]
         edges[url] = out_links
+        edge_labels[url] = labelled
         node = PageNode(url=url, out_links=out_links, page=model)
         nodes[url] = node
 
@@ -777,20 +935,24 @@ async def crawl_site(
         # have all seen the pristine page. Interactions only ever mutate state
         # we've already captured. A probe failure must not fail the crawl: the
         # page's extraction is still valid without it.
-        if probe:
+        if profile.enabled:
             try:
                 node.probe = await probe_open_page_async(
                     page,
                     url=url,
                     raw=raw,
                     network=net_sinks.pop(id(page), []),
-                    max_interactions=max_interactions,
+                    max_interactions=profile.max_interactions,
                     policy=policy,
+                    states_dir=str(shots_dir / "states") if screenshots else None,
+                    capture_states=profile.state_capture,
+                    profile=profile,
                 )
                 p = node.probe.stats
                 context.log.info(
                     f"Probed {url}: {p.get('executed', 0)} executed, "
                     f"{p.get('blocked', 0)} blocked, "
+                    f"{p.get('states_captured', 0)} states captured, "
                     f"{p.get('network_requests', 0)} requests"
                 )
             except Exception as exc:
@@ -810,8 +972,12 @@ async def crawl_site(
     for url, node in nodes.items():
         node.depth = depths.get(url)
 
+    # `from` and `to` stay exactly where they were — the extra keys are
+    # additive, so anything already reading this list is unaffected.
     navigation = [
-        {"from": src, "to": dst} for src, outs in edges.items() for dst in outs
+        {"from": src, "to": link["url"], "label": link["label"],
+         "region": link["region"], "control": link["control"]}
+        for src, links in edge_labels.items() for link in links
     ]
     ordered = sorted(
         nodes.values(),
@@ -848,7 +1014,16 @@ async def crawl_site(
                 "screenshots": screenshots,
                 "accessibility_tree": accessibility_tree,
                 "probe": probe,
+                "component_screenshots": component_screenshots,
+                "state_capture": state_capture,
             },
+            # A reader has to be able to tell "this portal has no Audit tab"
+            # from "we chose not to open it".
+            probe_profiles=(
+                [{"scope": "(default)", **probe_default.describe()}]
+                + [{"scope": prefix, **rule.describe()}
+                   for prefix, rule in probe_rules]
+            ),
         ),
         stats=CrawlStats(
             pages_crawled=len(nodes),

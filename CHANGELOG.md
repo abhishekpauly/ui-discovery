@@ -25,6 +25,93 @@ backend) is explicitly deferred in `ROADMAP.md` until data volume demands it.
 
 ---
 
+## [0.15.0] — Relationships, controls and visual capture
+
+The engine could say *what* it found; operators fed back that it could not say
+what the product **is**. Endpoints and URLs were present and nothing
+human-readable was: no way to see how screens connected, what a dropdown
+offered, or what a modal contained, and no picture of anything that is not on
+a settled page. This release is that gap.
+
+### ⚠️ Behaviour change
+
+**The interaction probe is now on by default** (`capabilities.probe: true`).
+A capture that never clicks anything cannot see a modal, a menu, a tab panel or
+an API call, which is most of what a portal is. Crawls therefore take longer and
+do interact with the target — under the same two unchanged safety gates.
+
+Scope it down rather than off, per module and per tab:
+
+```yaml
+probe:
+  tabs: listed
+  tab_labels: [Overview, Activity]
+  tab_exclude: [Audit Log]
+modules:
+  - name: Reports
+    start_url: /reports
+    probe: {enabled: false}     # read, never clicked
+```
+
+Or turn it off entirely with `--no-probe`.
+
+### Added
+
+- **Relationship layer** (`relations.py`, `relations.json`, written every run).
+  Screen-to-screen edges now carry the *label of the control that reaches them*,
+  so the page graph answers "how do I get there?". Element-to-element links are
+  computed per screen from standard markup: containment (`parent_path`),
+  `aria-controls` (tab → panel, button → dialog) and form ownership.
+- **What controls offer.** `<select>` options and the selected one, ARIA
+  listbox / radiogroup / menu / tablist items, control state (checked,
+  required, expanded, sorted, readonly) read from DOM *properties*, table
+  columns and row counts, help text, fieldset grouping. A radio set is reported
+  as **one** choice, not N controls.
+- **Component screenshots** — every form, dialog, tab panel, data table and
+  labelled region cropped to itself (`screenshots/components/`).
+- **Revealed-state capture** — the modal, drawer, menu, tab panel or disclosure
+  each probed click opens is photographed (`screenshots/states/`) and recorded
+  with its contents and **what opens it**. Introduces no new interaction: it
+  rides on clicks the probe already makes.
+- **Rewritten crawl report.** `report.md` / `report.html` are now a walkthrough
+  of the product: a Mermaid site map with labelled edges, a "how the screens
+  connect" table, and per screen its picture, actions (with the engine's safety
+  verdict), forms as field tables, data tables with columns and row actions,
+  and every modal/panel with a picture. HTML gains a table of contents,
+  dark-mode support and per-screen collapsing.
+- **Per-module / per-tab probe configuration** — `ProbeSettings` in the scope
+  config, resolved **flags > module > top-level `probe:` > capabilities**, with
+  `--no-probe`, `--no-state-capture` and `--no-component-screenshots`. Pages are
+  matched to modules by the same longest-prefix rule that decides their output
+  folder (`util.module_for_path`), so the two can never disagree.
+- `controls.csv` — every clickable with its label, type, region, options and
+  destination. `elements.csv` gains options, state, relationships and crops.
+- `docgen` consumes the relationship layer: page purposes now name the actual
+  forms, tables and columns instead of describing a shape.
+- Public API: `build_relations`, `screen_edges`, `element_links`, `forms_of`,
+  `tables_of`, `write_relations`.
+
+### Fixed
+
+- **Two long-standing privacy leaks.** A password field's value was written into
+  `attributes.value` on every capture, and Playwright's ARIA snapshot rendered
+  typed field values inline (`- textbox "API token": hunter2`) into
+  `accessibility_tree`. Both are redacted now: the field and its structure are
+  kept, what someone typed is not. `attributes.value` survives only for controls
+  where it names the thing (`input[type=submit]`) or is a choice.
+- Form fields are reported in **reading order** rather than extractor-category
+  order, which had put a form's fourth field last.
+- A checkbox's "default" no longer reads `on` — it reads checked / unchecked.
+
+### Tests
+
++121 (412 → 533): `test_relations.py`, `test_uistate.py`,
+`test_report_readability.py`, `test_probe_config.py`, plus the
+`fixtures/forms/` site. `SCHEMA_VERSION` stays `0.1.0` — every model change is
+additive.
+
+---
+
 ## [0.14.0] — 2026-08-20  ·  Two things the operator no longer has to know  (minor)
 
 Both of these were previously documented workarounds. A workaround only helps

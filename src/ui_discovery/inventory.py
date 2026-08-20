@@ -7,6 +7,7 @@ you can open, grep, diff or paste into a ticket without a JSON viewer:
     urls.txt        every screen that was captured, one per line
     endpoints.md    the API surface observed behind the UI
     elements.csv    every UI element found, one row per element per screen
+    controls.csv    every clickable, with its label, options and destination
     summary.md      screen count, per-screen element counts, totals
     inventory.json  all of the above as data
 
@@ -34,7 +35,24 @@ ELEMENT_COLUMNS = (
     "page_url", "page_title", "depth", "category", "ui_type", "role",
     "accessible_name", "text", "visible", "enabled", "landmark",
     "shadow_depth", "frame", "dom_path",
+    # What the control offers and what state it is in — the difference between
+    # "a dropdown" and "the Status dropdown, currently In progress, offering
+    # Open / In progress / Closed".
+    "options", "option_count", "states", "value", "help_text", "group",
+    "required", "parent_path", "owner_form", "controls", "columns",
+    "row_count", "clip_screenshot",
 )
+
+# One row per thing a person can click, which is the question the feedback
+# actually asked: what are all the clickable elements, what are they called,
+# and what do they offer?
+CONTROL_COLUMNS = (
+    "page_url", "page_title", "label", "ui_type", "category", "region",
+    "enabled", "options", "option_count", "leads_to", "dom_path",
+)
+
+# Categories that represent something a person clicks rather than structure.
+CLICKABLE_CATEGORIES = ("button", "link", "tab", "menu", "disclosure")
 
 
 def _endpoints(crawl: Crawl) -> list[dict[str, Any]]:
@@ -136,6 +154,17 @@ def build_inventory(crawl: Crawl) -> dict[str, Any]:
     }
 
 
+def _options_cell(el) -> str:
+    """A control's choices as one readable cell, marking the current one."""
+    return " | ".join(
+        (f"*{o.label}*" if o.selected else o.label) for o in el.options if o.label
+    )
+
+
+def _states_cell(el) -> str:
+    return "; ".join(f"{k}={v}" for k, v in sorted(el.states.items()))
+
+
 def _elements_csv(crawl: Crawl) -> str:
     buf = io.StringIO()
     writer = csv.writer(buf, lineterminator="\n")
@@ -147,6 +176,44 @@ def _elements_csv(crawl: Crawl) -> str:
                 el.ui_type or "", el.role or "", el.accessible_name or "",
                 (el.text or "")[:120], el.visible, el.enabled,
                 el.landmark or "", el.shadow_depth, el.frame or "",
+                el.dom_path,
+                _options_cell(el), el.option_count, _states_cell(el),
+                el.value or "", el.described_by or "", el.group or "",
+                el.states.get("required") == "true",
+                el.parent_path, el.owner_form or "",
+                " | ".join(el.controls), " | ".join(el.columns),
+                el.row_count, el.clip_screenshot or "",
+            ])
+    return buf.getvalue()
+
+
+def _controls_csv(crawl: Crawl) -> str:
+    """Every clickable element, with the label a person reads and where it goes.
+
+    `leads_to` is filled from the crawl's own navigation edges, so a row says
+    not just "there is a link called Orders" but "clicking Orders takes you to
+    /orders.html" — the two facts a reader needs to follow the product.
+    """
+    destinations: dict[tuple[str, str], str] = {}
+    for edge in crawl.navigation:
+        label = (edge.get("label") or "").strip()
+        if not label:
+            continue
+        destinations.setdefault((edge.get("from", ""), label), edge.get("to", ""))
+
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerow(CONTROL_COLUMNS)
+    for node in crawl.pages:
+        for el in node.page.elements:
+            if el.category not in CLICKABLE_CATEGORIES:
+                continue
+            label = (el.accessible_name or el.text or "").strip()[:120]
+            writer.writerow([
+                node.url, node.page.title, label,
+                el.ui_type or "", el.category, el.landmark or "",
+                el.enabled, _options_cell(el), el.option_count,
+                destinations.get((node.url, label), ""),
                 el.dom_path,
             ])
     return buf.getvalue()
@@ -253,8 +320,12 @@ def _summary_markdown(inv: dict[str, Any]) -> str:
               "| File | What it is |", "| --- | --- |",
               "| `urls.txt` | Every captured screen, one URL per line |",
               "| `elements.csv` | Every UI element, one row per element |",
+              "| `controls.csv` | Every clickable, its label, options and destination |",
+              "| `relations.json` | How screens and elements connect |",
               "| `endpoints.md` | API surface observed behind the UI |",
               "| `screenshots/` | One full-page screenshot per screen |",
+              "| `screenshots/components/` | Forms, dialogs, tab panels and tables, cropped |",
+              "| `screenshots/states/` | Modals, menus and panels revealed by clicking |",
               "| `crawl.json` | The canonical model everything else derives from |",
               "| `report.html` | The readable crawl report |", ""]
     return "\n".join(lines)
@@ -270,6 +341,7 @@ def write_inventory(crawl: Crawl, output_dir: str) -> dict[str, str]:
         "inventory": str(out / "inventory.json"),
         "urls": str(out / "urls.txt"),
         "elements": str(out / "elements.csv"),
+        "controls": str(out / "controls.csv"),
         "endpoints": str(out / "endpoints.md"),
         "summary": str(out / "summary.md"),
     }
@@ -278,6 +350,7 @@ def write_inventory(crawl: Crawl, output_dir: str) -> dict[str, str]:
     Path(paths["urls"]).write_text(
         "\n".join(s["url"] for s in inv["screens"]) + "\n", encoding="utf-8")
     Path(paths["elements"]).write_text(_elements_csv(crawl), encoding="utf-8")
+    Path(paths["controls"]).write_text(_controls_csv(crawl), encoding="utf-8")
     Path(paths["endpoints"]).write_text(
         _endpoints_markdown(inv), encoding="utf-8")
     Path(paths["summary"]).write_text(

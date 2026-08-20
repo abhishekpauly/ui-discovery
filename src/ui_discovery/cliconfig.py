@@ -20,8 +20,9 @@ from typing import Optional
 
 from .adapters import build as build_adapters
 from .auth import DEFAULT_LOGGED_OUT_SIGNALS, DEFAULT_LOGIN_URL_PATTERNS
-from .config import Scope, load_scope
+from .config import ProbeSettings, Scope, load_scope
 from .crawler import CrawlOptions
+from .interactions import ProbeProfile
 from .safety import SafetyPolicy
 
 
@@ -79,6 +80,85 @@ def auth_signals(scope: Scope) -> tuple[tuple[str, ...], tuple[str, ...]]:
     )
 
 
+def probe_profile(
+    scope: Scope, args, settings: Optional[ProbeSettings] = None,
+) -> ProbeProfile:
+    """One fully-resolved `ProbeProfile`, following the engine's usual
+    precedence: **flags > module > top-level `probe:` > capabilities/budget**.
+
+    `settings` is a module's own block, or None for the crawl-wide default.
+    Every field falls back through the layers, so a config only ever has to
+    state what differs from the level above it.
+
+    Flags are deliberately coarse and win everywhere: `--no-probe` means no
+    probe, whatever any module says. Per-module and per-tab detail is
+    config-only, which is right — it is knowledge about one target, and that
+    is what `intake.py` exists to capture.
+    """
+    base = scope.probe
+    mod = settings or ProbeSettings()
+
+    def layered(field, fallback):
+        for source in (mod, base):
+            value = getattr(source, field)
+            if value is not None:
+                return value
+        return fallback
+
+    def listed(field) -> tuple[str, ...]:
+        # A module that names its own list replaces the default; one that names
+        # nothing inherits it. Merging the two would make it impossible to
+        # narrow a list, which is the whole point of naming one.
+        return tuple(getattr(mod, field) or getattr(base, field) or ())
+
+    enabled = layered("enabled", scope.capabilities.probe)
+    if getattr(args, "no_probe", None):
+        enabled = False
+    elif getattr(args, "probe", None):
+        enabled = True
+
+    state_capture = layered("state_capture", True)
+    if getattr(args, "no_state_capture", None):
+        state_capture = False
+    component_screenshots = layered("component_screenshots", True)
+    if getattr(args, "no_component_screenshots", None):
+        component_screenshots = False
+
+    max_interactions = pick(
+        getattr(args, "max_interactions", None),
+        layered("max_interactions", None),
+        scope.budget.max_interactions,
+    )
+
+    return ProbeProfile(
+        enabled=bool(enabled),
+        max_interactions=int(max_interactions),
+        state_capture=bool(state_capture),
+        component_screenshots=bool(component_screenshots),
+        component_selectors=listed("component_selectors"),
+        tabs=layered("tabs", "all"),
+        tab_labels=listed("tab_labels"),
+        tab_exclude=listed("tab_exclude"),
+    )
+
+
+def probe_rules(scope: Scope, args) -> tuple[tuple[str, ProbeProfile], ...]:
+    """(url-path prefix, profile) for every module that configures the probe.
+
+    Resolved here, once, rather than in the crawler: the crawler should not
+    have to know what a `Scope` is.
+    """
+    from urllib.parse import urlparse
+
+    rules = []
+    for module in scope.modules:
+        path = (urlparse(module.start_url).path or "/").rstrip("/")
+        if not path:
+            continue
+        rules.append((path, probe_profile(scope, args, module.probe)))
+    return tuple(rules)
+
+
 def crawl_options(scope: Scope, args) -> CrawlOptions:  # noqa: ANN001
     """Resolve every crawl setting from flags + config, in one place.
 
@@ -96,6 +176,7 @@ def crawl_options(scope: Scope, args) -> CrawlOptions:  # noqa: ANN001
 
     drop_params = getattr(args, "drop_param", None) or scope.identity.drop_params
     login_patterns, logged_out = auth_signals(scope)
+    default_profile = probe_profile(scope, args)
 
     return CrawlOptions(
         max_pages=pick(flag("max_pages"), scope.budget.max_pages, 25),
@@ -108,9 +189,13 @@ def crawl_options(scope: Scope, args) -> CrawlOptions:  # noqa: ANN001
                             scope.identity.dedupe_queries, False),
         drop_params=frozenset(drop_params) or None,
         hash_routes=pick(flag("hash_routes"), scope.identity.hash_routes, False),
-        probe=pick(flag("probe"), scope.capabilities.probe, False),
-        max_interactions=pick(flag("max_interactions"),
-                              scope.budget.max_interactions, 40),
+        probe=default_profile.enabled,
+        max_interactions=default_profile.max_interactions,
+        probe_default=default_profile,
+        probe_rules=probe_rules(scope, args),
+        component_screenshots=default_profile.component_screenshots,
+        component_selectors=default_profile.component_selectors,
+        state_capture=default_profile.state_capture,
         include=scope.scope.include,
         exclude=scope.scope.exclude,
         screenshots=pick(

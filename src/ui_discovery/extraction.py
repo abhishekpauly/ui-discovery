@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 from . import SCHEMA_VERSION, __version__
 from .auth import check_auth
 from .browser import LIVE_CONNECTION_PROBE_JS, aria_snapshot, navigate
-from .models import Element, FrameInfo, Geometry, Heading, Page
+from .models import Element, FrameInfo, Geometry, Heading, Option, Page
 from .taxonomy import classify
 
 # The deterministic in-page pass, shared by the sync extractor (V0) and the
@@ -115,7 +115,7 @@ def skipped_frame(plan: dict) -> FrameInfo:
     )
 
 
-def _element_from_raw(raw: dict) -> Element:
+def element_from_raw(raw: dict) -> Element:
     bb = raw.get("bounding_box")
     geometry = Geometry(**bb) if bb else None
     return Element(
@@ -136,6 +136,19 @@ def _element_from_raw(raw: dict) -> Element:
         frame=raw.get("frame"),
         frame_path=raw.get("frame_path"),
         ui_type=classify(raw),
+        # Relationship + state signals. Every one of these is optional in the
+        # model, so a snapshot taken by an older engine still validates.
+        options=[Option(**o) for o in (raw.get("options") or [])],
+        option_count=int(raw.get("option_count", 0)),
+        states={k: str(v) for k, v in (raw.get("states") or {}).items()},
+        value=raw.get("value"),
+        parent_path=raw.get("parent_path", "") or "",
+        controls=list(raw.get("controls") or []),
+        described_by=raw.get("described_by"),
+        group=raw.get("group"),
+        owner_form=raw.get("owner_form"),
+        columns=list(raw.get("columns") or []),
+        row_count=int(raw.get("row_count", 0)),
     )
 
 
@@ -175,7 +188,7 @@ def assemble_page(
     This is deliberately free of any browser object, so it can be shared by the
     sync extractor (V0) and the async Crawlee handler (V1) unchanged.
     """
-    elements = [_element_from_raw(e) for e in raw.get("elements", [])]
+    elements = [element_from_raw(e) for e in raw.get("elements", [])]
     headings = [Heading(**h) for h in raw.get("headings", [])]
     return Page(
         schema_version=SCHEMA_VERSION,

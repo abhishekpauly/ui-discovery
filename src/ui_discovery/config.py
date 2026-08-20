@@ -78,11 +78,16 @@ class Politeness(BaseModel):
 
 
 class Capabilities(BaseModel):
-    """Feature switches. Defaults reproduce today's behavior exactly."""
+    """Feature switches."""
 
     screenshots: bool = True
     accessibility_tree: bool = True
-    probe: bool = False
+    # The master switch for interaction. On by default: a capture that never
+    # clicks anything cannot see a modal, a menu, a tab panel or an API call,
+    # which is most of what a portal is. Turn it off with `--no-probe`, or
+    # scope it down per module with the `probe:` block below — that is usually
+    # the better answer on a large portal.
+    probe: bool = True
     network: bool = True  # only meaningful with probe
     # Click elements the app never marked up as links, to find routes
     # nothing else can reach. See CrawlOptions.deep_nav.
@@ -141,6 +146,55 @@ class AdapterSpec(BaseModel):
     options: dict[str, Any] = Field(default_factory=dict)
 
 
+class ProbeSettings(BaseModel):
+    """How thoroughly to interact with one area of a product.
+
+    Every field is optional, and unset means *inherit* — from the module's
+    parent settings, then from the top-level `probe:` block, then from
+    `capabilities.probe` / `budget.max_interactions`. That is what lets a
+    config say "probe everything at the defaults, except Reports, which is
+    read-only, and Orders, which needs a bigger budget" without restating the
+    defaults three times.
+
+    The tab policy can only ever *narrow* what gets clicked. There is
+    deliberately no setting that widens the safety allow-list, for the same
+    reason `Safety` has no `block_words_remove`: a config file is the wrong
+    place to be able to talk the engine into clicking something.
+    """
+
+    enabled: Optional[bool] = None
+    max_interactions: Optional[int] = None
+    # Photograph the modal / drawer / menu / tab panel each click reveals.
+    state_capture: Optional[bool] = None
+    # Cropped pictures of the components already on a settled page.
+    component_screenshots: Optional[bool] = None
+    # CSS for components standard markup cannot name — a card, a tile, a
+    # dashboard widget. `taxonomy.NOT_DETECTABLE` records why the engine will
+    # not guess at these; naming them here is how you get them captured.
+    component_selectors: list[str] = Field(default_factory=list)
+
+    # all    — open every tab (the default)
+    # none   — open no tabs; they are recorded but never clicked
+    # listed — open only the tabs named in `tab_labels`
+    tabs: Optional[str] = None
+    tab_labels: list[str] = Field(default_factory=list)
+    # Never opened, in any mode. Wins over `tab_labels`.
+    tab_exclude: list[str] = Field(default_factory=list)
+
+    @field_validator("tabs")
+    @classmethod
+    def _known_tab_policy(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        allowed = {"all", "none", "listed"}
+        if v not in allowed:
+            raise ValueError(
+                f"tabs: {v!r} is not a tab policy. Use one of "
+                f"{', '.join(sorted(allowed))}."
+            )
+        return v
+
+
 class Module(BaseModel):
     """A separately-crawlable area of the product."""
 
@@ -148,6 +202,11 @@ class Module(BaseModel):
     start_url: str
     max_pages: Optional[int] = None
     max_depth: Optional[int] = None
+    # Per-module probe settings. Pages are matched to a module by longest
+    # URL-path prefix (`util.module_for_path`), the same rule that decides
+    # which module folder a page's artifacts are written to — so a page is
+    # never probed with one module's settings and filed under another's.
+    probe: Optional[ProbeSettings] = None
 
 
 class Scope(BaseModel):
@@ -171,6 +230,10 @@ class Scope(BaseModel):
     budget: Budget = Field(default_factory=Budget)
     identity: Identity = Field(default_factory=Identity)
     capabilities: Capabilities = Field(default_factory=Capabilities)
+    # Defaults for every module. A module's own `probe:` overrides these
+    # field by field; anything unset here falls back to `capabilities.probe`
+    # and `budget.max_interactions`, so existing configs keep working.
+    probe: ProbeSettings = Field(default_factory=ProbeSettings)
     politeness: Politeness = Field(default_factory=Politeness)
     safety: Safety = Field(default_factory=Safety)
     privacy: Privacy = Field(default_factory=Privacy)

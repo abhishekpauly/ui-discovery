@@ -248,9 +248,29 @@
     "draggable", "target", "download", "accesskey", "aria-keyshortcuts",
     "class",
   ];
+  // `value` is in STABLE_ATTRS because it names a button ("Save" on an
+  // <input type=submit>) and identifies a choice. On a text, email, search or
+  // password field it is instead whatever a person typed — including their
+  // password — and a snapshot must never carry that. Only the naming and
+  // choice-shaped types keep it.
+  const VALUE_ATTR_SAFE_TYPES = new Set([
+    "button", "submit", "reset",
+    "checkbox", "radio", "range", "number", "date", "datetime-local",
+    "month", "week", "time", "color", "hidden",
+  ]);
+
+  function valueAttrAllowed(el) {
+    const tag = el.nodeName.toLowerCase();
+    if (tag === "textarea") return false;
+    if (tag !== "input") return true;
+    return VALUE_ATTR_SAFE_TYPES.has((el.getAttribute("type") || "text").toLowerCase());
+  }
+
   function attrsOf(el) {
     const o = {};
+    const keepValue = valueAttrAllowed(el);
     for (const a of STABLE_ATTRS) {
+      if (a === "value" && !keepValue) continue;
       if (el.hasAttribute(a)) {
         let v = el.getAttribute(a);
         if (v !== null) {
@@ -263,8 +283,214 @@
     return o;
   }
 
+
+  // --- relationship + state signals ----------------------------------------
+  //
+  // Everything below reads web standards only: DOM properties, ARIA idrefs,
+  // native form association. None of it knows which framework built the page,
+  // and none of it interacts.
+
+  // Resolve a space-separated IDREF list within the element's OWN root. Ids do
+  // not cross a shadow boundary, so resolving against `document` would happily
+  // return an unrelated element that happens to share the id.
+  function idrefs(el, attr) {
+    const raw = el.getAttribute(attr);
+    if (!raw) return [];
+    const root = el.getRootNode();
+    const out = [];
+    for (const id of raw.split(/\s+/)) {
+      if (!id) continue;
+      const t = root.getElementById ? root.getElementById(id) : null;
+      if (t) out.push(t);
+    }
+    return out;
+  }
+
+  function idrefText(el, attr) {
+    const txt = idrefs(el, attr)
+      .map((t) => (t.textContent || "").replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .join(" ");
+    return txt ? txt.slice(0, 300) : null;
+  }
+
+  // The label a person reads for one option-like element.
+  function optionLabel(el) {
+    const [name] = accName(el);
+    if (name) return name;
+    return (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 120);
+  }
+
+  const MAX_OPTIONS = 50;
+
+  // What choices does this control offer? A native <select> and the ARIA
+  // composite widgets are the only things that can answer that from standard
+  // markup; anything else legitimately has no options.
+  const OPTION_OWNERS = [
+    ["datalist", "option"],
+    ["[role=listbox]", "[role=option]"],
+    ["[role=radiogroup]", "[role=radio]"],
+    ["[role=menu],[role=menubar]",
+     "[role=menuitem],[role=menuitemcheckbox],[role=menuitemradio]"],
+    ["[role=tablist]", "[role=tab]"],
+  ];
+
+  function optionsOf(el) {
+    const tag = el.nodeName.toLowerCase();
+    let found = null;
+
+    if (tag === "select") {
+      found = [...el.options].map((o) => ({
+        label: (o.label || o.textContent || "").replace(/\s+/g, " ").trim().slice(0, 120),
+        value: o.value === "" ? null : String(o.value).slice(0, 120),
+        selected: !!o.selected,
+        disabled: !!o.disabled,
+      }));
+    } else {
+      for (const pair of OPTION_OWNERS) {
+        if (!el.matches(pair[0])) continue;
+        found = [...el.querySelectorAll(pair[1])].map((o) => ({
+          label: optionLabel(o),
+          value: o.getAttribute("value") || null,
+          selected: o.getAttribute("aria-selected") === "true"
+                 || o.getAttribute("aria-checked") === "true",
+          disabled: o.getAttribute("aria-disabled") === "true" || !!o.disabled,
+        }));
+        break;
+      }
+    }
+
+    if (!found || !found.length) return { options: [], option_count: 0 };
+    // The stored list is capped; the count never is, so a reader can tell a
+    // 12-option dropdown from a 4000-option one.
+    return { options: found.slice(0, MAX_OPTIONS), option_count: found.length };
+  }
+
+  // Values are user data. Only the ones that describe a *choice* are recorded;
+  // free text, email addresses and passwords are what a person typed and never
+  // belong in a snapshot.
+  const VALUE_SAFE_TYPES = new Set([
+    "checkbox", "radio", "range", "number", "date", "datetime-local",
+    "month", "week", "time", "color",
+  ]);
+
+  function valueOf(el, states) {
+    const tag = el.nodeName.toLowerCase();
+    if (tag === "select") {
+      const sel = [...el.selectedOptions]
+        .map((o) => (o.label || o.textContent || "").replace(/\s+/g, " ").trim());
+      return sel.length ? sel.join(", ").slice(0, 200) : null;
+    }
+    if (tag === "input") {
+      const t = (el.getAttribute("type") || "text").toLowerCase();
+      if (VALUE_SAFE_TYPES.has(t)) {
+        return el.value === "" ? null : String(el.value).slice(0, 120);
+      }
+      // The text is not recorded, but whether the field arrives pre-filled is
+      // a fact about the UI rather than about the person.
+      if (el.value) states.has_value = "true";
+      return null;
+    }
+    if (tag === "textarea" && el.value) states.has_value = "true";
+    return null;
+  }
+
+  // Interaction state, read from DOM properties first. Frameworks routinely
+  // set `.checked` / `.required` without reflecting them to an attribute, so
+  // an attribute-only read reports a checked box as unchecked.
+  function statesOf(el) {
+    const st = {};
+    const tag = el.nodeName.toLowerCase();
+    const attr = (name) => el.getAttribute(name);
+    const put = (key, v) => {
+      if (v !== null && v !== undefined && v !== "") st[key] = String(v);
+    };
+
+    if (tag === "input" && (el.type === "checkbox" || el.type === "radio")) {
+      put("checked", el.checked);
+    } else {
+      put("checked", attr("aria-checked"));
+    }
+    if (tag === "option") put("selected", el.selected);
+    else put("selected", attr("aria-selected"));
+
+    put("expanded", attr("aria-expanded"));
+    put("pressed", attr("aria-pressed"));
+    put("current", attr("aria-current"));
+    put("sort", attr("aria-sort"));
+    put("invalid", attr("aria-invalid"));
+
+    if ("required" in el) put("required", el.required || attr("aria-required") === "true");
+    else put("required", attr("aria-required"));
+    if ("readOnly" in el) put("readonly", el.readOnly || attr("aria-readonly") === "true");
+    else put("readonly", attr("aria-readonly"));
+
+    if (tag === "details") put("open", el.open);
+    if (tag === "select" && el.multiple) put("multiple", true);
+
+    // "false" is informative for a toggle, but a blanket `required: false` on
+    // every field is noise. Drop the falsey ones that carry nothing.
+    for (const k of ["checked", "required", "readonly", "multiple", "open"]) {
+      if (st[k] === "false") delete st[k];
+    }
+    return st;
+  }
+
+  // The form this control belongs to. `el.form` is the native association and
+  // handles `form="other-id"`, which a DOM walk would get wrong.
+  function ownerForm(el) {
+    const owner = ("form" in el && el.form) ? el.form : el.closest("form, [role=form]");
+    return owner && owner !== el ? cssPath(owner) : null;
+  }
+
+  // The named set this control sits in: a fieldset legend, a labelled ARIA
+  // group, or — for native radios, which have no container of their own — the
+  // shared `name` that makes them one choice.
+  function groupOf(el) {
+    const aria = el.closest("[role=group],[role=radiogroup]");
+    if (aria && aria !== el) {
+      const [name] = accName(aria);
+      if (name) return name.slice(0, 120);
+    }
+    const fs = el.closest("fieldset");
+    if (fs) {
+      const legend = fs.querySelector("legend");
+      const txt = legend ? (legend.textContent || "").replace(/\s+/g, " ").trim() : "";
+      if (txt) return txt.slice(0, 120);
+    }
+    const tag = el.nodeName.toLowerCase();
+    if (tag === "input" && (el.type === "radio" || el.type === "checkbox")) {
+      const n = el.getAttribute("name");
+      if (n) return n.slice(0, 120);
+    }
+    return null;
+  }
+
+  // Columns and row count for a table/grid, so a report can say what the data
+  // on a screen actually is instead of "1 table".
+  function tableShape(el) {
+    let cells = [...el.querySelectorAll("thead th, [role=columnheader]")];
+    if (!cells.length) {
+      const first = el.querySelector("tr");
+      cells = first ? [...first.querySelectorAll("th")] : [];
+    }
+    const columns = cells
+      .map((c) => (c.textContent || "").replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .slice(0, 40);
+    let rows = el.querySelectorAll("tbody tr").length;
+    if (!rows) {
+      rows = Math.max(0, el.querySelectorAll("tr").length - (columns.length ? 1 : 0));
+    }
+    return { columns: columns, row_count: rows };
+  }
+
   function describe(el, category) {
     const [name, src] = accName(el);
+    const states = statesOf(el);
+    const opts = optionsOf(el);
+    const shape = (category === "table") ? tableShape(el)
+                                         : { columns: [], row_count: 0 };
     return {
       category,
       tag: el.nodeName.toLowerCase(),
@@ -280,6 +506,21 @@
       sibling_ordinal: siblingOrdinal(el),
       landmark: landmarkOf(el),
       shadow_depth: shadowDepth(el),
+      // What this control offers, what state it is in, and what else on the
+      // page it is tied to — the facts a flat element list cannot express.
+      options: opts.options,
+      option_count: opts.option_count,
+      states: states,
+      value: valueOf(el, states),
+      described_by: idrefText(el, "aria-describedby"),
+      group: groupOf(el),
+      owner_form: ownerForm(el),
+      columns: shape.columns,
+      row_count: shape.row_count,
+      // Filled by the second pass below, once every captured element is known:
+      // a parent is only worth recording if we captured it too.
+      parent_path: "",
+      controls: [],
       source: "runtime",
     };
   }
@@ -318,13 +559,52 @@
 
   const seen = new Set();
   const elements = [];
+  // Node -> its record, so the second pass can resolve a relationship to an
+  // element we actually captured rather than re-deriving a path for a node
+  // that is not in the inventory at all.
+  const byNode = new Map();
   for (const [cat, sel] of GROUPS) {
     for (const root of roots) {
       root.querySelectorAll(sel).forEach((el) => {
         if (seen.has(el)) return;
         seen.add(el);
-        elements.push(describe(el, cat));
+        const record = describe(el, cat);
+        elements.push(record);
+        byNode.set(el, record);
       });
+    }
+  }
+
+  // Second pass: containment and ARIA control relationships.
+  //
+  // Both are deliberately expressed as `dom_path` references to OTHER captured
+  // elements, so the whole graph survives serialization and can be rebuilt
+  // later without a browser.
+  for (const [node, record] of byNode) {
+    // Nearest captured ancestor, crossing shadow boundaries the same way
+    // landmarkOf does — a captured parent can sit on the far side of a host.
+    let from = node;
+    let cur = from.parentElement;
+    let guard = 0;
+    while (guard++ < 200) {
+      if (!cur) {
+        const root = from.getRootNode();
+        if (!(root instanceof ShadowRoot)) break;
+        from = root.host;
+        cur = from;
+        continue;
+      }
+      const hit = byNode.get(cur);
+      if (hit) { record.parent_path = hit.dom_path; break; }
+      cur = cur.parentElement;
+    }
+
+    // aria-controls / aria-owns: the tab that owns a panel, the button that
+    // opens a dialog, the trigger that owns a menu.
+    const targets = [...idrefs(node, "aria-controls"), ...idrefs(node, "aria-owns")];
+    for (const t of targets) {
+      const hit = byNode.get(t);
+      record.controls.push(hit ? hit.dom_path : cssPath(t));
     }
   }
 
