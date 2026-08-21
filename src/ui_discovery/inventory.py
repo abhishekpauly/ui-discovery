@@ -8,7 +8,8 @@ you can open, grep, diff or paste into a ticket without a JSON viewer:
     endpoints.md    the API surface observed behind the UI
     elements.csv    every UI element found, one row per element per screen
     controls.csv    every clickable, with its label, options and destination
-    summary.md      screen count, per-screen element counts, totals
+    summary.md      screen count, per-screen element counts, totals, and
+                    — once the run has finished — where its time went
     inventory.json  all of the above as data
 
 Written on **every** run, including when a stage is skipped or a capability
@@ -25,7 +26,7 @@ import re
 import shutil
 from collections import Counter
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Optional, Sequence
 from urllib.parse import urlparse
 
 from .models import Crawl
@@ -327,8 +328,125 @@ def _summary_markdown(inv: dict[str, Any]) -> str:
               "| `screenshots/components/` | Forms, dialogs, tab panels and tables, cropped |",
               "| `screenshots/states/` | Modals, menus and panels revealed by clicking |",
               "| `crawl.json` | The canonical model everything else derives from |",
-              "| `report.html` | The readable crawl report |", ""]
+              "| `report.html` | The readable crawl report |",
+              "| `run.json` | What this run was: who, when, how long each stage took |",
+              "| `events.jsonl` | What happened during it, in order |", ""]
     return "\n".join(lines)
+
+
+# --- O4: where the run's time went -------------------------------------------
+#
+# `summary.md` is written the moment the crawl ends, because it is the artifact
+# you would most regret losing to a later stage falling over. The run's timings
+# are not known until every stage has finished, so the metrics block is spliced
+# in afterwards rather than rendered with the rest. The alternative — holding
+# the summary back until the end — trades a certainty for a convenience.
+
+METRICS_HEADING = "## Where the time went"
+_METRICS_ANCHOR = "## Elements by kind (all screens)"
+
+
+def _seconds(ms: Optional[int]) -> str:
+    if not ms:
+        return "—"
+    return f"{ms / 1000:.1f}s" if ms >= 100 else f"{ms}ms"
+
+
+def _produced(stage: dict[str, Any]) -> str:
+    counts = stage.get("counts") or {}
+    if counts:
+        return ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in counts.items())
+    return stage.get("error") or "—"
+
+
+def metrics_markdown(manifest: dict[str, Any]) -> str:
+    """The run-metrics section of `summary.md`, from a manifest dict.
+
+    Takes the manifest rather than a `RunContext` so the block can be
+    regenerated from `run.json` alone, long after the run itself is gone.
+    """
+    m = manifest.get("metrics") or {}
+    total = m.get("total_ms") or 0
+    lines = [
+        METRICS_HEADING, "",
+        f"*run `{manifest.get('run_id', '')}` · {manifest.get('outcome', '')} "
+        f"· {_seconds(total)} total · engine "
+        f"{manifest.get('engine_version', '')}*", "",
+        "| Stage | Duration | Share | Status | Produced |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    share = m.get("stage_share_pct") or {}
+    for stage in manifest.get("stages") or []:
+        name = stage.get("name", "")
+        pct = share.get(name)
+        lines.append(
+            f"| {name} | {_seconds(stage.get('duration_ms'))} | "
+            f"{f'{pct}%' if pct is not None else '—'} | "
+            f"{stage.get('status', '')} | {_produced(stage)} |")
+    outside = m.get("outside_stages_ms") or 0
+    if outside:
+        lines.append(
+            f"| _between stages_ | {_seconds(outside)} | "
+            f"{round(outside * 100 / total, 1) if total else '—'}% | | "
+            f"reports, inventory, module folders |")
+
+    lines.append("")
+    pages, ms_per_page = m.get("pages") or 0, m.get("ms_per_page")
+    if pages and ms_per_page:
+        rate = m.get("pages_per_minute")
+        lines.append(
+            f"**{pages} screens in {_seconds(m.get('crawl_ms'))}** — "
+            f"{_seconds(ms_per_page)} per screen"
+            + (f", {rate} screens/minute." if rate else "."))
+    probe_ms = m.get("probe_ms") or 0
+    if probe_ms:
+        pct = m.get("probe_share_of_crawl_pct")
+        lines.append(
+            f"Interacting with the pages accounted for {_seconds(probe_ms)} "
+            f"of that" + (f" ({pct}% of the crawl)" if pct else "")
+            + " — clicking safe controls, opening panels and watching the "
+              "network. Re-run with `--no-probe` to compare, remembering that "
+              "a capture that never clicks anything misses most of a portal.")
+    elif pages:
+        lines.append(
+            "This crawl did not interact with the pages, so no modals, menus "
+            "or API calls were observed.")
+    lines.append("")
+    lines.append(
+        "_Timings are cumulative across pages; under concurrency they can "
+        "exceed the wall clock. Full detail in `run.json`._")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def attach_metrics(manifest: dict[str, Any], output_dir: str) -> Optional[str]:
+    """Splice the run-metrics block into an already-written `summary.md`.
+
+    Never raises: a capture that succeeded must not be reported as failed
+    because a timing table could not be written into it.
+    """
+    try:
+        path = Path(output_dir) / "summary.md"
+        if not path.exists():
+            return None
+        text = path.read_text(encoding="utf-8")
+        if METRICS_HEADING in text:
+            # Called twice on one file: drop the stale block only, from its
+            # heading to the next one. Truncating to the heading would take
+            # the screen table and the file guide with it.
+            head, _, rest = text.partition(METRICS_HEADING)
+            following = rest.find("\n## ")
+            text = head + (rest[following + 1:] if following != -1 else "")
+        block = metrics_markdown(manifest)
+        if _METRICS_ANCHOR in text:
+            head, _, tail = text.partition(_METRICS_ANCHOR)
+            text = head + block + "\n" + _METRICS_ANCHOR + tail
+        else:
+            text = text.rstrip("\n") + "\n\n" + block
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+    except Exception:
+        return None
 
 
 def write_inventory(crawl: Crawl, output_dir: str) -> dict[str, str]:

@@ -27,9 +27,10 @@ from .cliconfig import (
     describe,
     load_or_exit,
     resolve_output_dir,
+    resolve_output_root,
 )
 from .crawler import crawl_site
-from .inventory import write_inventory, write_module_artifacts
+from .inventory import attach_metrics, write_inventory, write_module_artifacts
 from .relations import build_relations
 from .reports import (
     write_analysis,
@@ -38,20 +39,33 @@ from .reports import (
     write_reports,
     write_semantics,
 )
+from .run import RunContext, command_line, config_digest
 from .util import slug_for
 
 STAGES = ("crawl", "analyze", "semantic", "docgen", "qagen")
 
 
-def _run_stage(name: str, fn: Callable, results: dict) -> bool:
+def _run_stage(name: str, fn: Callable, results: dict,
+               run: Optional[RunContext] = None) -> bool:
     """Run one stage, reporting cleanly on failure. Returns success.
 
     A failed stage is a warning, not an abort: the crawl above it is the
-    expensive artifact and stays on disk either way.
+    expensive artifact and stays on disk either way. `run` records the timing
+    and the outcome — this wrapper already brackets every stage, which makes it
+    the one place that has to know a stage happened.
     """
     print(f"\n[INFO] --- {name} ---")
+    if run is None:
+        try:
+            fn()
+            return True
+        except Exception as exc:
+            print(f"[WARN] Stage {name!r} failed: {exc}", file=sys.stderr)
+            results.setdefault("failed", []).append(name)
+            return False
     try:
-        fn()
+        with run.stage(name):
+            fn()
         return True
     except Exception as exc:
         print(f"[WARN] Stage {name!r} failed: {exc}", file=sys.stderr)
@@ -190,20 +204,50 @@ def main(argv: Optional[list[str]] = None) -> int:
     skip = set(args.skip)
     results: dict = {}
 
+    # O1-O3: one id for the whole run, an event stream beside the capture, and
+    # a manifest at the end. Started here because this is the first point at
+    # which the output folder is known — everything before it is argument
+    # handling that cannot fail in an interesting way.
+    run = RunContext.begin(
+        str(out_dir), target=start_url,
+        # O5: the index sits at the root the captures are written under, so it
+        # spans every run against every target rather than one folder's worth.
+        index_dir=resolve_output_root(scope, args.output))
+    status = session_status(auth_state, start_url) if auth_state else {}
+    run.describe(
+        config_file=args.config,
+        config_sha256=config_digest(scope),
+        command=command_line(),
+        authorized=scope.authorized,
+        authorized_by=scope.authorized_by,
+        environment=scope.environment,
+        auth_used=bool(auth_state),
+        auth_source=status.get("source"),
+        auth_expires_in_hours=(
+            round(status["seconds_remaining"] / 3600, 1)
+            if status.get("seconds_remaining") else None),
+    )
+
     # --- crawl (the one stage that must succeed) ---------------------------
     options = crawl_options(scope, args)
     print("[INFO] --- crawl ---")
     print(f"[INFO] Crawling {start_url} (max_pages={options.max_pages}, "
           f"max_depth={options.max_depth}, probe={options.probe})")
     try:
-        crawl = asyncio.run(crawl_site(
-            start_url, output_dir=str(out_dir), auth_state=auth_state,
-            options=options,
-        ))
+        with run.stage("crawl"):
+            crawl = asyncio.run(crawl_site(
+                start_url, output_dir=str(out_dir), auth_state=auth_state,
+                options=options, run=run,
+            ))
+            run.count(pages=crawl.stats.pages_crawled,
+                      links=crawl.stats.links_discovered)
     except Exception as exc:
         print(f"[ERROR] Crawl failed: {exc}", file=sys.stderr)
+        run.finish("failed")
         return 1
     crawl.config.config_file = args.config
+    crawl.run_id = run.run_id
+    run.crawl_id = crawl.crawl_id
     # Computed once and reused: the report, the relations artifact and docgen
     # must describe the same graph, not three independently-derived ones.
     relations = build_relations(crawl)
@@ -216,21 +260,41 @@ def main(argv: Optional[list[str]] = None) -> int:
           f"({s.pages_failed} failed) in {s.runtime_seconds}s")
     if modules:
         print(f"[INFO] Module folders: {', '.join(sorted(modules))}")
+    run.record_stats(
+        pages_crawled=s.pages_crawled, pages_failed=s.pages_failed,
+        elements=sum(n.page.counts.get("total_elements", 0) for n in crawl.pages),
+        navigation_edges=relations.stats.get("navigation_edges", 0),
+        forms=relations.stats.get("forms", 0),
+        tables=relations.stats.get("tables", 0),
+        states_captured=sum(len(n.probe.states) for n in crawl.pages if n.probe),
+        auth_expired=s.auth_expired,
+        # O4: what interacting with every page actually cost, which is the
+        # question `QA.3` asks and the one nobody could previously answer.
+        probe_ms=s.probe_ms,
+    )
 
     analysis = semantics = probe_model = None
     if crawl.pages and crawl.pages[0].probe:
         probe_model = crawl.pages[0].probe
 
+    if "analyze" in skip:
+        run.skipped("analyze", "excluded with --skip")
     if "analyze" not in skip:
         def _analyze():
             nonlocal analysis
             analysis = analyze_crawl(crawl)
             write_analysis(analysis, str(out_dir))
             a = analysis.stats
+            run.count(unique_elements=a.get("unique_fingerprints", 0),
+                      shared_components=a.get("shared_components", 0))
             print(f"[INFO] {a.get('unique_fingerprints', 0)} unique elements · "
                   f"{a.get('shared_components', 0)} shared components")
-        _run_stage("analyze", _analyze, results)
+        _run_stage("analyze", _analyze, results, run)
 
+    if "semantic" in skip:
+        run.skipped("semantic", "excluded with --skip")
+    elif analysis is None:
+        run.skipped("semantic", "analysis unavailable")
     if "semantic" not in skip and analysis is not None:
         def _semantic():
             nonlocal semantics
@@ -241,10 +305,13 @@ def main(argv: Optional[list[str]] = None) -> int:
             if provider is not None:
                 semantics = refine_semantics(semantics, provider)
             write_semantics(semantics, str(out_dir))
+            run.count(labels=len(semantics.labels))
             print(f"[INFO] Labelled {len(semantics.labels)} elements "
                   f"({semantics.provider})")
-        _run_stage("semantic", _semantic, results)
+        _run_stage("semantic", _semantic, results, run)
 
+    if "docgen" in skip:
+        run.skipped("docgen", "excluded with --skip")
     if "docgen" not in skip:
         def _docgen():
             from .docgen import generate as generate_doc
@@ -252,9 +319,12 @@ def main(argv: Optional[list[str]] = None) -> int:
             doc = generate_doc(crawl, analysis, semantics, args.provider,
                                args.model, relations=relations)
             write_documentation(doc, str(out_dir))
+            run.count(pages_documented=len(doc.pages))
             print(f"[INFO] Documented {len(doc.pages)} pages")
-        _run_stage("docgen", _docgen, results)
+        _run_stage("docgen", _docgen, results, run)
 
+    if "qagen" in skip:
+        run.skipped("qagen", "excluded with --skip")
     if "qagen" not in skip:
         def _qagen():
             from pathlib import Path
@@ -268,11 +338,27 @@ def main(argv: Optional[list[str]] = None) -> int:
             ext = "spec.ts" if args.lang == "ts" else "py"
             skeleton = Path(out_dir) / f"generated_tests.{ext}"
             skeleton.write_text(build_playwright(plan), encoding="utf-8")
+            run.count(scenarios=len(plan.scenarios))
             print(f"[INFO] {len(plan.scenarios)} candidate scenarios · "
                   f"skeletons -> {skeleton.name}")
-        _run_stage("qagen", _qagen, results)
+        _run_stage("qagen", _qagen, results, run)
 
+    manifest = run.finish()
+    # O4: the timings only exist once every stage has, so the metrics block is
+    # spliced into the summary now rather than rendered with it after the crawl.
+    attach_metrics(manifest.model_dump(mode="json"), str(out_dir))
     print(f"\n[INFO] Capture complete -> {out_dir}")
+    print(f"[INFO] Run {manifest.run_id} · {manifest.outcome} · "
+          f"{manifest.duration_ms // 1000}s · {manifest.event_count} events "
+          f"-> run.json, events.jsonl")
+    metrics = manifest.metrics
+    if metrics.get("ms_per_page"):
+        probe_share = metrics.get("probe_share_of_crawl_pct")
+        print(f"[INFO] {metrics['pages']} screens · "
+              f"{metrics['ms_per_page'] / 1000:.1f}s per screen"
+              + (f" · probing was {probe_share}% of the crawl"
+                 if probe_share else "")
+              + f" · slowest stage: {metrics.get('slowest_stage')}")
     if results.get("failed"):
         print(f"[WARN] Stages that failed: {', '.join(results['failed'])}. "
               f"The crawl itself is intact.", file=sys.stderr)

@@ -25,6 +25,63 @@ times actually hurt; `X6` (storage backend) waits on data volume.
 
 ---
 
+## [0.17.0] — A run can account for itself (O1-O3)
+
+The engine could say what it found. It could not say who ran it, against what,
+under whose authorization, how long each stage took, or what happened along the
+way. `crawl_id` existed, but a *pipeline run* spanning crawl → analyze →
+semantic → docgen → qagen had no identity of its own.
+
+Closes `O1`, `O2`, `O3` (#4, #5, #6) — the first sprint tracked as GitHub
+issues, and the first change to land through the branch ruleset.
+
+### Added
+
+- **`run.py`** — `RunContext`: run identity, an event stream, and a manifest.
+  Files only. No service, no exporter, no new dependency, nothing listening; a
+  run is accountable because it writes down what it did, which keeps principle
+  #11 intact and means the record survives on a laptop with no network exactly
+  as it does in CI.
+- **`O1` Run identity.** One `run_id` per pipeline run, with `crawl_id` as its
+  child and `Crawl.run_id` recording the link. Twelve hex characters, matching
+  `crawl_id`, so the two read as siblings in a log. A `crawl` invoked directly
+  still has no run and is still a complete artifact.
+- **`O2` Event stream.** `events.jsonl` beside the capture: `run.started`,
+  `stage.started`/`finished`/`skipped`, `page.captured`, `page.skipped` (with
+  the budget that stopped it), `probe.executed`, `probe.refused` (with the
+  safety verdict and reason), `state.captured`, `auth.rejected`,
+  `budget.exhausted`, `run.finished`/`failed`. Flushed as they happen, because
+  the run that dies is precisely the run whose events you want.
+- **`O3` Manifest.** `run.json`: ids, versions, outcome, target, operator, host,
+  per-stage timings and status, a stats rollup, every artifact written, and
+  `config_sha256` over the *resolved* scope — so two runs are provably the same
+  configuration even when one used flags and the other a config file, and
+  differ the moment one setting does.
+- Public API: `RunContext`, `config_digest`, `read_events`, `write_manifest`.
+
+### Notes on what is deliberately absent
+
+The manifest records `auth_used`, the credential *source* and hours to expiry.
+It never contains the session. `command_line()` keeps the session filename —
+useful — and drops its directory, so a manifest never advertises where
+credentials live.
+
+### Fixed
+
+- **`emit()` silently dropped every `state.captured` event.** The crawler
+  passes the state's own name, which collided with the event-name parameter —
+  a `TypeError` that `emit`'s never-raises guarantee swallowed. A real crawl
+  reported `states_captured=4` beside zero such events. The event name is now
+  positional-only in both `emit()` and the crawler wrapper, so a payload key
+  can never bind to it, and a test asserts the count matches the probe stats.
+
+### Tests
+
++24 (552 → 576), covering ordering, flush-on-write, crash survival, secret
+absence, and the keyword collision above.
+
+---
+
 ## [0.16.0] — Publishable repo, CI, and a tracked backlog
 
 Infrastructure, not engine. The code worked; everything around it was manual —

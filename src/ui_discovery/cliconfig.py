@@ -241,6 +241,21 @@ def run_folder_name(scope: Scope, slug: str) -> str:
     return cleaned[:80] or slug
 
 
+def resolve_output_root(scope: Scope, cli_output: Optional[str]) -> str:
+    """The directory captures are written *under* — before any dated or
+    per-product folder.
+
+    O5's `runs.jsonl` belongs here rather than one level down: an index that
+    only sees today's captures answers nothing about how runs trend, which is
+    the only reason it exists.
+    """
+    from pathlib import Path
+
+    from .config import DOWNLOADS
+
+    return str(Path(pick(cli_output, scope.outputs.dir or None, DOWNLOADS)))
+
+
 def resolve_output_dir(scope: Scope, cli_output: Optional[str], slug: str) -> str:
     """`<dir>/<product>`, or `<dir>/<YYYY-MM-DD>/<product>` when the config
     asks to keep history — two snapshots are what `diff` needs, and re-running
@@ -248,9 +263,7 @@ def resolve_output_dir(scope: Scope, cli_output: Optional[str], slug: str) -> st
     from datetime import date
     from pathlib import Path
 
-    from .config import DOWNLOADS
-
-    root = Path(pick(cli_output, scope.outputs.dir or None, DOWNLOADS))
+    root = Path(resolve_output_root(scope, cli_output))
     if scope.outputs.keep_history:
         root = root / date.today().isoformat()
     return str(root / run_folder_name(scope, slug))

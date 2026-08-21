@@ -334,7 +334,7 @@ These items are what turn a capture into something you can audit, trend, and
 hand to someone else. All deterministic, all files-only, no service and no new
 runtime dependency — principle #11 stands.
 
-### O1 — Run identity  ·  Effort: S
+### O1 — Run identity  ·  ✅ SHIPPED (0.17.0)
 - **Goal.** One id for a whole pipeline run, with `crawl_id` as its child, so
   every artifact from one invocation is provably from the same invocation.
 - **Build.** Allocate `run_id` in `pipeline.py`; thread it through each stage;
@@ -344,7 +344,7 @@ runtime dependency — principle #11 stands.
 - **Files.** new `run.py`, `models.py`, `pipeline.py`, `crawl.py`.
 - **Depends-on.** none.
 
-### O2 — Run event stream  ·  Effort: M
+### O2 — Run event stream  ·  ✅ SHIPPED (0.17.0)
 - **Goal.** A greppable record of what happened during a run, in order.
 - **Build.** `events.jsonl` beside the capture, one JSON object per line:
   `run.started`, `stage.started`/`stage.finished`, `page.captured`,
@@ -357,7 +357,7 @@ runtime dependency — principle #11 stands.
 - **Files.** `run.py`, `models.py` (`RunEvent`), `pipeline.py`, `crawler.py`.
 - **Depends-on.** O1.
 
-### O3 — Run manifest  ·  Effort: M
+### O3 — Run manifest  ·  ✅ SHIPPED (0.17.0)
 - **Goal.** One file that answers who ran this, against what, under whose
   authorization, with which settings, and how it ended.
 - **Build.** `run.json` (`RunManifest`): ids, versions, target, `config_file`,

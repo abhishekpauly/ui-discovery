@@ -237,7 +237,13 @@ def test_keyword_overrides_still_work_on_crawl_site():
 
     params = list(inspect.signature(crawl_site).parameters)
     assert params == ["start_url", "output_dir", "auth_state", "options",
-                      "overrides"]
+                      "run", "overrides"]
+    # The property this test actually protects: `**overrides` stays last, so
+    # any plain keyword still lands there rather than binding to a new
+    # parameter added in front of it.
+    assert params[-1] == "overrides"
+    assert (inspect.signature(crawl_site).parameters["overrides"].kind
+            is inspect.Parameter.VAR_KEYWORD)
 
 
 def test_options_replace_ignores_unset_flags_but_honours_meaningful_none():

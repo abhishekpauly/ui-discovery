@@ -16,7 +16,7 @@ importing this package never pulls one in.
 from __future__ import annotations
 
 # Product/package version (see CHANGELOG.md). Bump on each release.
-__version__ = "0.16.0"
+__version__ = "0.17.0"
 # Data-schema version — bump ONLY when the JSON model shape changes in a way
 # that affects readers of past snapshots. Still 0.1.0: all growth so far has
 # been additive (new optional fields / new models), not breaking.
@@ -33,6 +33,7 @@ _EXTRACTION = "ui_discovery.extraction"
 _CRAWLER = "ui_discovery.crawler"
 _ANALYSIS = "ui_discovery.analysis"
 _RELATIONS = "ui_discovery.relations"
+_RUN = "ui_discovery.run"
 _DIFF = "ui_discovery.diff"
 _NARRATE = "ui_discovery.narrate"
 _TAXONOMY = "ui_discovery.taxonomy"
@@ -87,6 +88,12 @@ _EXPORTS = {
     # V5.3 — QA scenario generation + Playwright test-skeleton export (C2).
     "generate_qa_plan": _QAGEN,
     "build_playwright": _QAGEN,
+    # O1-O5 — run identity, event stream, manifest, metrics and run index.
+    "RunContext": _RUN,
+    "config_digest": _RUN,
+    "read_events": _RUN,
+    "write_manifest": _RUN,
+    "read_index": _RUN,
     # Report writers — JSON/Markdown/HTML for each model above.
     "write_reports": _REPORTS,
     "write_analysis": _REPORTS,

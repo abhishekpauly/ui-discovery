@@ -235,6 +235,11 @@ class CrawlStats(BaseModel):
     pages_logged_out: int = 0
     pages_empty: int = 0
     auth_expired: bool = False
+    # O4: cumulative time spent interacting with pages, summed across them.
+    # Under concurrency this can exceed the wall clock — it is a share of the
+    # work, not of the elapsed time, and it is what makes "probing on by
+    # default costs us X" a measurement instead of an impression.
+    probe_ms: int = 0
 
 
 class PageNode(BaseModel):
@@ -257,6 +262,10 @@ class Crawl(BaseModel):
     schema_version: str
     engine_version: str
     crawl_id: str
+    # O1: the pipeline run this crawl belongs to. None when `crawl` was invoked
+    # directly rather than through the pipeline — a crawl is still a complete
+    # artifact on its own.
+    run_id: Optional[str] = None
     started_at: str
     finished_at: str
     config: CrawlConfig
@@ -369,6 +378,105 @@ class Relations(BaseModel):
     entry_points: list[str] = Field(default_factory=list)
     orphans: list[str] = Field(default_factory=list)
     screens: list[ScreenRelations] = Field(default_factory=list)
+
+
+# --- O1-O3: what happened when we looked ------------------------------------
+#
+# The models above describe the *product*. These describe the *run* — the thing
+# that produced them. A capture could always say what it found and never who
+# ran it, against what, under whose authorization, or what happened on the way.
+#
+# Deliberately files-only: no service, no exporter, no new dependency. A run is
+# accountable because it writes down what it did, not because something is
+# listening.
+
+
+class RunEvent(BaseModel):
+    """One thing that happened during a run.
+
+    Append-only and ordered by `seq`, so a reader can replay a run without
+    guessing at interleaving. `data` carries whatever the event is about;
+    keeping it open means a new event kind needs no schema change, and keeping
+    it a dict rather than free text means it stays greppable.
+    """
+
+    run_id: str
+    seq: int
+    at: str                      # ISO-8601 UTC
+    stage: str = ""              # crawl | analyze | semantic | docgen | qagen
+    event: str = ""              # run.started | page.captured | probe.refused | ...
+    level: str = "info"          # info | warning | error
+    message: str = ""
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class StageRecord(BaseModel):
+    """One stage of a pipeline run, and how it went.
+
+    O4: `counts` is what the stage *produced* — pages, fingerprints, labels,
+    scenarios. A duration on its own says a stage was slow; a duration beside a
+    count says whether it was slow for a reason.
+    """
+
+    name: str
+    started_at: str = ""
+    finished_at: str = ""
+    duration_ms: int = 0
+    status: str = "ok"           # ok | failed | skipped
+    error: Optional[str] = None
+    counts: dict[str, int] = Field(default_factory=dict)
+
+
+class RunManifest(BaseModel):
+    """The answer to "what was this run, and can I trust it?".
+
+    `config_sha256` is taken over the *resolved* scope rather than the file on
+    disk, so two runs are provably the same configuration even when one passed
+    flags and the other used a config file — and differ the moment a single
+    setting does.
+
+    Nothing here is ever derived from a session. `auth_used` and the expiry are
+    facts about the run; the cookies are not ours to keep.
+    """
+
+    schema_version: str
+    engine_version: str
+    run_id: str
+    crawl_id: Optional[str] = None
+
+    started_at: str = ""
+    finished_at: str = ""
+    duration_ms: int = 0
+    outcome: str = "ok"          # ok | partial | failed
+    failed_stages: list[str] = Field(default_factory=list)
+
+    # What was pointed at, and with what.
+    target: str = ""
+    config_file: Optional[str] = None
+    config_sha256: str = ""
+    command: str = ""
+
+    # Who, and under what authority. `operator` is the OS user — enough to
+    # tell two people's runs apart on a shared machine, and no more.
+    operator: str = ""
+    host: str = ""
+    authorized: Optional[bool] = None
+    authorized_by: Optional[str] = None
+    environment: Optional[str] = None
+
+    # Auth posture. Never the session itself.
+    auth_used: bool = False
+    auth_source: Optional[str] = None
+    auth_expires_in_hours: Optional[float] = None
+
+    stages: list[StageRecord] = Field(default_factory=list)
+    stats: dict[str, Any] = Field(default_factory=dict)
+    # O4: the derived view of `stages` — where the time went, per screen and
+    # per stage, so "is probing on by default too slow?" is answered from data
+    # rather than from memory.
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    artifacts: list[str] = Field(default_factory=list)
+    event_count: int = 0
 
 
 # --- V2: analysis models ----------------------------------------------------

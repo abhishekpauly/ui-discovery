@@ -482,6 +482,45 @@ Skeletons use the stable role + accessible-name selectors the engine captured.
 `--provider` adds an LLM test-strategy narrative on top (quarantined), leaving
 the scenarios unchanged.
 
+## What a run records about itself
+
+Every capture writes two files that describe the *run*, not the product:
+
+| File | What it answers |
+| --- | --- |
+| `run.json` | Who ran this, against what, under whose authorization, how long each stage took, and how it ended |
+| `events.jsonl` | What happened, in order — one JSON object per line |
+
+```bash
+# What did this run refuse to click, and why?
+grep probe.refused events.jsonl | jq -r '.data | "\(.target): \(.reason)"'
+
+# Which stage was slow?
+jq -r '.stages[] | "\(.name) \(.duration_ms)ms \(.status)"' run.json
+
+# Was this the same configuration as last time?
+jq -r .config_sha256 run.json
+```
+
+`config_sha256` is taken over the **resolved** scope, so two runs are provably
+the same configuration even when one passed flags and the other used a config
+file — and differ the moment a single setting does.
+
+Events cover `run.started`, `stage.started`/`finished`/`skipped`,
+`page.captured`, `page.skipped` (with the budget that stopped it),
+`probe.executed`, `probe.refused` (with the safety verdict and the reason),
+`state.captured`, `auth.rejected`, `budget.exhausted`, and a terminal
+`run.finished` or `run.failed`. They are flushed as they happen, so a run that
+dies mid-crawl — precisely the run whose record you want — still leaves one.
+
+**What is deliberately absent.** The manifest records `auth_used`, the
+credential *source* and hours to expiry. It never contains the session. The
+recorded command keeps the session filename, which is useful, and drops its
+directory, so a manifest never advertises where credentials live.
+
+Files only: no service, no exporter, no new dependency, nothing listening. A
+run is accountable because it writes down what it did.
+
 ## Reading a capture
 
 The crawl report is written for someone who has never seen the portal. Open
