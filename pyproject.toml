@@ -1,6 +1,6 @@
 [project]
 name = "ui-discovery"
-version = "0.18.0"
+version = "0.18.1"
 description = "Framework-agnostic UI Discovery Engine — crawl, analyze, probe, diff and document a web UI"
 requires-python = ">=3.10"
 dependencies = [
@@ -16,9 +16,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest==8.3.4",
+    "pytest==9.0.3",
     # CI shards the browser suite across runners by recorded durations.
-    "pytest-split==0.10.0",
+    "pytest-split==0.11.0",
     "ruff==0.9.6",
 ]
 # V5 ONLY — the quarantined home for optional AI/LLM enrichment (semantic

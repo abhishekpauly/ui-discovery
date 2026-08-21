@@ -25,6 +25,26 @@ data volume — `O5`'s `runs.jsonl` is the deliberate non-database answer.
 
 ---
 
+## [0.18.1] — pytest 9 (security advisory)
+
+### Fixed
+
+- **`pytest` 8.3.4 → 9.0.3.** GHSA: vulnerable tmpdir handling, medium
+  severity, flagged by Dependabot the moment the repo went public. Dev-only
+  and local in nature — it does not touch the shipped library — but it is a
+  one-line pin and the whole point of a public repo with alerts on is to act
+  on them.
+
+  A major version bump, so it was worth checking rather than assuming: the
+  full suite passes unchanged on 9.0.3 (595 passed, 6 skipped), with no
+  deprecation fallout to fix.
+- **`pytest-split` 0.10.0 → 0.11.0**, which is what actually made the above
+  installable: 0.10.0 pins `pytest<9`. Verifying locally with
+  `pip install pytest==9.0.3` bypassed the resolver and proved nothing — CI
+  caught it on the first honest `pip install -e ".[dev]"`.
+
+---
+
 ## [0.18.0] — Where the time went (O4-O5)
 
 `0.17.0` made a run identifiable. This makes it *measurable*. `QA.3` asks
