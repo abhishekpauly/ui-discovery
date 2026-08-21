@@ -105,16 +105,16 @@ labels:
   - name: area:crawl
     color: 1d76db
     description: >-
-      crawl.py / crawler.py — the Crawlee crawl and its budgets. Also the URL
-      surface around it: discovery.py, map.py and verify.py (M1-M3, L3).
+      crawl.py / crawler.py / discovery.py / map.py / verify.py — the crawl
+      and its URL surface
   - name: area:analysis
     color: 1d76db
     description: analyze.py / analysis/ — fingerprints, regions, components, nav
   - name: area:probe
     color: 1d76db
     description: >-
-      probe.py / interactions.py / network.py — interaction and network. Also
-      steps.py, the declarative reachability recipes (I1-I3).
+      probe.py / interactions.py / network.py / steps.py — interaction,
+      recipes and network
   - name: area:safety
     color: b60205
     description: safety.py — the allow-list and the word classifier. Handle with care.
@@ -219,9 +219,8 @@ labels:
   - name: principle-risk
     color: b60205
     description: >-
-      Brushes against a CLAUDE.md non-negotiable — framework branching, an LLM
-      in the observation/analysis/safety path, or a weakened safety envelope.
-      Needs an explicit decision, not a review nod.
+      Brushes a CLAUDE.md non-negotiable. Needs a decision recorded in the
+      issue, not a review nod
   - name: needs-real-run
     color: fbca04
     description: Fixtures cannot validate this; it needs a run against a real site
