@@ -209,6 +209,12 @@ class Module(BaseModel):
     probe: Optional[ProbeSettings] = None
 
 
+# G1: environments the authorization gate treats as production. A short,
+# closed list rather than a pattern — "preprod" and "prod-mirror" are not
+# production, and guessing at them would refuse runs nobody asked to refuse.
+PROD_ENVIRONMENTS = {"prod", "production"}
+
+
 class Scope(BaseModel):
     """The whole scope config — the machine-readable form of the operator
     intake questionnaire."""
@@ -219,8 +225,10 @@ class Scope(BaseModel):
     # Informational only: the engine observes traffic, it never calls these.
     known_endpoints: list[str] = Field(default_factory=list)
 
-    # Authorization is recorded, not enforced — the engine cannot verify it.
-    # It exists so a capture carries the answer to "who approved this?".
+    # G1: authorization is recorded *and* enforced. The engine cannot verify
+    # that a person really approved this — no software can — so it does the one
+    # honest thing available: against production, it refuses to start until
+    # someone has put their name to it. See `authorization_refusal`.
     authorized: Optional[bool] = None
     authorized_by: Optional[str] = None
     environment: Optional[str] = None  # prod | staging | sandbox
@@ -263,6 +271,40 @@ class Scope(BaseModel):
         from .util import url_in_scope
 
         return not url_in_scope(url, self.scope.include, self.scope.exclude)
+
+    # --- authorization (G1) --------------------------------------------------
+
+    def authorization_refusal(self) -> Optional[str]:
+        """Why this run must not start, or `None` if it may.
+
+        The engine cannot verify that anyone approved a capture — no software
+        can. What it can do is refuse to point at production on nobody's
+        authority. Against a `prod` environment, `authorized: true` and a
+        non-empty `authorized_by` are required; everywhere else these fields
+        stay what they always were, a note on the record.
+
+        Deliberately narrow. A gate that fired on staging would be turned off
+        within a week, and a gate that is off protects nothing.
+
+        Pure and importable: the CLIs decide what to *do* about a refusal, but
+        the rule itself is a library function, testable without a process.
+        """
+        if (self.environment or "").strip().lower() not in PROD_ENVIRONMENTS:
+            return None
+        missing = []
+        if self.authorized is not True:
+            missing.append("`authorized: true`")
+        if not (self.authorized_by or "").strip():
+            missing.append("`authorized_by:` naming who approved it")
+        if not missing:
+            return None
+        return (
+            f"This config sets `environment: {self.environment}` but is "
+            f"missing {' and '.join(missing)}. A production capture opens "
+            f"real screens, clicks real controls and photographs whatever is "
+            f"on them, so it does not start on nobody's authority. Add the "
+            f"field(s) above, or set an `environment:` that is not production."
+        )
 
 
 def _read(path: Path) -> dict[str, Any]:
