@@ -47,6 +47,14 @@ data volume — `O5`'s `runs.jsonl` is the deliberate non-database answer.
 
 ## [0.18.0] — Where the time went (O4-O5)
 
+**Where this landed.** This release and `0.17.0` both reached `main` in a
+single squashed commit — `adbbc5a` (#16) — whose subject names only `0.17.0`.
+`f3a11e6` (#17) followed with the end-to-end `O4`/`O5` assertions and a
+pluralisation fix. Both entries describe what shipped accurately; the commit
+subject does not, and `git log` is the first place someone looks. Recorded
+here rather than rewritten: `main` is protected, and two merged pull requests
+point at those commits.
+
 `0.17.0` made a run identifiable. This makes it *measurable*. `QA.3` asks
 whether probing every page by default is too slow for a real portal — a
 question that has been answered from impression since the day probing became
@@ -101,6 +109,9 @@ under repetition, and a failed run still reaching the index.
 ---
 
 ## [0.17.0] — A run can account for itself (O1-O3)
+
+Shipped in `adbbc5a` (#16) — which carried `0.18.0` with it. See that entry
+for why the commit subject names only this release.
 
 The engine could say what it found. It could not say who ran it, against what,
 under whose authorization, how long each stage took, or what happened along the
