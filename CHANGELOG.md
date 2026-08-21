@@ -104,9 +104,58 @@ The "V0…V5" phase names used in planning map to product versions as noted.
   agents, arbitrary script execution against the page, webhooks and hosted job
   APIs, URL discovery via third-party indexes, and following links off the
   target domain. Written down so the proposals are not re-litigated every few
-  months, and so a *changed circumstance* is what reopens one.
+  months, and so a *changed circumstance* is what reopens one. The second
+  review added thirteen more entries, three of which are worth stating plainly
+  because they define what this engine is not: **page content as markdown for
+  LLM consumption** (the first line of `CLAUDE.md` — this is not a scraper, and
+  `docgen` writes documentation *from* the model, which is the opposite
+  direction), **document parsing** (a PDF is not a user interface; the taxonomy
+  records that a screen offers a download and what control does it), and
+  **anti-bot proxy escalation** (an authorized target does not need to be
+  evaded, and building evasion would make principle #11's "nothing but the
+  target" false).
 - Labels `epic:MAP`, `epic:FRESH`, `epic:INTERACT` and `sprint:5-discovery`,
   `sprint:6-liveness`, `sprint:7-reachability`.
+- **A second capability review, and three more epics plus nineteen items.**
+  Specs only — no source changed.
+  - **`G5`–`G7` privacy, and they jump the queue.** The engine redacts typed
+    values, password fields and sensitive query keys, and does not redact
+    *rendered page content*: on a logged-in portal, `Element.text`, accessible
+    names, the ARIA snapshot, `elements.csv` and every screenshot carry real
+    customer names, addresses and account references. `G5` redacts the model
+    deterministically at capture time; `G6` masks the screenshots using the
+    element geometry already recorded; `G7` puts every host contacted into the
+    manifest. These are the only P0s in the queued set, and `QA.2` is in
+    flight — `G4` governs how long a capture survives, `G5`/`G6` govern whether
+    the data is written at all, and the weaker guarantee does not go first.
+  - **`EPIC-WATCH` (`W1`–`W4`)** — the engine produces a capture and `C1`
+    compares two of them; nothing has ever run it twice. A `watch` command that
+    captures, diffs against the last run, and exits `0`/`1`/`2`, plus
+    deterministic rules for what counts as worth waking up for, a renderer for
+    the `runs.jsonl` nothing has read since 0.18.0, and an estimate of what a
+    cadence will cost. **No daemon, no notifications** — every environment that
+    would schedule this already has cron and already knows how to deliver bad
+    news.
+  - **`EPIC-VARIANT` (`PV1`–`PV3`)** — each screen is captured once, at one
+    viewport, in one locale, in whatever colour scheme the browser defaulted to,
+    and the result is called a model of the UI. Viewport, locale,
+    `prefers-color-scheme` and `prefers-reduced-motion` are browser-level
+    inputs, which makes this exactly what principle #1 was written for. `PV3` is
+    the payoff: *state the difference* — which controls the mobile variant hides
+    and what reveals them.
+  - **`EPIC-VOCAB` (`T1`–`T3`)** — the engine models controls and misses the
+    material they are made of. Design tokens derived from `getComputedStyle`
+    (with contrast ratios, since it is arithmetic and the data is already in
+    hand), the semantics a page declares about itself (`lang`, meta, Open Graph,
+    JSON-LD), and token drift across instances of one component — the finding
+    no design review catches because no reviewer opens nine screens side by side.
+  - `M4` orphan and dead-end screens (a URL that works and nothing links to),
+    `H9` excluding cookie banners and chat widgets from the model, `H10`
+    capturing an explicit URL list, `H11` TLS verification as a *recorded*
+    decision, `C3` teaching the diff what noise looks like, and `X9` capture
+    profiles.
+- Labels `epic:WATCH`, `epic:VARIANT`, `epic:VOCAB`, `area:privacy`, and
+  `sprint:8-redaction` / `9-watch` / `10-variants` / `11-vocabulary`.
 
 ### Changed
 
@@ -127,9 +176,11 @@ this reason, and fails from `0.19.0` onward.
 ---
 
 `G1`–`G4` (governance) are specified in `ROADMAP.md` and tracked as `EPIC-GOV`,
-followed by `M1`–`M3` + `H6`–`H8`, then `L1`–`L3`, then `I1`–`I3` — consecutive
-sprints rather than parallel ones, because all three contend `models.py`,
-`config.py`, `crawler.py` and `reports.py`.
+followed by `G5`–`G7`, then `M1`–`M4` + `H6`–`H8`, `L1`–`L3` + `C3`, `I1`–`I3`,
+`W1`–`W4` + `H10` + `X9`, `PV1`–`PV3` + `H9` + `H11`, and `T1`–`T3` — consecutive
+sprints rather than parallel ones, because all of them contend `models.py`,
+`config.py`, `crawler.py` and `reports.py`. The one departure from "sequenced by
+contention" is `G5`–`G7`, which go first on severity.
 
 Still deliberately deferred: `X4` (incremental crawl) is a speculative
 optimization until crawl times actually hurt; `X6` (storage backend) waits on

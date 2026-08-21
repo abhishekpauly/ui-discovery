@@ -96,6 +96,15 @@ labels:
   - name: epic:INTERACT
     color: 5319e7
     description: Reachability — reach the screens a link cannot (I1-I3)
+  - name: epic:WATCH
+    color: 5319e7
+    description: Watch — a capture that runs itself (W1-W4)
+  - name: epic:VARIANT
+    color: 5319e7
+    description: Presentation variants — viewport, locale, scheme, motion (PV1-PV3)
+  - name: epic:VOCAB
+    color: 5319e7
+    description: Design vocabulary — tokens, declared semantics, drift (T1-T3)
 
   # --- area ----------------------------------------------------------------
   # One per module cluster in the repo map at the top of CLAUDE.md.
@@ -142,6 +151,11 @@ labels:
   - name: area:ci
     color: 1d76db
     description: GitHub Actions workflows, runners, sharding, caching
+  - name: area:privacy
+    color: b60205
+    description: >-
+      redact.py / network.py — what a capture must never contain. Handle with
+      care
   - name: area:tests
     color: 1d76db
     description: tests/ and fixtures/ — the regression surface
@@ -208,6 +222,18 @@ labels:
   - name: sprint:7-reachability
     color: 006b75
     description: Lands on sprint/7-reachability (I1-I3)
+  - name: sprint:8-redaction
+    color: 006b75
+    description: Lands on sprint/8-redaction (G5-G7) — jumps the queue, see ROADMAP
+  - name: sprint:9-watch
+    color: 006b75
+    description: Lands on sprint/9-watch (W1-W4, H10, X9)
+  - name: sprint:10-variants
+    color: 006b75
+    description: Lands on sprint/10-variants (PV1-PV3, H9, H11)
+  - name: sprint:11-vocabulary
+    color: 006b75
+    description: Lands on sprint/11-vocabulary (T1-T3)
 
   # --- flags this repo specifically cares about ----------------------------
   - name: breaking-change
