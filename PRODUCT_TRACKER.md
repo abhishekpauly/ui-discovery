@@ -112,6 +112,54 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | G2 | Safety envelope recorded | allow-list, block words, `never_touch`, probe profiles | P1 | 📋 |
 | G3 | Data-handling posture | what was deliberately not persisted, and why | P1 | 📋 |
 | G4 | Retention | `outputs.retention_days` + a `prune` command | P2 | 📋 |
+| G5 | Redact the people out of the model | deterministic PII patterns over text, names, ARIA snapshot, CSV — at capture time | P0 | 📋 |
+| G6 | Redact the people out of the screenshots | mask element boxes using geometry already recorded; crops and revealed states too | P0 | 📋 |
+| G7 | Egress ledger | every host contacted during a run, in the manifest; off-scope hosts flagged | P1 | 📋 |
+
+### Discovery — know the URL surface before crawling it · EPIC-MAP
+| ID | Feature | Scope | Pri | Status |
+|----|---------|-------|-----|--------|
+| M1 | Sitemap ingestion | `robots.txt` + `sitemap.xml` (+ index, `.gz`) seed the crawl; scope rules still decide | P1 | 📋 |
+| M2 | `map` command | `map.json` + `urls.txt`: every URL with its source, verdict, and the rule that decided it | P1 | 📋 |
+| M3 | Scope dry-run | `--dry-run` on `crawl`/`pipeline` — the map and the budget verdict, navigating nothing | P2 | 📋 |
+| M4 | Orphan & dead-end screens | reachable by URL but unlinked; captured but leading nowhere | P1 | 📋 |
+
+### Liveness & freshness — a capture that says how current it is · EPIC-FRESH
+| ID | Feature | Scope | Pri | Status |
+|----|---------|-------|-----|--------|
+| L1 | Per-page capture verdict | `captured`/`redirected`/`auth_wall`/`error`/`empty`/`unknown` + evidence | P0 | 📋 |
+| L2 | Capture age surfaced | timestamp + age lead the reports; `diff` warns on stale or unhealthy sides | P1 | 📋 |
+| L3 | `verify` command | re-check a prior capture cheaply: live / redirected / gone / auth-walled | P2 | 📋 |
+| L4 | Revisit `X4` with `O4` metrics | **spike** — does capture reuse pay? Deliverable is a recorded answer | P3 | 📋 |
+
+### Reachability — reach the screens a link cannot · EPIC-INTERACT
+| ID | Feature | Scope | Pri | Status |
+|----|---------|-------|-----|--------|
+| I1 | Declarative action steps | typed `click`/`select`/`check`/`press`/`scroll`/`wait_for`/`open_tab`; choice inputs only; `safety.py` unchanged | P1 | 📋 |
+| I2 | Recipes in the scope config | named step sequences per module; resulting screen captured as first-class | P1 | 📋 |
+| I3 | Recipes on the record | `recipe.*` events + a `recipes` section in `run.json`, refusals included | P1 | 📋 |
+
+### Watch — a capture that runs itself · EPIC-WATCH
+| ID | Feature | Scope | Pri | Status |
+|----|---------|-------|-----|--------|
+| W1 | Scheduled capture | `watch` command: capture, diff against the last run, exit 0/1/2. No daemon, no notifications | P1 | 📋 |
+| W2 | Change significance rules | deterministic rules deciding what is worth waking up for; every suppression named | P1 | 📋 |
+| W3 | Trend | `runs.jsonl` has been written since 0.18.0 and never read back — render it | P2 | 📋 |
+| W4 | Run estimate | wall-clock and pages per scheduled run, from `M3`'s dry run and `O4`'s measurements | P3 | 📋 |
+
+### Presentation variants — the same screen, more than one way · EPIC-VARIANT
+| ID | Feature | Scope | Pri | Status |
+|----|---------|-------|-----|--------|
+| PV1 | Viewport & device variants | capture per breakpoint under one screen identity, not as separate screens | P1 | 📋 |
+| PV2 | Locale, colour scheme & motion | `prefers-color-scheme`, `prefers-reduced-motion`, language + timezone, RTL direction | P2 | 📋 |
+| PV3 | What changes between presentations | the payoff: which controls exist in one variant only, and what reveals them | P1 | 📋 |
+
+### Design vocabulary — what the product is built from · EPIC-VOCAB
+| ID | Feature | Scope | Pri | Status |
+|----|---------|-------|-----|--------|
+| T1 | Design tokens from computed style | palette, type scale, spacing, radii with usage counts; contrast ratios while the data is there | P2 | 📋 |
+| T2 | What the page says it is | `lang`/`dir`, meta, Open Graph, JSON-LD / microdata / RDFa — recorded as observed | P2 | 📋 |
+| T3 | Does the product agree with itself? | token drift across instances of one component — the finding no design review catches | P3 | 📋 |
 
 
 ### Infrastructure baseline
@@ -127,6 +175,12 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | H3 | Shadow DOM & iframe traversal | extract inside open shadow roots + same-origin frames | P1 | ✅ 0.12.0 |
 | H4 | Session-expiry detection | warn/abort when a saved session is stale, not silently crawl login | P1 | ✅ 0.12.0 |
 | H5 | Config file + capability adapters | per-site YAML: budgets, URL patterns, auth signals | P2 | ✅ 0.12.0 |
+| H6 | Subdomain policy | `same-host` (today) / `registrable-domain` / explicit list | P2 | 📋 |
+| H7 | External links recorded, never followed | the authorization boundary as a visible edge, not a silence | P2 | 📋 |
+| H8 | Crawl failure ledger | what was *not* captured, with reasons — a rollup of `discovered_not_captured` + `page.skipped` | P2 | 📋 |
+| H9 | Exclude the furniture | `capture.exclude_selectors` — cookie banners and chat widgets out of the model, counted not silent | P2 | 📋 |
+| H10 | Capture an explicit URL list | `--from urls.txt` / `urls:` — scope rules still apply; a list is not an authorization | P2 | 📋 |
+| H11 | TLS verification as a recorded decision | reach internal staging, and say in the manifest that you did | P3 | 📋 |
 
 ### Deliverables (deterministic, high value)
 | ID | Feature | Scope | Pri | Status |
@@ -139,6 +193,7 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | D6 | Session pre-flight | read a saved session's expiry before crawling, not after | P1 | ✅ 0.14.0 |
 | C1 | Change diff between two crawls | pages/elements/components added/removed/renamed (by fingerprint) | P1 | ✅ 0.12.0 |
 | C2 | Playwright test-skeleton export | runnable `.py`/`.spec.ts` stubs from captured selectors; destructive skipped | P1 | ✅ (via V5.3) |
+| C3 | Diff noise suppression | clocks, badge counts and session ids stop being findings; suppressions counted and reversible | P1 | 📋 |
 
 ### Reusability / configurability / scoping (first-class goals)
 | ID | Feature | Scope | Pri | Status |
@@ -173,6 +228,8 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | X5 | Politeness | robots.txt + rate limit + concurrency cap | P2 | ✅ 0.12.0 |
 | X6 | Storage backend seam | interface so SQLite/Postgres can slot in later (no DB now) — deferred by ROADMAP until data volume demands it | P3 | 🗄️ deferred |
 | X7 | Repo governance | branching model (`BRANCHING.md`), release process + `release` workflow (`RELEASING.md`), labels as data (`.github/labels.yml`), retroactive tags `v0.12.0`–`v0.18.0`, project board | P2 | 🚧 |
+| X8 | "Which command do I run?" | decision table over the nine commands, costed in wall-clock and pages | P2 | 📋 |
+| X9 | Capture profiles | `fast` / `standard` / `deep` presets over the toggles; `standard` is today's defaults | P2 | 📋 |
 
 ---
 

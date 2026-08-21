@@ -12,9 +12,15 @@
 #   ./scripts/bootstrap_github.sh              # everything
 #   ./scripts/bootstrap_github.sh labels       # one section
 #   ./scripts/bootstrap_github.sh tags releases
+#   ./scripts/bootstrap_github.sh board        # put new issues on the board
 #
 # Needs `gh` authenticated with `repo` and `project` scopes:
 #   gh auth login --scopes "repo,read:org,project,workflow"
+#
+# An existing login that predates the project scope needs topping up rather
+# than replacing — `labels`, `tags` and `releases` work without it, `project`
+# and `board` do not:
+#   gh auth refresh -s project,read:project
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -153,16 +159,26 @@ do_project() {
   note "Board: https://github.com/users/$OWNER/projects/$number"
 }
 
+do_board() {
+  say "Board items"
+  need_gh
+  # Adding cards is a separate section from creating the board because it is
+  # the one that runs repeatedly: every new epic or story needs to land on it,
+  # and forty clicks is a job nobody repeats after the first sprint.
+  "$PY" scripts/sync_board.py
+}
+
 main() {
   local sections=("$@")
-  [ ${#sections[@]} -eq 0 ] && sections=(labels tags releases project)
+  [ ${#sections[@]} -eq 0 ] && sections=(labels tags releases project board)
   for section in "${sections[@]}"; do
     case "$section" in
       labels)   do_labels ;;
       tags)     do_tags ;;
       releases) do_releases ;;
       project)  do_project ;;
-      *) echo "unknown section: $section (labels|tags|releases|project)"; exit 2 ;;
+      board)    do_board ;;
+      *) echo "unknown section: $section (labels|tags|releases|project|board)"; exit 2 ;;
     esac
   done
   say "Done"

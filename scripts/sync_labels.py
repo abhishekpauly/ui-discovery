@@ -52,22 +52,37 @@ def _normalise(text: str | None) -> str:
     return " ".join((text or "").split())
 
 
+# GitHub rejects a longer description with HTTP 422. Worth catching here rather
+# than there: the sync applies labels one call at a time, so a single overlong
+# description aborts the run partway and leaves the label set half-applied —
+# which is how `principle-risk` sat unapplied without anyone noticing.
+MAX_DESCRIPTION = 100
+
+
 def desired_labels(path: Path = LABELS_FILE) -> list[dict[str, str]]:
     """Read the label set from the YAML file, normalised for comparison."""
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     labels = data.get("labels") or []
     out: list[dict[str, str]] = []
     seen: set[str] = set()
+    too_long: list[str] = []
     for entry in labels:
         name = str(entry["name"])
         if name in seen:
             raise ValueError(f"{path.name} defines {name!r} twice")
         seen.add(name)
+        description = _normalise(entry.get("description"))
+        if len(description) > MAX_DESCRIPTION:
+            too_long.append(f"{name} ({len(description)} chars)")
         out.append({
             "name": name,
             "color": str(entry.get("color", "ededed")).lstrip("#").lower(),
-            "description": _normalise(entry.get("description")),
+            "description": description,
         })
+    if too_long:
+        raise ValueError(
+            f"{path.name}: description longer than {MAX_DESCRIPTION} characters, "
+            f"which GitHub rejects: " + ", ".join(too_long))
     return out
 
 
