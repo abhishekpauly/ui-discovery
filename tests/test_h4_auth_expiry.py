@@ -267,7 +267,7 @@ def test_expiry_is_surfaced_in_the_reports(server):
 
 # --- proportionate evidence (found by running against a real portal) --------
 #
-# On the Acme QA portal, three `agent-builder/<uuid>` deep links rendered
+# On a real QA portal, three `agent-builder/<uuid>` deep links rendered
 # blank — they need query params the crawler did not have. That flagged the
 # whole capture as "the login/blank state, not the product" while thirty-five
 # other screens held real content (median 47 elements). Telling someone to

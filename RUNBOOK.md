@@ -114,8 +114,8 @@ Check a config before using it:
 python -m ui_discovery.intake --check scope.yaml
 ```
 
-A ready-made config for the Acme portal is in
-`examples/websocket-spa.scope.yaml` — copy it and change `start_url`.
+A ready-made config for an authenticated SPA is in
+`examples/authenticated-spa.scope.yaml` — copy it and change `start_url`.
 
 ---
 

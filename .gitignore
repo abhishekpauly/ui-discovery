@@ -13,6 +13,12 @@ output/
 session.json
 *.session.json
 
+# Real, target-specific scope configs. A config naming an actual internal
+# host is reconnaissance; the sanitised example lives in
+# examples/authenticated-spa.scope.yaml.
+*.local.yaml
+*.local.json
+
 
 # OS
 .DS_Store

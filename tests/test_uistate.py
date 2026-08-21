@@ -308,7 +308,7 @@ def test_component_screenshots_can_be_turned_off(tmp_path):
 
 # --- deduplication (found by running against a real portal) -----------------
 #
-# On the Acme model hub, a grid of model cards each carried a "Try out"
+# On a real portal's model hub, a grid of model cards each carried a "Try out"
 # button opening the same Model Playground drawer. The engine photographed it
 # 37 times and the report listed all 37. Across that capture, 158 captured
 # states collapsed to 14 distinct affordances.
