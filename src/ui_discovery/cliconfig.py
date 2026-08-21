@@ -44,6 +44,12 @@ def pick(flag_value, config_value, default):
     return default
 
 
+# G1: a distinct code, so a pipeline can tell "you may not run this" from
+# "the config would not parse". Both are refusals; only one is a mistake in
+# the file.
+EXIT_UNAUTHORIZED = 3
+
+
 def load_or_exit(path: Optional[str]) -> Scope:
     """Load a scope config, reporting a clean error rather than a traceback."""
     try:
@@ -51,6 +57,24 @@ def load_or_exit(path: Optional[str]) -> Scope:
     except (FileNotFoundError, ValueError) as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         raise SystemExit(1)
+
+
+def authorized_or_exit(scope: Scope) -> None:
+    """G1: refuse an unauthorized production run, before anything is opened.
+
+    Called by every command that navigates, immediately after the config is
+    loaded and before a browser exists. `describe()` warns about the same
+    fields; a warning scrolls past, and this one does not.
+    """
+    refusal = scope.authorization_refusal()
+    if refusal:
+        # `describe()` has just written the config's own lines to stdout, which
+        # is block-buffered when piped. Without this the refusal — unbuffered
+        # on stderr — overtakes them, and the reader meets the verdict before
+        # the config it is about.
+        sys.stdout.flush()
+        print(f"[ERROR] {refusal}", file=sys.stderr)
+        raise SystemExit(EXIT_UNAUTHORIZED)
 
 
 def adapters_for(scope: Scope):
