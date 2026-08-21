@@ -18,6 +18,23 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The release workflow could not publish a retroactive tag.** Its smoke test
+  runs `pytest -m "not browser"`, but the `browser` marker only exists from
+  `0.16.0`, where `tests/conftest.py` started applying it. At an older tag that
+  selects *everything*, Chromium is not installed in the release job, and the
+  release fails for a reason that has nothing to do with the release. Those
+  tags were tested by CI when they were current, so the step now skips itself
+  when the marker is absent.
+- **`v0.17.0` withdrawn.** It was applied to `adbbc5a`, whose `pyproject.toml`
+  and `__version__` both say `0.18.0` — that one squashed commit carried both
+  releases, so `0.17.0` never existed as a distinct state on `main`. The
+  release workflow's version guard refused it, correctly. The changelog entry
+  stands and names the commit the work arrived in; a tag pointing at code that
+  calls itself something else would be a worse record than no tag.
+
+
 ### Added
 
 - **`X7` Repo governance.** The project had a careful contract for the *code*
