@@ -108,7 +108,7 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 ### Governance — state the rules a capture ran under · EPIC-GOV
 | ID | Feature | Scope | Pri | Status |
 |----|---------|-------|-----|--------|
-| G1 | Authorization enforced | `authorized` / `environment` stop being inert metadata | P0 | 📋 |
+| G1 | Authorization enforced | `authorized` / `environment` stop being inert metadata — a `prod` config without `authorized: true` + `authorized_by` exits 3 before anything opens | P0 | ✅ |
 | G2 | Safety envelope recorded | allow-list, block words, `never_touch`, probe profiles | P1 | 📋 |
 | G3 | Data-handling posture | what was deliberately not persisted, and why | P1 | 📋 |
 | G4 | Retention | `outputs.retention_days` + a `prune` command | P2 | 📋 |

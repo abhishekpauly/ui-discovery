@@ -18,6 +18,7 @@ import sys
 from .auth import describe_session, load_storage_state, session_status
 from .cliconfig import (
     add_config_argument,
+    authorized_or_exit,
     crawl_options,
     describe,
     load_or_exit,
@@ -144,6 +145,8 @@ def main(argv: list[str] | None = None) -> int:
     scope = load_or_exit(args.config)
     for line in describe(scope, args.config):
         print(line)
+    # G1: before a URL is resolved, a session is read or a browser exists.
+    authorized_or_exit(scope)
 
     try:
         start_url = scope.resolve_start_url(args.url)
