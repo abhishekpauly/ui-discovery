@@ -27,6 +27,12 @@ The "V0…V5" phase names used in planning map to product versions as noted.
   release fails for a reason that has nothing to do with the release. Those
   tags were tested by CI when they were current, so the step now skips itself
   when the marker is absent.
+- **Release notes now come from the default branch's `CHANGELOG.md`.** They
+  were read from the tag's own tree, which cannot work for a retroactive tag:
+  `scripts/changelog_section.py` was added long after `v0.12.0`, so the step
+  failed on every backfilled release. A tag's changelog also cannot describe
+  releases made after it. `main` is the one complete record; the tag supplies
+  only the code.
 - **`v0.17.0` withdrawn.** It was applied to `adbbc5a`, whose `pyproject.toml`
   and `__version__` both say `0.18.0` — that one squashed commit carried both
   releases, so `0.17.0` never existed as a distinct state on `main`. The
