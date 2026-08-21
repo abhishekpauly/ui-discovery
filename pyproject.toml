@@ -18,7 +18,7 @@ dependencies = [
 dev = [
     "pytest==9.0.3",
     # CI shards the browser suite across runners by recorded durations.
-    "pytest-split==0.10.0",
+    "pytest-split==0.11.0",
     "ruff==0.9.6",
 ]
 # V5 ONLY — the quarantined home for optional AI/LLM enrichment (semantic

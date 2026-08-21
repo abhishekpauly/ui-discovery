@@ -38,6 +38,10 @@ data volume — `O5`'s `runs.jsonl` is the deliberate non-database answer.
   A major version bump, so it was worth checking rather than assuming: the
   full suite passes unchanged on 9.0.3 (595 passed, 6 skipped), with no
   deprecation fallout to fix.
+- **`pytest-split` 0.10.0 → 0.11.0**, which is what actually made the above
+  installable: 0.10.0 pins `pytest<9`. Verifying locally with
+  `pip install pytest==9.0.3` bypassed the resolver and proved nothing — CI
+  caught it on the first honest `pip install -e ".[dev]"`.
 
 ---
 
