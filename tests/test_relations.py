@@ -404,3 +404,38 @@ def test_controls_csv_lists_clickables_with_labels_and_destinations(
     assert rows
     assert all(r["label"] for r in rows if r["category"] == "link")
     assert any(r["leads_to"] for r in rows), "no control records where it goes"
+
+
+# --- accessible names from content (found on a real portal) -----------------
+#
+# 119 of 345 unnamed elements in a real capture had visible text sitting right
+# there — 44 of them column headers. The name-from-content rule was keyed off
+# a hardcoded tag list plus an *explicit* `role=` attribute, so every element
+# with an implicit name-from-content role lost its name.
+
+def test_a_column_header_is_named_by_its_own_text(forms_page):
+    """`<th>Order</th>` is a columnheader, and a columnheader takes its name
+    from its content. A browser calls it "Order"; so must we."""
+    headers = [e for e in forms_page.elements if e.category == "columnheader"]
+    assert [e.accessible_name for e in headers] == [
+        "Order", "Customer", "Status", "Actions"]
+
+
+def test_nothing_on_a_well_marked_up_page_is_left_unnamed(forms_page):
+    unnamed = [e for e in forms_page.elements
+               if not (e.accessible_name or "").strip()]
+    assert unnamed == [], [(e.category, e.tag, e.dom_path) for e in unnamed]
+
+
+def test_name_source_is_still_reported(forms_page):
+    """A reader has to be able to see *how* a name was derived."""
+    header = next(e for e in forms_page.elements
+                  if e.accessible_name == "Order")
+    assert header.accessible_name_source == "text"
+
+
+def test_an_explicit_aria_label_still_wins_over_content(forms_page):
+    """Name-from-content is the fallback, not an override."""
+    table = next(e for e in forms_page.elements if e.category == "table")
+    assert table.accessible_name == "Recent orders"
+    assert table.accessible_name_source == "aria-label"

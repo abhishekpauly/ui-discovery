@@ -719,6 +719,9 @@ async def crawl_site(
     shots_dir.mkdir(parents=True, exist_ok=True)
 
     nodes: dict[str, PageNode] = {}
+    # Pages whose budget slot is taken. Distinct from `nodes`, which is only
+    # populated once a page has been fully extracted — see the handler.
+    claimed: set[str] = set()
     edges: dict[str, list[str]] = {}
     # H2: one network sink per open page, keyed by page identity. Populated
     # from a pre-navigation hook so page-load traffic is captured, then read
@@ -812,6 +815,27 @@ async def crawl_site(
     async def handler(context: PlaywrightCrawlingContext) -> None:
         page = context.page
         url = _normalize(context.request.url)
+
+        # Our own page budget, enforced here rather than left to Crawlee.
+        #
+        # Crawlee's `max_requests_per_crawl` counts *completed* requests and is
+        # checked before dispatching the next one, so anything in flight — or
+        # being retried — does not count yet. On a slow SPA that retried 29
+        # requests, a budget of 25 produced 38 captured pages. The handler is
+        # the only place that knows how many pages we have actually captured,
+        # so it is the only place that can hold the line exactly.
+        # The slot is *claimed* here, not when the node is finally recorded.
+        # Everything between this point and `nodes[url] = node` awaits, so two
+        # handlers would otherwise both pass a `len(nodes) < max_pages` check
+        # and both add. Claiming with no await in between makes it atomic
+        # under asyncio, and the budget exact rather than approximate.
+        if url not in claimed:
+            if len(claimed) >= max_pages:
+                context.log.info(
+                    f"Page budget ({max_pages}) reached; not capturing {url}")
+                return
+            claimed.add(url)
+
         context.log.info(f"Extracting {url}")
 
         readiness = await _readiness(page, context.response)

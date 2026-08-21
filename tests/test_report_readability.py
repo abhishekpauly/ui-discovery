@@ -233,3 +233,54 @@ def test_html_escapes_page_content(capture):
     out = build_html(hostile)
     assert "<script>alert(1)</script>" not in out
     assert "&lt;script&gt;" in out
+
+
+# --- unnamed controls are stated, not silently dropped ----------------------
+#
+# On a real portal 107 of 463 elements had no accessible name. They were
+# excluded from the actions table because there is nothing to call them —
+# which made every screen look emptier than it was, with no explanation. The
+# only identifiers they carried were framework-generated (`radix-:r9:`) or CSS
+# classes; presenting either as a name would be an invention.
+
+def _page_with_unnamed(capture):
+    from ui_discovery.models import Element
+
+    crawl = capture[0].model_copy(deep=True)
+    page = crawl.pages[0].page
+    page.elements.append(Element(category="button", tag="button",
+                                 accessible_name=None, text=None,
+                                 dom_path="main > button:nth-of-type(9)"))
+    page.elements.append(Element(category="button", tag="button",
+                                 accessible_name="   ", text="",
+                                 dom_path="main > button:nth-of-type(10)"))
+    return crawl
+
+
+def test_a_screen_says_how_many_controls_it_could_not_name(capture):
+    from ui_discovery.reports import build_markdown
+
+    md = build_markdown(_page_with_unnamed(capture))
+    assert "have no accessible name" in md
+    assert "screen reader cannot announce them" in md
+
+
+def test_the_capture_reports_unnamed_controls_as_an_app_finding(capture):
+    from ui_discovery.reports import build_markdown
+
+    md = build_markdown(_page_with_unnamed(capture))
+    assert "finding about the application, not a gap" in md
+    assert "aria-label" in md
+
+
+def test_html_carries_the_same_statement(capture):
+    from ui_discovery.reports import build_html
+
+    page = build_html(_page_with_unnamed(capture))
+    assert "have no accessible name" in page
+
+
+def test_a_fully_named_screen_makes_no_such_claim(md):
+    """The fixture site names everything, so the report must not manufacture
+    an accessibility finding that is not there."""
+    assert "have no accessible name" not in md

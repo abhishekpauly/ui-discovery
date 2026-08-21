@@ -124,3 +124,34 @@ def test_reports_written(full_crawl, tmp_path):
     assert "UI Crawl Report" in md
     assert "Page graph" in md
     assert full_crawl.schema_version == "0.1.0"
+
+
+# --- the page budget is exact (found on a real portal) ----------------------
+
+def test_the_page_budget_is_not_exceeded(serve):
+    """`max_pages` used to be approximate. On a slow SPA that retried 29
+    requests, a budget of 25 produced 38 captured pages: Crawlee's limit counts
+    *completed* requests and is checked before dispatching the next one, so
+    anything in flight or being retried does not count yet.
+
+    The handler now claims its budget slot on entry, which is the only place
+    that knows how many pages have actually been captured.
+    """
+    server = serve("fixtures/site")
+    for budget in (1, 3, 5):
+        crawl = asyncio.run(crawl_site(
+            f"{server.base}/index.html", max_pages=budget, max_depth=5,
+            output_dir="/tmp/uidisco_budget", probe=False, screenshots=False))
+        assert crawl.stats.pages_crawled == budget, (
+            f"asked for {budget} pages, captured {crawl.stats.pages_crawled}")
+
+
+def test_a_truncated_crawl_still_reports_what_it_missed(serve):
+    """Holding the budget must not hide that there was more to see."""
+    server = serve("fixtures/site")
+    crawl = asyncio.run(crawl_site(
+        f"{server.base}/index.html", max_pages=2, max_depth=5,
+        output_dir="/tmp/uidisco_budget2", probe=False, screenshots=False))
+    captured = {n.url for n in crawl.pages}
+    discovered = {e["to"] for e in crawl.navigation}
+    assert discovered - captured, "nothing recorded as discovered-but-not-visited"

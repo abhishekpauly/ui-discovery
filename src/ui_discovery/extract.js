@@ -130,6 +130,10 @@
     FORM: "form", TABLE: "table", IMG: "img", SELECT: "combobox",
     TEXTAREA: "textbox", DIALOG: "dialog", UL: "list", OL: "list",
     LI: "listitem",
+    // Table semantics, so column headers and cells resolve to the roles that
+    // take their name from content.
+    TH: "columnheader", TD: "cell", TR: "row",
+    SUMMARY: "button", LABEL: "label",
   };
   function roleOf(el) {
     const explicit = el.getAttribute("role");
@@ -150,6 +154,15 @@
     if (/^H[1-6]$/.test(tag)) return "heading";
     return IMPLICIT_ROLE[tag] || null;
   }
+
+  // WAI-ARIA roles that take their accessible name from their own content.
+  // Straight from the spec's "name from author/content" table — not a guess,
+  // and not framework-specific.
+  const NAME_FROM_CONTENT = new Set([
+    "button", "cell", "checkbox", "columnheader", "gridcell", "heading",
+    "link", "menuitem", "menuitemcheckbox", "menuitemradio", "option",
+    "radio", "row", "rowheader", "switch", "tab", "tooltip", "treeitem",
+  ]);
 
   function isVisible(el) {
     const st = getComputedStyle(el);
@@ -224,8 +237,15 @@
     }
 
     const own = (el.textContent || "").replace(/\s+/g, " ").trim();
-    const TEXT_NAMED = ["BUTTON", "A", "H1", "H2", "H3", "H4", "H5", "H6", "SUMMARY", "LABEL"];
-    if (own && own.length <= 200 && TEXT_NAMED.includes(tag)) return [own, "text"];
+    // Roles whose accessible name comes from their own content (WAI-ARIA
+    // "name from content"). Keyed off the element's *computed* role, so an
+    // implicit one counts: a <th> is a columnheader without saying so, and
+    // keying off an explicit `role=` attribute lost every one of them — 44
+    // column headers in one real capture had visible text and no name.
+    const role = roleOf(el);
+    if (own && own.length <= 200 && NAME_FROM_CONTENT.has(role)) {
+      return [own, "text"];
+    }
 
     const title = el.getAttribute("title");
     if (title && title.trim()) return [title.trim(), "title"];

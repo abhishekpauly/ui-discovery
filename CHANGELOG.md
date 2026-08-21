@@ -25,6 +25,43 @@ backend) is explicitly deferred in `ROADMAP.md` until data volume demands it.
 
 ---
 
+## [0.15.2] — An exact page budget, and names the browser already knew
+
+Both fixes come from measuring the 0.15.1 validation run rather than trusting
+its numbers.
+
+### Fixed
+
+- **`max_pages` was approximate: 25 became 38.** Crawlee's
+  `max_requests_per_crawl` counts *completed* requests and is checked before
+  dispatching the next one, so anything in flight — or being retried — does not
+  count yet. The real portal retried 29 requests on a slow SPA, and thirteen
+  extra pages slipped through while the counter lagged. The handler now claims
+  its budget slot on entry, with no `await` between the check and the claim, so
+  the count holds exactly under any concurrency. Verified 5/10/25/40 on a
+  sixty-page interlinked fixture; previously every one overshot.
+- **Elements lost accessible names the browser computes.** `<th>Order</th>` had
+  no name at all. Name-from-content was keyed off a hardcoded tag list plus an
+  *explicit* `role=` attribute, so every element with an implicit
+  name-from-content role — column headers, cells, tabs, menu items — was
+  skipped. 119 of 345 unnamed elements in the real capture had visible text
+  sitting right there, 44 of them column headers. The rule now follows the
+  WAI-ARIA "name from content" table against the element's *computed* role.
+- **Unnamed controls were dropped from the report silently.** Having nothing to
+  call them, the actions table omitted them — making every screen look emptier
+  than it was, with no explanation. They are now counted and stated, per screen
+  and per capture, as what they are: an accessibility defect in the application
+  that also makes the product unnavigable by screen reader. Deliberately *not*
+  invented from the only identifiers available — on the real portal those were
+  framework-generated (`radix-:r9:`) or CSS classes, and presenting either as a
+  name would be a fabrication.
+
+### Tests
+
++10 (542 → 552).
+
+---
+
 ## [0.15.1] — Fixes from the first real-portal run
 
 Running 0.15.0 against a live QA portal (38 screens) surfaced three defects

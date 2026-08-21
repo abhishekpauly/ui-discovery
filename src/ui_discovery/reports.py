@@ -84,6 +84,38 @@ def _api_endpoints(crawl: Crawl, limit: int = 20) -> list[tuple[str, int]]:
 # connections do.
 
 
+def _unnamed_controls(page) -> dict[str, int]:
+    """Interactive elements with no accessible name, by kind.
+
+    These are dropped from the actions table because there is nothing to call
+    them — but dropping them silently makes a screen look emptier than it is.
+    An icon-only button with no `aria-label`, no `title` and no text is
+    unreachable by a screen reader *and* unnameable here, and the honest thing
+    is to say so and count it. Nothing in the markup can be turned into a name
+    for it: on a real portal the only identifiers these carried were
+    framework-generated (`radix-:r9:`) or CSS classes, and presenting either as
+    a name would be an invention.
+    """
+    counts: dict[str, int] = {}
+    for el in page.elements:
+        if el.category not in ("button", "link", "tab", "menu", "disclosure",
+                               "input", "select", "textarea"):
+            continue
+        if (el.accessible_name or el.text or "").strip():
+            continue
+        kind = el.ui_type or el.category
+        counts[kind] = counts.get(kind, 0) + 1
+    return dict(sorted(counts.items(), key=lambda kv: -kv[1]))
+
+
+def _unnamed_total(crawl: Crawl) -> dict[str, int]:
+    totals: dict[str, int] = {}
+    for node in crawl.pages:
+        for kind, n in _unnamed_controls(node.page).items():
+            totals[kind] = totals.get(kind, 0) + n
+    return dict(sorted(totals.items(), key=lambda kv: -kv[1]))
+
+
 def _control_names(controls, limit: int = 12) -> list[str]:
     """Readable names for the controls inside a revealed state.
 
@@ -525,6 +557,18 @@ def build_markdown(crawl: Crawl, relations: Relations | None = None) -> str:
         lines.append("- Tabs present but not opened, by configuration: "
                      + ", ".join(f"“{t}”" for t in refused[:20])
                      + ". They exist; this capture did not look inside them.")
+    unnamed_all = _unnamed_total(crawl)
+    if unnamed_all:
+        total = sum(unnamed_all.values())
+        lines.append(f"- **{total} interactive element(s) across the capture "
+                     f"have no accessible name** — "
+                     + ", ".join(f"{k} ({n})" for k, n in
+                                 list(unnamed_all.items())[:8])
+                     + ". This is a finding about the application, not a gap "
+                     "in the capture: they are invisible to assistive "
+                     "technology, and no markup exists to name them here "
+                     "either. Adding `aria-label` to them would make both this "
+                     "report and the product itself legible.")
     lines.append("- **Cards, tiles, widgets, badges and icon meaning are not "
                  "detectable** from standard markup — they are `<div>`s like "
                  "any other, and guessing at class names would be a "
@@ -587,6 +631,17 @@ def _screen_markdown(index: int, node: PageNode, screen, titles: dict) -> list[s
                          f"{a['state'] or '—'} | {a['safety']} |")
         if len(actions) > 40:
             lines.append(f"| _+{len(actions) - 40} more_ | | | | |")
+        lines.append("")
+
+    unnamed = _unnamed_controls(p)
+    if unnamed:
+        total = sum(unnamed.values())
+        lines.append(f"> ⚠️ **{total} more control(s) on this screen have no "
+                     f"accessible name** and are not listed above: "
+                     + ", ".join(f"{k} ({n})" for k, n in unnamed.items())
+                     + ". They carry no `aria-label`, `title` or text, so a "
+                     "screen reader cannot announce them and this report "
+                     "cannot name them.")
         lines.append("")
 
     if screen is not None:
@@ -753,6 +808,17 @@ def _screen_html(index: int, node: PageNode, screen, titles: dict) -> str:
                 f'{_esc(a["safety"])}</span>',
             ])
         parts.append(_table(["Control", "Type", "Region", "State", "Safety"], rows))
+
+    unnamed = _unnamed_controls(p)
+    if unnamed:
+        total = sum(unnamed.values())
+        parts.append(
+            f'<p class="banner note"><b>{_esc(total)} more control(s) on this '
+            f'screen have no accessible name</b> and are not listed above: '
+            + _esc(", ".join(f"{k} ({n})" for k, n in unnamed.items()))
+            + ". They carry no <code>aria-label</code>, <code>title</code> or "
+            "text, so a screen reader cannot announce them and this report "
+            "cannot name them.</p>")
 
     if screen is not None:
         for form in screen.forms:
@@ -1040,6 +1106,19 @@ destructive ones are observed and refused.</p>
                       + esc(", ".join(refused[:20]))
                       + ". They exist; this capture did not look inside "
                       "them.</li>")
+    unnamed_all = _unnamed_total(crawl)
+    if unnamed_all:
+        total = sum(unnamed_all.values())
+        limits.append(
+            f"<li><b>{esc(total)} interactive element(s) across the capture "
+            f"have no accessible name</b> — "
+            + esc(", ".join(f"{k} ({n})" for k, n in
+                            list(unnamed_all.items())[:8]))
+            + ". This is a finding about the application, not a gap in the "
+            "capture: they are invisible to assistive technology, and no "
+            "markup exists to name them here either. Adding "
+            "<code>aria-label</code> to them would make both this report and "
+            "the product itself legible.</li>")
     limits.append(
         "<li><b>Cards, tiles, widgets, badges and icon meaning are not "
         "detectable</b> from standard markup — they are <code>&lt;div&gt;</code>s "
