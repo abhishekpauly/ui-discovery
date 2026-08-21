@@ -156,6 +156,17 @@ The "V0…V5" phase names used in planning map to product versions as noted.
     profiles.
 - Labels `epic:WATCH`, `epic:VARIANT`, `epic:VOCAB`, `area:privacy`, and
   `sprint:8-redaction` / `9-watch` / `10-variants` / `11-vocabulary`.
+- **`scripts/sync_board.py`**, and a `board` section in
+  `bootstrap_github.sh`. The board answers "who is on it and where has it got
+  to" — but only for issues that are on it, and adding fifty by hand is a job
+  nobody repeats after the first sprint. The backlog ID is not invented: it is
+  read from the issue title, which already carries it because the issue
+  templates require that format. Idempotent, never removes a card, and needs
+  `gh auth refresh -s project,read:project` because the project scope is not
+  part of a default login. `tests/test_sync_board.py` covers the title parse
+  against both dash styles in circulation — issues #1–#14 predate the em-dash
+  convention, and renaming them would break every reference already written
+  down.
 
 ### Changed
 
