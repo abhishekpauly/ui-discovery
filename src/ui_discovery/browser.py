@@ -11,7 +11,8 @@ import re
 import time
 from typing import Any
 
-from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import Page
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 # A cheap fingerprint of DOM shape (node count + serialized size). Polled to
 # detect when client-side rendering has actually finished — `networkidle`

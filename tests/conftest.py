@@ -64,3 +64,43 @@ def serve():
     yield _serve
     for s in servers:
         s.stop()
+
+
+# --- browser marking --------------------------------------------------------
+#
+# CI runs a ~60s "fast lane" that must not launch Chromium, and a full sharded
+# suite that may. Marking 28 files by hand would rot the moment someone adds a
+# test; deriving the mark from what a module actually imports keeps it true
+# without anybody maintaining a list.
+
+_BROWSER_IMPORTS = (
+    "extract_page", "crawl_site", "probe_page", "sync_playwright",
+    "async_playwright",
+)
+
+
+def pytest_collection_modifyitems(config, items):
+    """Mark every test in a module that reaches for a browser.
+
+    A module counts as browser-dependent if it imports one of the entry points
+    that launches Chromium, or if the test uses the `serve` fixture (a local
+    HTTP server exists to be crawled). Both are cheap, textual signals — no
+    import side effects, no collection cost worth measuring.
+    """
+    cache: dict[str, bool] = {}
+
+    def needs_browser(item) -> bool:
+        path = str(getattr(item, "fspath", "") or "")
+        if path not in cache:
+            try:
+                source = Path(path).read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                source = ""
+            cache[path] = any(name in source for name in _BROWSER_IMPORTS)
+        if cache[path]:
+            return True
+        return "serve" in getattr(item, "fixturenames", ())
+
+    for item in items:
+        if needs_browser(item):
+            item.add_marker(pytest.mark.browser)

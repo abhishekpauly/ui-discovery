@@ -49,7 +49,6 @@ from .uistate import (
     visible_paths,
 )
 
-
 # --- probe profile ----------------------------------------------------------
 
 

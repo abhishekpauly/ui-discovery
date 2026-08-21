@@ -15,8 +15,6 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-import pytest
-
 from ui_discovery.auth import describe_session, session_status
 from ui_discovery.extraction import extract_page
 

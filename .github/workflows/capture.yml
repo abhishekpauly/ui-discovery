@@ -1,0 +1,77 @@
+# Review the output, not just the diff.
+#
+# This engine's deliverable IS a report. Whether a change made the report
+# better is currently a local, manual act: serve the fixtures, run the
+# pipeline, open the HTML. That is the slowest step in reviewing a change to
+# the reporting layer, and it is the one nobody does under time pressure.
+#
+# So CI does it on every PR and attaches the result. Reviewing "did the report
+# improve?" becomes a download.
+name: capture
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Cache Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      # A local fixture only. CI never points at a real target: it holds no
+      # session, and a capture of someone's portal does not belong in a public
+      # artifact store.
+      - name: Capture the forms fixture
+        run: |
+          python -m http.server 8099 --directory fixtures/forms &
+          sleep 2
+          python -m ui_discovery.pipeline http://127.0.0.1:8099/index.html \
+            --output capture-out --headless --max-pages 5
+
+      - name: Check the report is intact
+        run: |
+          python - <<'PY'
+          import re, sys
+          from pathlib import Path
+          root = next(Path("capture-out").rglob("report.md")).parent
+          report = (root / "report.md").read_text(encoding="utf-8")
+          refs = set(re.findall(r"\]\((screenshots/[^)]+)\)", report))
+          missing = [r for r in refs if not (root / r).exists()]
+          if missing:
+              sys.exit(f"broken image links in the report: {missing}")
+          print(f"{len(refs)} screenshot references, none broken")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: capture-report
+          path: |
+            capture-out/**/report.html
+            capture-out/**/report.md
+            capture-out/**/relations.json
+            capture-out/**/screenshots/**
+          retention-days: 14

@@ -18,10 +18,58 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ## [Unreleased]
 
-Nothing pending. Remaining roadmap items are deliberately deferred:
-`X3` (CI) needs a git remote to exist first; `X4` (incremental crawl) is a
-speculative optimization until crawl times actually hurt; `X6` (storage
-backend) is explicitly deferred in `ROADMAP.md` until data volume demands it.
+`O1`–`O5` (run observability) and `G1`–`G4` (governance) are specified in
+`ROADMAP.md` and tracked as `EPIC-OBS` / `EPIC-GOV`. Still deliberately
+deferred: `X4` (incremental crawl) is a speculative optimization until crawl
+times actually hurt; `X6` (storage backend) waits on data volume.
+
+---
+
+## [0.16.0] — Publishable repo, CI, and a tracked backlog
+
+Infrastructure, not engine. The code worked; everything around it was manual —
+no remote, no CI, no gate on `main`, and a backlog that lived only in markdown.
+
+### Added
+
+- **CI (`X3`)**, which had been blocked on "a git remote existing first". Three
+  workflows: `fast` (ruff + the 117 browser-free tests, ~3s locally, on Python
+  3.11 and 3.14), `full` (the browser suite sharded across 6 runners), and
+  `capture` — which runs the pipeline against `fixtures/forms/` and attaches
+  `report.html` to the PR. Reviewing *whether the output got better* was the
+  slowest step in reviewing a reporting change; now it is a download.
+- **Automatic `browser` test marking** (`tests/conftest.py`). A module that
+  imports `extract_page`, `crawl_site`, `probe_page` or `sync_playwright` — or
+  a test using the `serve` fixture — is marked without anyone maintaining a
+  list of 28 files.
+- **`ruff`**, configured narrowly (`E,F,I,W`, `E501` ignored) on a codebase that
+  had never been linted. The one-time cleanup fixed 34 findings automatically
+  and 12 by hand; the only substantive one was a discarded return value in
+  `pipeline.py`, now used to report which module folders were written.
+- **Repo scaffolding**: `CODEOWNERS`, a PR template that checks the
+  non-negotiable principles, story/epic issue templates that require a backlog
+  ID, and `CONTRIBUTING.md`.
+- **`O1`–`O5` and `G1`–`G4`** specified in `ROADMAP.md` and tracked in
+  `PRODUCT_TRACKER.md` — run identity, event stream, manifest, metrics, run
+  index; authorization enforcement, safety envelope on the record,
+  data-handling posture, retention. A run currently cannot say who ran it,
+  against what, or under whose authorization.
+
+### Changed
+
+- **The repo is publishable.** It named an internal QA host, its route map and
+  a work email — in files and in four commits, with the email in the author
+  field of all 46. The target-specific example config becomes
+  `examples/authenticated-spa.scope.yaml`, keeping every lesson that config
+  taught (per-instance excludes, `extra_wait` for websocket SPAs, politeness
+  caps) and losing only the identifying detail. History was rewritten with
+  `git-filter-repo`; the 48 commits and their messages survive intact.
+- `*.local.yaml` joins `session.json` in `.gitignore`. A config naming a real
+  internal host is reconnaissance and stays out of the repo.
+
+### Tests
+
+`ruff check` clean; 117 tests run without a browser.
 
 ---
 

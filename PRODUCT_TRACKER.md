@@ -96,6 +96,24 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 
 ## Planned — see `ROADMAP.md` for full specs & acceptance criteria
 
+### Observability — make a run accountable · EPIC-OBS
+| ID | Feature | Scope | Pri | Status |
+|----|---------|-------|-----|--------|
+| O1 | Run identity | one `run_id` per pipeline run; `crawl_id` becomes its child | P0 | 📋 |
+| O2 | Run event stream | `events.jsonl` — stages, pages, probes, refusals, budget, auth | P0 | 📋 |
+| O3 | Run manifest | `run.json` — who/what/when/config hash/versions/outcome | P0 | 📋 |
+| O4 | Stage metrics | per-stage durations + counts; answers `QA.3` from data | P1 | 📋 |
+| O5 | Run index | `runs.jsonl` at the output root, one line per run | P2 | 📋 |
+
+### Governance — state the rules a capture ran under · EPIC-GOV
+| ID | Feature | Scope | Pri | Status |
+|----|---------|-------|-----|--------|
+| G1 | Authorization enforced | `authorized` / `environment` stop being inert metadata | P0 | 📋 |
+| G2 | Safety envelope recorded | allow-list, block words, `never_touch`, probe profiles | P1 | 📋 |
+| G3 | Data-handling posture | what was deliberately not persisted, and why | P1 | 📋 |
+| G4 | Retention | `outputs.retention_days` + a `prune` command | P2 | 📋 |
+
+
 ### Infrastructure baseline
 | ID | Feature | Scope | Pri | Status |
 |----|---------|-------|-----|--------|
@@ -150,7 +168,7 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 |----|---------|-------|-----|--------|
 | X1 | `pipeline` command | one-shot login→crawl→analyze(+probe)→reports | P2 | ✅ 0.12.0 |
 | X2 | CHANGELOG + version discipline | bump product/schema versions per release | P1 | ✅ 0.13.0 |
-| X3 | CI (GitHub Actions) | run pytest + playwright install on push — needs a git remote to exist first | P2 | 🗄️ deferred |
+| X3 | CI (GitHub Actions) | `fast` lane (~60s), `full` suite sharded 6-way, `capture` attaches the report to every PR | P2 | ✅ |
 | X4 | Incremental / resumable crawl | skip pages unchanged since last crawl — speculative until crawl times actually hurt | P2 | 🗄️ deferred |
 | X5 | Politeness | robots.txt + rate limit + concurrency cap | P2 | ✅ 0.12.0 |
 | X6 | Storage backend seam | interface so SQLite/Postgres can slot in later (no DB now) — deferred by ROADMAP until data volume demands it | P3 | 🗄️ deferred |

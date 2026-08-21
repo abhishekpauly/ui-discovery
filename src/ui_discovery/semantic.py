@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Optional, Protocol
 
 from . import SCHEMA_VERSION, __version__
-from .models import Analysis, ElementFingerprint, Semantics, SemanticLabel
+from .models import Analysis, ElementFingerprint, SemanticLabel, Semantics
 from .safety import classify_label
 
 LABELS = [
@@ -334,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
               if k not in ("total", "llm_refined")}
     print(f"[INFO] Provider: {semantics.provider} · "
           f"refined: {semantics.stats.get('llm_refined', 0)}")
-    print(f"[INFO] Labels: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())))
+    print("[INFO] Labels: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())))
     print(f"[INFO] Wrote {paths['json']} / {paths['markdown']} / {paths['html']}")
     return 0
 

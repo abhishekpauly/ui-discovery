@@ -21,7 +21,6 @@ from ui_discovery.crawler import crawl_site
 from ui_discovery.safety import decide
 from ui_discovery.util import path_matches, url_in_scope
 
-
 # --- scope matching ---------------------------------------------------------
 
 @pytest.mark.parametrize("url,pattern,expected", [

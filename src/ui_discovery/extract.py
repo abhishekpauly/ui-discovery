@@ -20,7 +20,6 @@ from .cliconfig import (
     add_config_argument,
     describe,
     load_or_exit,
-    pick,
     resolve_output_dir,
 )
 from .extraction import extract_page

@@ -214,6 +214,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     s = crawl.stats
     print(f"[INFO] Crawled {s.pages_crawled} pages "
           f"({s.pages_failed} failed) in {s.runtime_seconds}s")
+    if modules:
+        print(f"[INFO] Module folders: {', '.join(sorted(modules))}")
 
     analysis = semantics = probe_model = None
     if crawl.pages and crawl.pages[0].probe:

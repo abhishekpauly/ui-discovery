@@ -1,0 +1,67 @@
+# The whole suite, in about the time one shard takes.
+#
+# 552 tests, most of them driving a real Chromium against local fixtures.
+# Sharded across runners rather than parallelised within one: crawler.py
+# documents that parallel browser pages starve each other's rendering, and
+# separate runners give real isolation instead of a flaky approximation.
+name: full
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: full-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Cache Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      # Splits by recorded durations when .test_durations is present, and
+      # evenly (with a warning) when it is not. Regenerate with:
+      #   pytest --store-durations
+      - name: Shard ${{ matrix.group }} of 6
+        run: pytest -q --splits 6 --group ${{ matrix.group }}
+
+  # The single check the branch ruleset requires. A matrix job cannot be named
+  # as a required check reliably; this can.
+  full-ok:
+    if: always()
+    needs: suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any shard failed
+        run: |
+          if [ "${{ needs.suite.result }}" != "success" ]; then
+            echo "One or more shards failed."
+            exit 1
+          fi
+          echo "All shards passed."

@@ -1,0 +1,6 @@
+# Every change needs review from the repo owner.
+#
+# This is the mechanism behind "only I merge": paired with a ruleset on `main`
+# that requires a pull request and Code Owner review, it holds even for a
+# public repo where anyone can open a PR.
+* @abhishekpauly

@@ -106,9 +106,9 @@ def test_deterministic_over_real_analysis(analysis, tmp_path):
     assert sem.stats["total"] > 0
     assert sem.stats.get("llm_refined", 0) == 0
     # the "Create customer" button on the customers page is a primary action
-    assert any(l.label == "primary_action" for l in sem.labels)
+    assert any(lab.label == "primary_action" for lab in sem.labels)
     # nav links are navigation
-    assert any(l.label == "navigation" and l.landmark == "navigation" for l in sem.labels)
+    assert any(lab.label == "navigation" and lab.landmark == "navigation" for lab in sem.labels)
     # reports write out
     paths = write_semantics(sem, str(tmp_path))
     for p in paths.values():
@@ -121,14 +121,14 @@ def test_provider_none_is_deterministic():
 
 def test_mock_refine_marks_llm_and_reclassifies(analysis):
     sem = classify_analysis(analysis)
-    before_nav = sum(1 for l in sem.labels if l.label == "navigation")
+    before_nav = sum(1 for lab in sem.labels if lab.label == "navigation")
     sem = refine_semantics(sem, MockProvider())
     assert sem.provider == "mock"
     # MockProvider promotes table-row "View" links to secondary_action
     assert sem.stats["llm_refined"] > 0
-    assert any(l.source == "llm" for l in sem.labels)
-    assert any(l.label == "secondary_action" and (l.accessible_name or "") == "View"
-               for l in sem.labels)
+    assert any(lab.source == "llm" for lab in sem.labels)
+    assert any(lab.label == "secondary_action" and (lab.accessible_name or "") == "View"
+               for lab in sem.labels)
     # and it genuinely changed something vs the deterministic pass
-    after_nav = sum(1 for l in sem.labels if l.label == "navigation")
+    after_nav = sum(1 for lab in sem.labels if lab.label == "navigation")
     assert after_nav < before_nav

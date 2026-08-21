@@ -11,7 +11,6 @@ import functools
 import http.server
 import socket
 import threading
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -20,7 +19,14 @@ from ui_discovery import SCHEMA_VERSION, __version__
 from ui_discovery.analysis import analyze_crawl
 from ui_discovery.crawler import crawl_site
 from ui_discovery.models import (
-    Crawl, CrawlConfig, CrawlStats, Element, Page, PageNode, SemanticLabel, Semantics,
+    Crawl,
+    CrawlConfig,
+    CrawlStats,
+    Element,
+    Page,
+    PageNode,
+    SemanticLabel,
+    Semantics,
 )
 from ui_discovery.qagen import build_playwright, generate, generate_scenarios
 from ui_discovery.semantic import classify_analysis

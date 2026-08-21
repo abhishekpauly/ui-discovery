@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections import deque
 from pathlib import Path
-from urllib.parse import parse_qsl, urlencode, urljoin, urldefrag, urlparse
+from urllib.parse import parse_qsl, urldefrag, urlencode, urljoin, urlparse
 
 # Query params that carry no page-identity meaning (tracking/session noise).
 # Stripped only when `dedupe_queries=True` — off by default so existing page

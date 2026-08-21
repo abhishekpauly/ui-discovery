@@ -10,10 +10,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
-
-from urllib.parse import urlparse
 
 from . import SCHEMA_VERSION, __version__
 from .auth import check_auth

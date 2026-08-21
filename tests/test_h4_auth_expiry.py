@@ -276,7 +276,12 @@ def test_expiry_is_surfaced_in_the_reports(server):
 def _crawl_with(nodes_empty: int, nodes_total: int, *, logged_out: int = 0):
     """Build a Crawl whose stats mirror a capture with some blank pages."""
     from ui_discovery.models import (
-        AuthCheck, Crawl, CrawlConfig, CrawlStats, Page, PageNode,
+        AuthCheck,
+        Crawl,
+        CrawlConfig,
+        CrawlStats,
+        Page,
+        PageNode,
     )
 
     def node(i: int, empty: bool, out: bool):

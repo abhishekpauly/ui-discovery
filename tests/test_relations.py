@@ -298,21 +298,21 @@ def test_relations_stats_count_what_was_found(site_relations):
 
 def test_containment_links_a_form_to_its_own_fields(forms_page):
     links = element_links(forms_page)
-    groups = [l for l in links if l.kind == "groups"]
+    groups = [link for link in links if link.kind == "groups"]
     assert groups, "no form/field grouping found"
-    assert any(l.source_label == "New order" and l.target_label == "Status"
-               for l in groups)
+    assert any(link.source_label == "New order" and link.target_label == "Status"
+               for link in groups)
 
 
 def test_a_tab_is_linked_to_the_panel_it_controls(forms_page):
-    controls = [l for l in element_links(forms_page) if l.kind == "controls"]
-    assert any(l.source_label == "Summary" and l.target_label == "Summary"
-               for l in controls), [(l.source_label, l.target_label) for l in controls]
+    controls = [link for link in element_links(forms_page) if link.kind == "controls"]
+    assert any(link.source_label == "Summary" and link.target_label == "Summary"
+               for link in controls), [(link.source_label, link.target_label) for link in controls]
 
 
 def test_containment_links_exist_and_never_dangle(forms_page):
     paths = {e.dom_path for e in forms_page.elements}
-    contains = [l for l in element_links(forms_page) if l.kind == "contains"]
+    contains = [link for link in element_links(forms_page) if link.kind == "contains"]
     assert contains
     for link in contains:
         assert link.source in paths and link.target in paths

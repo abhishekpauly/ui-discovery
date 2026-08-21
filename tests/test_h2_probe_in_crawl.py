@@ -16,8 +16,9 @@ from ui_discovery.crawler import crawl_site
 
 @pytest.fixture(scope="module")
 def probed(tmp_path_factory):
-    from tests.conftest import Server
     from pathlib import Path
+
+    from tests.conftest import Server
 
     root = Path(__file__).resolve().parents[1]
     server = Server(root / "fixtures" / "probe_site")

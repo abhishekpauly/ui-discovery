@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Backlog and specs
+    url: https://github.com/abhishekpauly/ui-discovery/blob/main/ROADMAP.md
+    about: Every item's full spec — goal, build, acceptance, files, effort.

@@ -40,13 +40,11 @@ from .extraction import (
     skipped_frame,
 )
 from .interactions import (
-    DEFAULT_PROBE_PROFILE,
     ProbeProfile,
     attach_network_async,
     probe_open_page_async,
 )
 from .models import Crawl, CrawlConfig, CrawlStats, NetworkRequest, PageNode
-from .uistate import component_filename, component_targets
 from .safety import (
     DEFAULT_POLICY,
     SafetyPolicy,
@@ -54,6 +52,7 @@ from .safety import (
     decide,
     should_execute,
 )
+from .uistate import component_filename, component_targets
 from .util import (
     bfs_depths,
     module_for_path,

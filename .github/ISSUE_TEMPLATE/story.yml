@@ -1,0 +1,55 @@
+name: Story
+description: One deliverable slice of an epic, carrying an existing backlog ID.
+title: "<ID> — <short title>"
+labels: ["story"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Stories reuse the IDs already in `ROADMAP.md` and `PRODUCT_TRACKER.md`
+        — `F` feature · `X` cross-cutting · `H` hardening · `C` deliverable ·
+        `R` reusability · `S` scoping · `V` phase · `QA` validation ·
+        `O` observability · `G` governance.
+
+        The spec lives in the markdown. This issue points at it; it does not
+        restate it, because two copies of a spec disagree eventually.
+  - type: input
+    id: item_id
+    attributes:
+      label: Backlog ID
+      placeholder: "O2"
+    validations:
+      required: true
+  - type: input
+    id: epic
+    attributes:
+      label: Epic
+      placeholder: "EPIC-OBS"
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: One or two sentences. What is true after this ships?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: How someone else can tell it is done. Name the test or the artifact.
+    validations:
+      required: true
+  - type: input
+    id: spec
+    attributes:
+      label: Spec
+      description: Link to the ROADMAP.md section that defines this item.
+  - type: dropdown
+    id: effort
+    attributes:
+      label: Effort
+      options: ["S — a sitting", "M — a day", "L — multi-day"]
+    validations:
+      required: true

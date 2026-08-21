@@ -91,6 +91,6 @@ def test_source_has_not_drifted_far_past_the_declared_version():
         f"{len(commits)} commits have changed src/ since {_declared_version()} "
         f"was released:\n  "
         + "\n  ".join(commits[:12])
-        + f"\n\nBump the version and add a CHANGELOG entry. This guard exists "
-          f"because the version has silently gone stale twice already."
+        + "\n\nBump the version and add a CHANGELOG entry. This guard exists "
+          "because the version has silently gone stale twice already."
     )

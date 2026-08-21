@@ -17,6 +17,8 @@ coverage, and unlock the two things this engine is ultimately for (docs + tests)
 
 `X0 → R1 → H1 → H2 → C1 → C2 → H3 → H4 → (H5 + R2 + S1) → V4 → V5`
 
+Since shipped, the order continues: **`X3` (CI) → `O1…O5` (observability) → `G1…G4` (governance)**. `X3` was blocked on a git remote existing; once it does, CI is what makes every later item cheap to verify.
+
 X0 first — put the current green state under version control. R1 (library/SDK
 surface) is foundational and cheap — do it early so everything after is
 composable. Then hardening (H) makes real portals crawl cleanly, and C1/C2
@@ -303,8 +305,12 @@ labels, QA scenarios). It is **quarantined**:
   (+probe) and writes all reports, so a full capture is a single invocation.
 - **X2 — CHANGELOG.md + version bumps  ·  S.** Track each phase; bump project
   version and `SCHEMA_VERSION` on schema changes.
-- **X3 — CI (GitHub Actions)  ·  S.** Run `pytest` + `playwright install` on
-  push. Keep the suite the gate.
+- **X3 — CI (GitHub Actions)  ·  ✅ SHIPPED (0.16.0).** Three workflows:
+  `fast` (ruff + the browser-free tests, ~60s, Python 3.11 and 3.14), `full`
+  (the browser suite sharded across 6 runners), and `capture` (runs the
+  pipeline against a fixture and attaches the report to the PR, so reviewing
+  *whether the output improved* is a download rather than a local run).
+  `full-ok` is the single required check.
 - **X4 — Incremental / resumable crawl  ·  M.** Skip pages unchanged since last
   crawl (compare by fingerprint set), for large portals.
 - **X5 — Politeness  ·  S.** Optional robots.txt respect + request rate limit +
@@ -312,6 +318,118 @@ labels, QA scenarios). It is **quarantined**:
 - **X6 — Storage backend seam  ·  M.** Keep JSON default, but add a thin
   interface so SQLite/Postgres can slot in later without touching the models
   (deferred until data volume demands it — do NOT add a DB server now).
+
+---
+
+## G. Observability & governance — make a run accountable
+
+A capture currently answers "what is in this product?" but not "what happened
+when we looked?". `Crawl.crawl_id` exists, and every model carries versions and
+timestamps — but a *pipeline run* spanning crawl→analyze→semantic→docgen→qagen
+has no identity of its own, no event stream, and no record of who authorized
+it. The package uses no stdlib `logging` at all: output is `print()` plus
+Crawlee's logger.
+
+These items are what turn a capture into something you can audit, trend, and
+hand to someone else. All deterministic, all files-only, no service and no new
+runtime dependency — principle #11 stands.
+
+### O1 — Run identity  ·  Effort: S
+- **Goal.** One id for a whole pipeline run, with `crawl_id` as its child, so
+  every artifact from one invocation is provably from the same invocation.
+- **Build.** Allocate `run_id` in `pipeline.py`; thread it through each stage;
+  stamp it into every written model. New `run.py` owns the allocation.
+- **Acceptance.** Every artifact in an output folder carries the same `run_id`;
+  two runs into the same folder are distinguishable.
+- **Files.** new `run.py`, `models.py`, `pipeline.py`, `crawl.py`.
+- **Depends-on.** none.
+
+### O2 — Run event stream  ·  Effort: M
+- **Goal.** A greppable record of what happened during a run, in order.
+- **Build.** `events.jsonl` beside the capture, one JSON object per line:
+  `run.started`, `stage.started`/`stage.finished`, `page.captured`,
+  `page.skipped` (budget), `probe.executed`, `probe.refused` (with the safety
+  verdict), `state.captured`, `auth.rejected`, `budget.exhausted`,
+  `run.finished`/`run.failed`. `pipeline._run_stage` is the natural emission
+  point and already wraps every stage.
+- **Acceptance.** `seq` strictly increasing; `run.started` first and a terminal
+  event last; a failed stage still produces a well-formed trailing record.
+- **Files.** `run.py`, `models.py` (`RunEvent`), `pipeline.py`, `crawler.py`.
+- **Depends-on.** O1.
+
+### O3 — Run manifest  ·  Effort: M
+- **Goal.** One file that answers who ran this, against what, under whose
+  authorization, with which settings, and how it ended.
+- **Build.** `run.json` (`RunManifest`): ids, versions, target, `config_file`,
+  `config_sha256` over the *resolved* scope, authorization fields, operator,
+  stage records, stats rollup, artifact list, safety envelope. **Never** the
+  session contents — only `auth_used` and the expiry `auth.session_status`
+  already computes.
+- **Acceptance.** `config_sha256` is stable across two runs of one config and
+  changes when a single setting changes; no secret appears anywhere in the file.
+- **Files.** `run.py`, `models.py`, `pipeline.py`, `auth.py`.
+- **Depends-on.** O1.
+
+### O4 — Stage metrics  ·  Effort: S
+- **Goal.** Make "is the probe-on default too slow?" (`QA.3`) answerable from
+  data rather than memory.
+- **Build.** Per-stage durations and counts in the manifest, and a `metrics`
+  block in `summary.md`.
+- **Acceptance.** Stage durations sum to roughly wall-clock runtime.
+- **Files.** `run.py`, `inventory.py`, `reports.py`.
+- **Depends-on.** O3.
+
+### O5 — Run index  ·  Effort: S
+- **Goal.** "Every run against this target, and how they trend", without a
+  database.
+- **Build.** `runs.jsonl` appended at the output root, one line per run.
+- **Acceptance.** Exactly one line per run; readable after N runs without
+  loading any single large file.
+- **Files.** `run.py`, `pipeline.py`.
+- **Depends-on.** O3. **Deliberately not** SQLite — see `X6`.
+
+### G1 — Authorization is enforced, not just recorded  ·  Effort: S
+- **Goal.** The scope config already carries `authorized`, `authorized_by` and
+  `environment`, and `test_no_dead_config.py` classifies them as
+  `DOCUMENTED_AS_METADATA` — nothing reads them. Make them mean something.
+- **Build.** Refuse to run against `environment: prod` without
+  `authorized: true` and a non-empty `authorized_by`; stamp all three into
+  every manifest.
+- **Acceptance.** A prod config without authorization exits non-zero with a
+  clear message and performs no navigation; a staging config is unaffected.
+- **Files.** `config.py`, `cliconfig.py`, `pipeline.py`, `crawl.py`.
+- **Depends-on.** O3.
+
+### G2 — The safety envelope on the record  ·  Effort: S
+- **Goal.** A capture should state the rules it operated under, not leave them
+  to be inferred from the engine version.
+- **Build.** Manifest section: allow-list, block/caution word counts,
+  `never_touch` rules, and the resolved probe profiles
+  (`CrawlConfig.probe_profiles` already carries the last).
+- **Acceptance.** Two runs with different safety configs produce visibly
+  different manifests.
+- **Files.** `run.py`, `safety.py`, `models.py`.
+- **Depends-on.** O3.
+
+### G3 — Data-handling posture  ·  Effort: S
+- **Goal.** The engine redacts typed values, password fields and sensitive
+  query keys. That guarantee is currently folklore; make it auditable.
+- **Build.** A manifest section recording what was deliberately not persisted,
+  and the redaction rules in force.
+- **Acceptance.** The manifest names each redaction; a grep for known secret
+  shapes over a whole capture returns nothing.
+- **Files.** `run.py`, `browser.py`, `network.py`.
+- **Depends-on.** O3.
+
+### G4 — Retention  ·  Effort: S
+- **Goal.** Captures contain screenshots of authenticated internal screens and
+  currently accumulate in Downloads forever.
+- **Build.** `outputs.retention_days` in the scope config plus a `prune`
+  command that deletes captures past it, reporting what it removed.
+- **Acceptance.** Prune removes only expired run folders and says which;
+  a dry-run mode lists without deleting.
+- **Files.** `config.py`, new `prune.py`, `inventory.py`.
+- **Depends-on.** O5.
 
 ---
 

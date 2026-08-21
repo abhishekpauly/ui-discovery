@@ -27,7 +27,13 @@ from urllib.parse import urljoin
 from . import SCHEMA_VERSION, __version__
 from .llm import get_text_provider
 from .models import (
-    Analysis, Crawl, InteractionProbe, QAPlan, Semantics, TestScenario, TestStep,
+    Analysis,
+    Crawl,
+    InteractionProbe,
+    QAPlan,
+    Semantics,
+    TestScenario,
+    TestStep,
 )
 from .util import normalize_url, slug_for
 
@@ -344,7 +350,7 @@ def main(argv: list[str] | None = None) -> int:
     s = plan.stats
     print(f"[INFO] Scenarios: {s.get('total', 0)} "
           f"(automatable {s.get('automatable', 0)}) · provider {plan.provider}")
-    print(f"[INFO] By type: " + ", ".join(f"{k} {v}" for k, v in sorted(s.items())
+    print("[INFO] By type: " + ", ".join(f"{k} {v}" for k, v in sorted(s.items())
                                           if k not in ("total", "automatable")))
     print(f"[INFO] Wrote {paths['markdown']} / {paths['json']} and {skel}")
     return 0

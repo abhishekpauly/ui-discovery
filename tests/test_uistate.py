@@ -23,12 +23,11 @@ from pathlib import Path
 import pytest
 
 from ui_discovery.crawler import crawl_site
-from ui_discovery.interactions import build_state, probe_page
+from ui_discovery.interactions import probe_page
 from ui_discovery.uistate import (
     classify_state,
     component_targets,
     revealed_elements,
-    visible_paths,
 )
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"

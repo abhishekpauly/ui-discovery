@@ -9,7 +9,6 @@ assert it degrades gracefully rather than crashing.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 from pathlib import Path
 
 from ui_discovery import SCHEMA_VERSION, __version__

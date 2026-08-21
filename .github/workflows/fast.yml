@@ -1,0 +1,46 @@
+# The 60-second answer.
+#
+# The full suite is browser-heavy and takes ~18 minutes locally. Waiting that
+# long to learn about a typo, an unused import or a config key nothing reads is
+# the slow path this lane exists to remove. Everything here runs without
+# launching Chromium.
+name: fast
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is what pyproject records as the pinned toolchain; 3.14 is what
+        # the engine is developed on. Testing both is what stops them drifting
+        # apart silently.
+        python: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check src tests
+
+      - name: Tests that need no browser
+        run: pytest -m "not browser" -q

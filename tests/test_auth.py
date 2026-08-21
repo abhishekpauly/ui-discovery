@@ -12,7 +12,6 @@ import http.server
 import json
 import socket
 import threading
-from pathlib import Path
 
 import pytest
 

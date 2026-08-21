@@ -1,6 +1,6 @@
 [project]
 name = "ui-discovery"
-version = "0.15.2"
+version = "0.16.0"
 description = "Framework-agnostic UI Discovery Engine — crawl, analyze, probe, diff and document a web UI"
 requires-python = ">=3.10"
 dependencies = [
@@ -17,6 +17,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest==8.3.4",
+    # CI shards the browser suite across runners by recorded durations.
+    "pytest-split==0.10.0",
+    "ruff==0.9.6",
 ]
 # V5 ONLY — the quarantined home for optional AI/LLM enrichment (semantic
 # classification, doc/QA generation). The core NEVER depends on these; the full
@@ -39,6 +42,23 @@ ui-discovery-login = "ui_discovery.login:main"
 ui-discovery-semantic = "ui_discovery.semantic:main"
 ui-discovery-docgen = "ui_discovery.docgen:main"
 ui-discovery-qagen = "ui_discovery.qagen:main"
+
+[tool.pytest.ini_options]
+markers = [
+    "browser: needs a real Chromium (applied automatically; see tests/conftest.py)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# Deliberately narrow to start: real bugs and import hygiene, not style
+# opinions on a codebase that has never been linted.
+select = ["E", "F", "I", "W"]
+ignore = [
+    "E501",  # line length is enforced by review, not by a hard failure
+]
 
 [build-system]
 requires = ["setuptools>=68"]

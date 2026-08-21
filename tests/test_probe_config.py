@@ -326,7 +326,6 @@ def test_the_snapshot_records_which_areas_were_probed(tmp_path):
 def test_the_report_says_what_it_chose_not_to_open(tmp_path):
     """A tab nobody opened must not read as a tab that does not exist."""
     from tests.conftest import Server
-
     from ui_discovery.reports import build_html, build_markdown
 
     server = Server(FIXTURES / "interactive")

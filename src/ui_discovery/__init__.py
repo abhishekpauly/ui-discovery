@@ -16,7 +16,7 @@ importing this package never pulls one in.
 from __future__ import annotations
 
 # Product/package version (see CHANGELOG.md). Bump on each release.
-__version__ = "0.15.2"
+__version__ = "0.16.0"
 # Data-schema version — bump ONLY when the JSON model shape changes in a way
 # that affects readers of past snapshots. Still 0.1.0: all growth so far has
 # been additive (new optional fields / new models), not breaking.

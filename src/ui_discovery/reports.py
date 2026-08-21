@@ -11,19 +11,18 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from .relations import build_relations
-
 from .models import (
     Analysis,
     Crawl,
-    Documentation,
     Diff,
+    Documentation,
     InteractionProbe,
     PageNode,
     QAPlan,
     Relations,
     Semantics,
 )
+from .relations import build_relations
 
 
 def _ui_totals(crawl: Crawl) -> Counter:
@@ -185,9 +184,8 @@ def _actions(page) -> list:
     decided it — showing it costs nothing and answers "what on this screen is
     destructive?" without anyone having to click to find out.
     """
-    from .safety import classify_label
-
     from .relations import reading_order
+    from .safety import classify_label
 
     out = []
     for el in reading_order(page.elements):
@@ -676,7 +674,7 @@ def _screen_markdown(index: int, node: PageNode, screen, titles: dict) -> list[s
             if table.screenshot:
                 lines.append(f"![{table.name}]({_shot_rel(table.screenshot)})")
                 lines.append("")
-            lines.append(f"- Columns: "
+            lines.append("- Columns: "
                          + (", ".join(table.columns) if table.columns
                             else "_none declared_"))
             lines.append(f"- Rows captured: {table.row_count}")
@@ -1663,7 +1661,7 @@ def build_documentation_markdown(doc: Documentation) -> str:
             lines.append(f"**{state.kind.replace('-', ' ').title()} — "
                          f"{state.name or '(unnamed)'}**: opens when you click "
                          f"“{state.trigger_label}”"
-                         + (f"; contains "
+                         + ("; contains "
                             + ", ".join(f"“{c.accessible_name}”"
                                         for c in state.controls[:8]
                                         if c.accessible_name)
@@ -1822,7 +1820,7 @@ def build_qaplan_markdown(plan: QAPlan) -> str:
                 bits.append(f"= {st.value}")
             if st.note:
                 bits.append(f"({st.note})")
-            lines.append(f"  1. " + " ".join(bits))
+            lines.append("  1. " + " ".join(bits))
         lines.append(f"- Expected: {s.expected}")
         if s.notes:
             lines.append(f"- Notes: {s.notes}")

@@ -1,0 +1,34 @@
+name: Epic
+description: A themed group of stories.
+title: "EPIC-<NAME> — <short title>"
+labels: ["epic"]
+body:
+  - type: input
+    id: epic_id
+    attributes:
+      label: Epic ID
+      placeholder: "EPIC-OBS"
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: What can someone do after this epic that they cannot do now?
+    validations:
+      required: true
+  - type: textarea
+    id: stories
+    attributes:
+      label: Stories
+      description: Checklist of child IDs; link the issues once they exist.
+      value: |
+        - [ ] O1 —
+        - [ ] O2 —
+    validations:
+      required: true
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Explicitly not in this epic
+      description: What a reader might reasonably assume is included, and is not.
