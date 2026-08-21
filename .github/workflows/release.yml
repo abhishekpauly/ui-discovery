@@ -97,11 +97,20 @@ jobs:
       - name: Build sdist and wheel
         run: python -m build
 
+      # The notes come from the default branch's CHANGELOG, not the tag's.
+      #
+      # A tag's own changelog cannot describe releases made after it, and a
+      # retroactively-applied tag predates both this script and, sometimes, its
+      # own entry. `main` is the one complete record, so read it from there and
+      # let the tag supply only the code.
       - name: Release notes from CHANGELOG.md
         run: |
-          python scripts/changelog_section.py "${{ steps.version.outputs.version }}" -o notes.md
-          python scripts/changelog_section.py "${{ steps.version.outputs.version }}" \
-            --title -o title.txt
+          git fetch --depth=1 origin main
+          git show origin/main:CHANGELOG.md > /tmp/CHANGELOG.md
+          git show origin/main:scripts/changelog_section.py > /tmp/changelog_section.py
+          version="${{ steps.version.outputs.version }}"
+          python /tmp/changelog_section.py "$version" --changelog /tmp/CHANGELOG.md -o notes.md
+          python /tmp/changelog_section.py "$version" --changelog /tmp/CHANGELOG.md --title -o title.txt
           echo "--- notes ---"; cat notes.md
 
       - name: Publish
