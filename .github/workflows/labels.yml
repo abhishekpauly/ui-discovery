@@ -1,0 +1,65 @@
+# Keep the repository's labels equal to `.github/labels.yml`.
+#
+# Labels are the only part of the issue tracker with no history and no review:
+# anyone with write access can rename one from a dropdown and nothing records
+# it. Driving them from a reviewed file puts them back under the same rules as
+# everything else.
+#
+# Additive by design — a label present on GitHub but absent from the file is
+# reported, never deleted, because deleting a label strips it from every issue
+# that carries it. Run the workflow by hand with `prune: true` when that is
+# genuinely what you want.
+name: labels
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/labels.yml
+      - scripts/sync_labels.py
+      - .github/workflows/labels.yml
+  pull_request:
+    paths:
+      - .github/labels.yml
+      - scripts/sync_labels.py
+  workflow_dispatch:
+    inputs:
+      prune:
+        description: "Delete labels that .github/labels.yml does not define"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: labels
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - run: pip install pyyaml
+
+      # On a pull request the file is a proposal, not a decision: show the plan
+      # in the log and change nothing. Merging to main is what applies it.
+      - name: Sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          args=()
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            args+=(--dry-run)
+          fi
+          if [ "${{ inputs.prune }}" = "true" ]; then
+            args+=(--prune)
+          fi
+          python scripts/sync_labels.py "${args[@]}"

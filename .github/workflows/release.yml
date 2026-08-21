@@ -1,0 +1,113 @@
+# A release is a tag. This turns it into a Release.
+#
+# Nothing here is typed by hand: the version comes from the tag, the notes come
+# from CHANGELOG.md, and the job refuses to publish if the tag, pyproject.toml
+# and __version__ do not all say the same thing. That last check is the point —
+# it is the only place a mistyped tag can still be caught for free.
+#
+# See RELEASING.md.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)publish a Release for, e.g. v0.18.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Resolve the version from the tag
+        id: version
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          echo "tag=$tag"          >> "$GITHUB_OUTPUT"
+          echo "version=$version"  >> "$GITHUB_OUTPUT"
+          # A pre-release is anything with a suffix: v0.19.0-rc.1
+          if [[ "$version" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The tag is the claim; these two files are the evidence. Historical tags
+      # v0.12.0..v0.18.0 were applied retroactively and 0.17.0 is a known
+      # irregularity (see RELEASING.md), so the check warns rather than fails
+      # for anything at or below 0.18.0.
+      - name: The tag, pyproject.toml and __version__ must agree
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          base="${version%%-*}"
+          declared=$(python -c "import tomllib,pathlib;print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          in_package=$(python -c "import re,pathlib;print(re.search(r'__version__ = \"([^\"]+)\"', pathlib.Path('src/ui_discovery/__init__.py').read_text()).group(1))")
+          echo "tag=$base  pyproject=$declared  __version__=$in_package"
+          if [ "$base" = "$declared" ] && [ "$base" = "$in_package" ]; then
+            echo "Agreed."
+          elif printf '%s\n0.18.0\n' "$base" | sort -V -C; then
+            echo "::warning::$base is a retroactive tag; version files say $declared. Allowed for <= 0.18.0."
+          else
+            echo "::error::Tag $base, pyproject $declared and __version__ $in_package disagree."
+            exit 1
+          fi
+
+      - name: Install
+        run: pip install -e ".[dev]" build
+
+      # The browser suite is `full`, which already ran on the commit this tag
+      # points at. Re-running it here would double the release time to re-prove
+      # something green; the fast lane is the cheap guard against tagging a
+      # tree that does not even import.
+      - name: Tests that need no browser
+        run: pytest -m "not browser" -q
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          python scripts/changelog_section.py "${{ steps.version.outputs.version }}" -o notes.md
+          python scripts/changelog_section.py "${{ steps.version.outputs.version }}" \
+            --title -o title.txt
+          echo "--- notes ---"; cat notes.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          title=$(cat title.txt)
+          flags=(--title "$title" --notes-file notes.md --verify-tag)
+          if [ "${{ steps.version.outputs.prerelease }}" = "true" ]; then
+            flags+=(--prerelease)
+          else
+            flags+=(--latest)
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --title "$title" --notes-file notes.md
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* "${flags[@]}"
+          fi

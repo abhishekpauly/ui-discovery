@@ -18,6 +18,59 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ## [Unreleased]
 
+### Added
+
+- **`X7` Repo governance.** The project had a careful contract for the *code*
+  and none at all for the repository around it: no tags, no releases, labels
+  invented at click-time, and one branch per item with nothing above it. All
+  four are now written down and, where possible, executed by a file rather than
+  by memory.
+  - `BRANCHING.md` — trunk-based development with **sprint integration
+    branches**, so several sprints can run at once and each still merges to
+    `main` as a reviewable, revertible unit. Squash into a sprint, merge commit
+    into `main`. Cut: `sprint/1-governance`, `sprint/2-field-validation`,
+    `sprint/3-devex`, `sprint/4-deferred`.
+  - `RELEASING.md` — a release is an annotated `vX.Y.Z` tag; everything else is
+    rendered from the repo. Covers the two version numbers, the bump policy,
+    hotfixes, and why a tag is never moved.
+  - `.github/labels.yml` — the label set as data, in six dimensions that mirror
+    `PRODUCT_TRACKER.md` (`epic:`, `area:`, `P0`–`P3`, `effort:`, `sprint:`).
+    Applied by `scripts/sync_labels.py`; additive unless asked to `--prune`.
+  - `.github/workflows/release.yml` — a pushed tag builds the sdist and wheel,
+    lifts that version's section out of `CHANGELOG.md`, and publishes the
+    Release. It refuses to publish when the tag, `pyproject.toml` and
+    `__version__` disagree, which is the only place a mistyped tag is still
+    cheap to catch.
+  - `.github/workflows/labels.yml` — shows the label plan on a pull request,
+    applies it on merge.
+  - `scripts/changelog_section.py` — the changelog is the release notes. There
+    is one copy, so the two cannot disagree.
+  - `scripts/bootstrap_github.sh` — labels, tags, releases and the board, made
+    reproducible rather than remembered.
+  - `.github/ISSUE_TEMPLATE/bug.yml` — a bug report that asks for a fixture and
+    refuses real URLs, sessions and captures.
+- **Tags `v0.12.0`–`v0.18.0`**, backfilled onto the commits that introduced each
+  version, dated as those commits. The repo previously had none.
+  `v0.1.0`–`v0.11.0` predate this git history and remain changelog-only.
+
+### Changed
+
+- `fast` and `full` now also run on pushes to `sprint/**`, so a shared sprint
+  branch is known-green before its pull request rather than at the moment it is
+  due.
+- `CONTRIBUTING.md` points at the branching and release models instead of
+  implying a single flat branch, and says where issues, labels and the board fit.
+
+### Known irregularity
+
+`0.17.0` and `0.18.0` both shipped through PR #16/#17, and the commit carrying
+the `0.17.0` changelog entry already declares `version = "0.18.0"`. The
+backfilled tags follow the changelog, because the changelog is what describes a
+release. `release.yml` warns rather than fails for tags at or below `0.18.0` for
+this reason, and fails from `0.19.0` onward.
+
+---
+
 `G1`–`G4` (governance) are specified in `ROADMAP.md` and tracked as `EPIC-GOV`.
 Still deliberately deferred: `X4` (incremental crawl) is a speculative
 optimization until crawl times actually hurt; `X6` (storage backend) waits on

@@ -172,6 +172,7 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | X4 | Incremental / resumable crawl | skip pages unchanged since last crawl — speculative until crawl times actually hurt | P2 | 🗄️ deferred |
 | X5 | Politeness | robots.txt + rate limit + concurrency cap | P2 | ✅ 0.12.0 |
 | X6 | Storage backend seam | interface so SQLite/Postgres can slot in later (no DB now) — deferred by ROADMAP until data volume demands it | P3 | 🗄️ deferred |
+| X7 | Repo governance | branching model (`BRANCHING.md`), release process + `release` workflow (`RELEASING.md`), labels as data (`.github/labels.yml`), retroactive tags `v0.12.0`–`v0.18.0`, project board | P2 | 🚧 |
 
 ---
 
