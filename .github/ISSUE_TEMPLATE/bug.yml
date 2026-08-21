@@ -1,0 +1,81 @@
+name: Bug
+description: The engine did something other than what it says it does.
+title: "<what went wrong, in one line>"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A capture is only worth anything if it is reproducible, so a bug report
+        is too. The most useful thing you can attach is a **fixture** — the
+        smallest HTML that shows the problem — because that is what the fix
+        will be tested against.
+
+        **Do not paste a real capture, a real URL behind a login, or a
+        `session.json`.** Reduce it to a fixture first.
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: Quote the README, RUNBOOK or ROADMAP line it contradicts if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: The output, the traceback, or the field that is wrong.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The exact command, and the fixture or minimal HTML it ran against.
+      value: |
+        ```bash
+        python -m ui_discovery.crawl http://localhost:8000/ --max-pages 2
+        ```
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`python -c \"import ui_discovery; print(ui_discovery.__version__)\"`"
+      placeholder: "0.18.0"
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform and Python
+      placeholder: "Windows 11 / Python 3.14"
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Which stage
+      options:
+        - extract
+        - crawl
+        - analyze
+        - probe
+        - pipeline
+        - diff
+        - semantic / docgen / qagen
+        - login / auth
+        - reports
+        - not sure
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Before you post
+      options:
+        - label: No real URLs, credentials, session files or captures are included.
+          required: true
+        - label: I am reporting this against a target I am authorised to test.
+          required: true

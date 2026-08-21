@@ -1,0 +1,214 @@
+# The label set, as data.
+#
+# This file is the source of truth. GitHub is a rendering of it, applied by
+# `scripts/sync_labels.py` (and by `.github/workflows/labels.yml` whenever this
+# file changes on main). Labels created by hand in the web UI survive — the sync
+# never deletes unless asked with --prune — but they are not tracked here and
+# nothing keeps them consistent, so add them here instead.
+#
+# Six dimensions, each answering a different question. An issue normally carries
+# one of each of the first four:
+#
+#   kind      what sort of thing is this?          bug, enhancement, ...
+#   shape     how big a unit of work?              epic, story, chore, spike
+#   epic      which themed group?                  epic:GOV, epic:QA, ...
+#   area      which part of the engine?            area:crawl, area:safety, ...
+#   priority  how much does it matter?             P0..P3      (matches PRODUCT_TRACKER)
+#   effort    how long will it take?               effort:S/M/L (matches ROADMAP)
+#
+# Plus `sprint:` (which branch it lands on), `status:` (where it is), and a
+# handful of flags for things this repo specifically cares about.
+#
+# Sprint is a label rather than a Project field on purpose: one source of truth,
+# and `gh issue list -l sprint:1-governance` works without opening a board.
+
+labels:
+
+  # --- kind ----------------------------------------------------------------
+  # GitHub's defaults, kept. They are understood by every drive-by contributor,
+  # and replacing them with a bespoke `type:` family would buy nothing.
+  - name: bug
+    color: d73a4a
+    description: Shipped behaviour is wrong
+  - name: enhancement
+    color: a2eeef
+    description: A new capability or an improvement to one
+  - name: documentation
+    color: 0075ca
+    description: README, RUNBOOK, ROADMAP, examples
+  - name: question
+    color: d876e3
+    description: Needs an answer before it can be worked
+  - name: duplicate
+    color: cfd3d7
+    description: Already tracked elsewhere
+  - name: invalid
+    color: e4e669
+    description: Not actionable as written
+  - name: wontfix
+    color: ffffff
+    description: Deliberately not doing this — say why before closing
+  - name: good first issue
+    color: 7057ff
+    description: Self-contained, fixture-testable, no deep context needed
+  - name: help wanted
+    color: 008672
+    description: Open to anyone
+
+  # --- shape ---------------------------------------------------------------
+  # `epic` and `story` are applied automatically by .github/ISSUE_TEMPLATE.
+  - name: epic
+    color: 5319e7
+    description: A themed group of stories
+  - name: story
+    color: 8a63d2
+    description: One deliverable slice of an epic, carrying a backlog ID
+  - name: chore
+    color: cfd3d7
+    description: Dependencies, tooling, repo plumbing — no product change
+  - name: spike
+    color: e99695
+    description: Time-boxed investigation; the deliverable is an answer, not code
+
+  # --- epic ----------------------------------------------------------------
+  # Mirrors the epic IDs in PRODUCT_TRACKER.md and the issue templates.
+  - name: epic:OBS
+    color: 5319e7
+    description: Observability — make a run accountable (O1-O5)
+  - name: epic:GOV
+    color: 5319e7
+    description: Governance — state the rules a capture ran under (G1-G4)
+  - name: epic:QA
+    color: 5319e7
+    description: Real-world validation (QA.1-QA.4)
+  - name: epic:DEVEX
+    color: 5319e7
+    description: Repo governance — labels, releases, branching, board
+  - name: epic:DEFER
+    color: 5319e7
+    description: Deliberately deferred until evidence justifies it (X4, X6)
+
+  # --- area ----------------------------------------------------------------
+  # One per module cluster in the repo map at the top of CLAUDE.md.
+  - name: area:extract
+    color: 1d76db
+    description: extract.py / extraction.py / browser.py / extract.js
+  - name: area:crawl
+    color: 1d76db
+    description: crawl.py / crawler.py — the Crawlee crawl and its budgets
+  - name: area:analysis
+    color: 1d76db
+    description: analyze.py / analysis/ — fingerprints, regions, components, nav
+  - name: area:probe
+    color: 1d76db
+    description: probe.py / interactions.py / network.py — interaction and network
+  - name: area:safety
+    color: b60205
+    description: safety.py — the allow-list and the word classifier. Handle with care.
+  - name: area:auth
+    color: 1d76db
+    description: login.py / auth.py — session capture, reuse and expiry
+  - name: area:reports
+    color: 1d76db
+    description: reports.py and everything rendered from the model
+  - name: area:config
+    color: 1d76db
+    description: config.py / cliconfig.py / intake.py / adapters — scope and toggles
+  - name: area:observability
+    color: 1d76db
+    description: run.py / events.jsonl / run.json / runs.jsonl
+  - name: area:semantic
+    color: fef2c0
+    description: V5 only — the quarantined optional LLM layer
+  - name: area:sourcemap
+    color: 1d76db
+    description: sourcemap/ — V4 repo ingest and runtime-to-source correlation
+  - name: area:models
+    color: 0052cc
+    description: models.py — contended; coordinate before changing shape
+  - name: area:ci
+    color: 1d76db
+    description: GitHub Actions workflows, runners, sharding, caching
+  - name: area:tests
+    color: 1d76db
+    description: tests/ and fixtures/ — the regression surface
+
+  # --- priority ------------------------------------------------------------
+  # Same four levels PRODUCT_TRACKER.md already uses. Do not invent a fifth.
+  - name: P0
+    color: b60205
+    description: Critical — blocks a release or a real capture
+  - name: P1
+    color: d93f0b
+    description: High — the next thing that should be true
+  - name: P2
+    color: fbca04
+    description: Medium — worth doing, not urgent
+  - name: P3
+    color: c2e0c6
+    description: Low — nice to have
+
+  # --- effort --------------------------------------------------------------
+  - name: effort:S
+    color: 0e8a16
+    description: A sitting
+  - name: effort:M
+    color: 5eb85e
+    description: A day
+  - name: effort:L
+    color: a5d6a7
+    description: Multi-day — consider splitting
+
+  # --- status --------------------------------------------------------------
+  # Where an issue sits in the workflow is the Project board's Status field, not
+  # a label — one source of truth, and the board is what moves it. These two are
+  # not positions on the board, they are *reasons*, which is why they survive as
+  # labels and why they are the only two here.
+  - name: status:blocked
+    color: b60205
+    description: Cannot proceed — name what on, in the issue
+  - name: status:deferred
+    color: 8b949e
+    description: Deliberately parked until evidence justifies it (see ROADMAP § E)
+
+  # --- sprint --------------------------------------------------------------
+  # One per live sprint branch — see BRANCHING.md. Retire the label when the
+  # branch merges; the closed issues keep it as a record.
+  - name: sprint:1-governance
+    color: 006b75
+    description: Lands on sprint/1-governance (G1-G4)
+  - name: sprint:2-field-validation
+    color: 006b75
+    description: Lands on sprint/2-field-validation (QA.1-QA.4)
+  - name: sprint:3-devex
+    color: 006b75
+    description: Lands on sprint/3-devex (repo governance)
+  - name: sprint:4-deferred
+    color: 006b75
+    description: Lands on sprint/4-deferred (X4, X6) — parked by default
+
+  # --- flags this repo specifically cares about ----------------------------
+  - name: breaking-change
+    color: b60205
+    description: Breaks the library surface or an existing caller
+  - name: schema-change
+    color: d93f0b
+    description: Moves SCHEMA_VERSION — old snapshots stop being readable
+  - name: principle-risk
+    color: b60205
+    description: >-
+      Brushes against a CLAUDE.md non-negotiable — framework branching, an LLM
+      in the observation/analysis/safety path, or a weakened safety envelope.
+      Needs an explicit decision, not a review nod.
+  - name: needs-real-run
+    color: fbca04
+    description: Fixtures cannot validate this; it needs a run against a real site
+  - name: dependencies
+    color: 0366d6
+    description: Pinned dependency add, bump or removal
+  - name: security
+    color: b60205
+    description: Secrets, redaction, or data that must not be persisted
+  - name: release
+    color: 5319e7
+    description: Cutting a version — tag, notes, artifacts

@@ -8,7 +8,9 @@ name: full
 
 on:
   push:
-    branches: [main]
+    # Sprint integration branches are shared and long-ish lived, so they are
+    # kept green in their own right rather than only at pull-request time.
+    branches: [main, "sprint/**"]
   pull_request:
 
 permissions:
