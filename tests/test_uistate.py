@@ -304,3 +304,93 @@ def test_component_screenshots_can_be_turned_off(tmp_path):
     assert not (tmp_path / "screenshots" / "components").exists()
     assert not [e for node in crawl.pages for e in node.page.elements
                 if e.clip_screenshot]
+
+
+# --- deduplication (found by running against a real portal) -----------------
+#
+# On the Acme model hub, a grid of model cards each carried a "Try out"
+# button opening the same Model Playground drawer. The engine photographed it
+# 37 times and the report listed all 37. Across that capture, 158 captured
+# states collapsed to 14 distinct affordances.
+
+def test_the_same_state_opened_from_many_cards_is_captured_once():
+    from ui_discovery.interactions import _remember_state
+    from ui_discovery.models import Element, UIState
+
+    def playground(model):
+        # Each card's drawer shows that card's own data. It is the same
+        # component either way, which is exactly why the revealed contents
+        # must not be part of a labelled trigger's identity.
+        return UIState(
+            kind="drawer", name="Model Playground", trigger_label="Try out",
+            page_url="u",
+            controls=[Element(category="button", tag="button",
+                              accessible_name=n)
+                      for n in ("Send", "Attach", model)],
+        )
+
+    states: list[UIState] = []
+    for i in range(37):
+        state = playground(f"GPT 5 variant {i}")
+        if _remember_state(states, state):
+            states.append(state)
+
+    assert len(states) == 1, "one affordance should be captured once"
+    assert states[0].instances == 37
+
+
+def test_different_triggers_are_different_states():
+    from ui_discovery.interactions import _remember_state
+    from ui_discovery.models import UIState
+
+    states: list[UIState] = []
+    for label in ("Overview", "Activity", "History"):
+        state = UIState(kind="tab-panel", trigger_label=label, page_url="u")
+        if _remember_state(states, state):
+            states.append(state)
+    assert len(states) == 3
+
+
+def test_unlabelled_triggers_are_told_apart_by_what_they_reveal():
+    """Icon-only buttons all have an empty trigger label, and they open
+    genuinely different menus. Keying on the trigger alone would collapse
+    them into one and lose them."""
+    from ui_discovery.interactions import _remember_state
+    from ui_discovery.models import Element, UIState
+
+    def menu(*names):
+        return UIState(
+            kind="menu", trigger_label="", page_url="u",
+            controls=[Element(category="button", tag="button",
+                              accessible_name=n) for n in names],
+        )
+
+    states: list[UIState] = []
+    for state in (menu("Rename", "Duplicate"), menu("Export", "Print"),
+                  menu("Rename", "Duplicate")):
+        if _remember_state(states, state):
+            states.append(state)
+    assert len(states) == 2
+    assert states[0].instances == 2
+
+
+def test_a_container_with_no_name_does_not_get_a_wall_of_text_for_one():
+    """A drawer's textContent is everything inside it. Using it as a name
+    produced headings like "What's New (V2.14.0)Version 2.14.0Aug 10, 2026
+    What's New in ACME We've been busy. Here's everything that landed
+    recentl" — unreadable, and it became the image alt text too."""
+    blob = ("What's New (V2.14.0)Version 2.14.0Aug 10, 2026What's New in "
+            "ACME We've been busy. Here's everything that landed recently")
+    drawer = el(attributes={"role": "dialog"}, text=blob, dom_path="div#d")
+    trigger = el(category="button", tag="button",
+                 accessible_name="What's New (V2.14.0)")
+
+    found = classify_state(trigger, [drawer])
+    assert found["name"] == "What's New (V2.14.0)", found["name"]
+    assert len(found["name"]) <= 60
+
+
+def test_a_short_text_name_is_still_used():
+    drawer = el(attributes={"role": "dialog"}, text="Filters", dom_path="div#d")
+    trigger = el(category="button", tag="button", accessible_name="Open")
+    assert classify_state(trigger, [drawer])["name"] == "Filters"

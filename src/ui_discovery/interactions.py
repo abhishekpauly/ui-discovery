@@ -41,7 +41,13 @@ from .models import (
 from .network import classify as classify_request
 from .network import redact_url
 from .safety import ALLOW_LIST, DEFAULT_POLICY, SafetyPolicy, decide, should_execute
-from .uistate import classify_state, revealed_elements, state_filename, visible_paths
+from .uistate import (
+    classify_state,
+    revealed_elements,
+    state_filename,
+    state_signature,
+    visible_paths,
+)
 
 
 # --- probe profile ----------------------------------------------------------
@@ -324,6 +330,36 @@ def _shot_path(states_dir, url: str, index: int, kind: str) -> str:
     return str(Path(states_dir) / state_filename(slug_for(url), index, kind))
 
 
+
+def _signature_of(state) -> tuple:
+    return state_signature(
+        state.kind, state.trigger_label,
+        [c.accessible_name or c.text or "" for c in state.controls],
+    )
+
+
+def _would_be_new(states: list, state) -> bool:
+    """Whether this state is one we have not already captured."""
+    signature = _signature_of(state)
+    return all(_signature_of(existing) != signature for existing in states)
+
+
+def _remember_state(states: list[UIState], state: UIState) -> bool:
+    """Record a newly-captured state, or count it against one we already have.
+
+    Returns True when the state is new and should be appended. A repeated
+    component (a card grid, a table row) opens the same thing once per
+    instance; the first capture keeps the screenshot and the rest just bump
+    its count.
+    """
+    signature = _signature_of(state)
+    for existing in states:
+        if _signature_of(existing) == signature:
+            existing.instances += 1
+            return False
+    return True
+
+
 def _assemble_probe(
     *,
     url: str,
@@ -469,8 +505,9 @@ async def probe_open_page_async(
                     url=url,
                     index=len(states) + 1,
                     states_dir=states_dir,
+                    seen=states,
                 )
-                if state is not None:
+                if state is not None and _remember_state(states, state):
                     states.append(state)
 
             if interaction.route_changed:
@@ -504,7 +541,7 @@ async def probe_open_page_async(
 
 async def _capture_state_async(
     page, *, trigger: dict, before_visible: set[str], url: str,
-    index: int, states_dir: str | None,
+    index: int, states_dir: str | None, seen: list | None = None,
 ):
     """Identify and photograph the state a click just opened.
 
@@ -517,6 +554,10 @@ async def _capture_state_async(
         return None
     state = build_state(trigger, before_visible, after_raw, url=url)
     if state is None or not states_dir:
+        return state
+    # A duplicate costs nothing beyond the classification above: no file, no
+    # second picture of the same drawer.
+    if seen is not None and not _would_be_new(seen, state):
         return state
     path = _shot_path(states_dir, url, index, state.kind)
     try:
@@ -532,7 +573,7 @@ async def _capture_state_async(
 
 def _capture_state_sync(
     page, *, trigger: dict, before_visible: set[str], url: str,
-    index: int, states_dir: str | None,
+    index: int, states_dir: str | None, seen: list | None = None,
 ):
     """Sync twin of `_capture_state_async`."""
     try:
@@ -541,6 +582,8 @@ def _capture_state_sync(
         return None
     state = build_state(trigger, before_visible, after_raw, url=url)
     if state is None or not states_dir:
+        return state
+    if seen is not None and not _would_be_new(seen, state):
         return state
     path = _shot_path(states_dir, url, index, state.kind)
     try:
@@ -629,8 +672,9 @@ def probe_page(
                             url=url,
                             index=len(states) + 1,
                             states_dir=states_dir,
+                            seen=states,
                         )
-                        if state is not None:
+                        if state is not None and _remember_state(states, state):
                             states.append(state)
 
                     if interaction.route_changed:

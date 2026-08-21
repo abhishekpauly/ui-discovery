@@ -263,3 +263,71 @@ def test_expiry_is_surfaced_in_the_reports(server):
     ))
     assert "Session rejected." in build_markdown(crawl)
     assert "Session rejected." in build_html(crawl)
+
+
+# --- proportionate evidence (found by running against a real portal) --------
+#
+# On the Acme QA portal, three `agent-builder/<uuid>` deep links rendered
+# blank — they need query params the crawler did not have. That flagged the
+# whole capture as "the login/blank state, not the product" while thirty-five
+# other screens held real content (median 47 elements). Telling someone to
+# throw away a good capture is as bad as missing a bad one.
+
+def _crawl_with(nodes_empty: int, nodes_total: int, *, logged_out: int = 0):
+    """Build a Crawl whose stats mirror a capture with some blank pages."""
+    from ui_discovery.models import (
+        AuthCheck, Crawl, CrawlConfig, CrawlStats, Page, PageNode,
+    )
+
+    def node(i: int, empty: bool, out: bool):
+        page = Page(
+            schema_version="0.1.0", engine_version="0", extracted_at="",
+            requested_url=f"https://x.test/{i}", final_url=f"https://x.test/{i}",
+            title="", auth=AuthCheck(looks_empty=empty, looks_logged_out=out),
+        )
+        return PageNode(url=f"https://x.test/{i}", page=page)
+
+    pages = []
+    for i in range(nodes_total):
+        pages.append(node(i, i < nodes_empty,
+                          nodes_empty <= i < nodes_empty + logged_out))
+    return Crawl(
+        schema_version="0.1.0", engine_version="0", crawl_id="c",
+        started_at="", finished_at="",
+        config=CrawlConfig(start_url="https://x.test/", max_pages=nodes_total,
+                           max_depth=1, strategy="same-domain", auth_used=True),
+        stats=CrawlStats(pages_crawled=nodes_total, pages_failed=0,
+                         unique_urls=nodes_total, links_discovered=0,
+                         runtime_seconds=0.0),
+        pages=pages,
+    )
+
+
+def _verdict(empty: int, total: int, logged_out: int = 0) -> bool:
+    """The rule the crawler applies when assembling stats."""
+    return logged_out > 0 or (empty > 0 and empty * 2 >= total)
+
+
+def test_a_few_blank_pages_do_not_condemn_a_good_capture():
+    assert _verdict(empty=3, total=38) is False
+
+
+def test_a_mostly_blank_capture_is_still_flagged():
+    assert _verdict(empty=19, total=38) is True
+    assert _verdict(empty=1, total=1) is True
+
+
+def test_one_login_page_while_holding_a_session_is_enough():
+    """A login page reached *with* a session is unambiguous — unlike a blank
+    page, which an SPA renders for plenty of non-auth reasons."""
+    assert _verdict(empty=0, total=38, logged_out=1) is True
+
+
+def test_the_report_does_not_cry_wolf_on_a_mostly_good_capture():
+    from ui_discovery.reports import build_markdown
+
+    crawl = _crawl_with(3, 38)
+    crawl.stats.pages_empty = 3
+    crawl.stats.auth_expired = _verdict(3, 38)
+    md = build_markdown(crawl)
+    assert "Session rejected." not in md

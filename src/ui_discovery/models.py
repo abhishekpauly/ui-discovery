@@ -668,6 +668,10 @@ class UIState(BaseModel):
     # The controls this state reveals — the ones that were not visible before.
     controls: list[Element] = Field(default_factory=list)
     fields: list["FormField"] = Field(default_factory=list)
+    # How many controls on this screen open this same state. A grid of cards
+    # each with a "Try out" button opens ONE Model Playground drawer, thirty
+    # times — one affordance, not thirty, and photographed once.
+    instances: int = 1
 
 
 class InteractionProbe(BaseModel):

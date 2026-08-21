@@ -1,0 +1,90 @@
+# Acme Builder (QA) — the config behind the 0.15.1 validation run.
+#
+# 18 screens, 98 revealed states, 13 component crops, 35 API endpoints, in
+# ~13 minutes. Two things in here are the lessons from running it:
+#
+#   * the `exclude` patterns — a builder portal has one screen per saved
+#     app/agent, and without them eleven of the first twenty-five screens were
+#     the same screen with a different uuid;
+#   * `adapters: extra_wait` — this portal holds a websocket open, so
+#     `networkidle` never fires.
+#
+# Change `start_url` and the module URLs for another environment.
+
+# Acme Builder (QA) — end-to-end capture with the 0.15.0 engine.
+#
+# Written to exercise everything the release added: labelled screen
+# relationships, control options, component crops and revealed-state capture.
+
+target: Acme-Portal
+start_url: https://portal.example.com/platform/dashboard
+environment: staging
+authorized: true
+authorized_by: 98635318+abhishekpauly@users.noreply.github.com
+
+auth:
+  required: true
+  state_file: session.json
+
+budget:
+  max_pages: 20
+  max_depth: 3
+  max_interactions: 40
+
+scope:
+  exclude:
+    # Eleven of the first twenty-five screens were `/platform/app-builder/<uuid>`
+    # — the same builder screen, once per saved app. One instance documents the
+    # screen; the rest are the page budget being spent on nothing. Seeded below
+    # so the screen is still captured, just once.
+    - "/platform/app-builder/**"
+    # Same shape: one builder screen per saved agent. Excluding the instances
+    # keeps the budget for screens that are actually different.
+    - "/platform/agent-builder/**"
+
+identity:
+  # A builder portal puts ids in the path and noise in the query; collapse the
+  # noise so two views of one screen are one screen.
+  dedupe_queries: true
+
+capabilities:
+  screenshots: true
+  accessibility_tree: true
+  probe: true
+
+probe:
+  state_capture: true          # photograph modals, menus, tab panels
+  component_screenshots: true  # crop forms, dialogs, tables, panels
+  tabs: all
+
+politeness:
+  # A shared QA environment. One page at a time, capped — a capture is not
+  # worth an incident.
+  max_requests_per_minute: 90
+  max_concurrency: 1
+
+safety:
+  # Additive only: the engine can be made more cautious, never less.
+  never_touch:
+    - "#danger-zone"
+
+adapters:
+  # This portal holds a websocket open, so `networkidle` never fires and the
+  # generic DOM-plateau check cannot tell "finished" from "between fetches".
+  # A fixed settle window is the honest fix (see examples/websocket-spa).
+  - name: extra_wait
+    options: { ms: 4000 }
+
+modules:
+  # Named so each area gets its own self-contained folder, and so the probe can
+  # be tuned per area later.
+  - name: Knowledge-Hub
+    start_url: https://portal.example.com/platform/knowledge-store-v2
+  - name: Model-Hub
+    start_url: https://portal.example.com/platform/model-hub
+  - name: RAG
+    start_url: https://portal.example.com/platform/rag
+
+outputs:
+  keep_history: true   # dated folder, so this run can be diffed against the next
+  run_label: Acme-Portal

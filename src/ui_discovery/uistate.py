@@ -90,8 +90,25 @@ def _ui_type(el: dict) -> str:
     return el.get("ui_type") or classify_ui_type(el) or ""
 
 
+# Past this, a "name" is a paragraph. An unnamed container's textContent is
+# everything inside it, so falling back to it produced headings like
+# "What's New (V2.14.0)Version 2.14.0Aug 10, 2026What's New in ACME We've...".
+MAX_NAME_CHARS = 60
+
+
 def _name_of(el: dict) -> str:
-    return (el.get("accessible_name") or el.get("text") or "").strip()[:120]
+    """A short, readable name, or "" when the element has none.
+
+    Returning "" is deliberate: the caller falls back to the label of the
+    control that opened the thing, which is short and meaningful. A truncated
+    wall of body text is worse than no name at all — it is unreadable *and* it
+    looks like a name.
+    """
+    name = (el.get("accessible_name") or "").strip()
+    if name:
+        return name[:MAX_NAME_CHARS]
+    text = " ".join((el.get("text") or "").split())
+    return text if 0 < len(text) <= MAX_NAME_CHARS else ""
 
 
 def _box(el: dict) -> dict:
@@ -210,6 +227,32 @@ def _as_state(container: dict, trigger: dict) -> Optional[dict]:
         "name": _name_of(container) or _name_of(trigger),
         "dom_path": container.get("dom_path", ""),
     }
+
+
+def state_signature(kind: str, trigger_label: str,
+                    control_names: list[str]) -> tuple:
+    """What makes two revealed states *the same* state.
+
+    A repeated component opens the same thing once per instance: a grid of
+    model cards each with a "Try out" button opens one Model Playground drawer,
+    not thirty-seven of them. Photographing each is the same mistake as listing
+    a table's "View" link once per row.
+
+    A *labelled* trigger is the whole signature: "Try out" opening a drawer is
+    one affordance however many cards carry it. Including what it revealed
+    would defeat that, because the drawer shows the card's own data — the
+    Model Playground for "GPT 5 mini" and for "GPT 5 nano" are the same
+    component showing different rows.
+
+    An *unlabelled* trigger has no such identity, and several icon-only
+    buttons on one screen open genuinely different menus. There, the set of
+    revealed controls is the only thing that tells them apart, so it joins the
+    signature rather than collapsing them all into one.
+    """
+    label = " ".join((trigger_label or "").split()).lower()
+    if label:
+        return (kind, label)
+    return (kind, "", frozenset(n for n in control_names[:8] if n))
 
 
 def component_targets(raw: dict) -> list[dict]:

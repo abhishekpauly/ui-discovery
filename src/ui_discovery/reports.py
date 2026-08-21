@@ -84,6 +84,35 @@ def _api_endpoints(crawl: Crawl, limit: int = 20) -> list[tuple[str, int]]:
 # connections do.
 
 
+def _control_names(controls, limit: int = 12) -> list[str]:
+    """Readable names for the controls inside a revealed state.
+
+    An unnamed container's `text` is everything inside it, so using it as a
+    name produced entries like "CompareWelcome to the playgroundThis is your
+    space to fine tune your prompts...". A control with no short name of its
+    own is left out rather than printed as a paragraph.
+    """
+    names: list[str] = []
+    for c in controls:
+        name = (c.accessible_name or "").strip()
+        if not name:
+            text = " ".join((c.text or "").split())
+            name = text if 0 < len(text) <= 60 else ""
+        if name and name not in names:
+            names.append(name)
+        if len(names) >= limit:
+            break
+    return names
+
+
+def _state_heading(state) -> str:
+    """What to call a revealed state, and how many controls open it."""
+    name = state.name or state.trigger_label or "(unnamed)"
+    if state.instances > 1:
+        return f"{name} — {state.instances} controls on this screen open it"
+    return name
+
+
 def _shot_rel(path: str | None) -> str:
     """A screenshot path relative to the report, whatever folder it is in."""
     if not path:
@@ -609,17 +638,16 @@ def _screen_markdown(index: int, node: PageNode, screen, titles: dict) -> list[s
                      "opened safely and photographed._")
         lines.append("")
         for state in states:
-            lines.append(f"- **{state.name or '(unnamed)'}** "
+            lines.append(f"- **{_state_heading(state)}** "
                          f"({state.kind}) — opens when you click "
-                         f"“{state.trigger_label}”")
+                         f"“{state.trigger_label or '(an unlabelled control)'}”")
             if state.screenshot:
-                lines.append(f"  <br>![{state.name}]"
+                lines.append(f"  <br>![{state.name or state.trigger_label or state.kind}]"
                              f"({_shot_rel(state.screenshot)})")
-            controls = [c.accessible_name or c.text for c in state.controls
-                        if (c.accessible_name or c.text)]
+            controls = _control_names(state.controls)
             if controls:
                 lines.append("  - Contains: "
-                             + ", ".join(f"“{c}”" for c in controls[:12]))
+                             + ", ".join(f"“{c}”" for c in controls))
             for f in state.fields:
                 options = " / ".join(f.options[:8])
                 lines.append(f"  - Field “{f.label}” ({f.ui_type})"
@@ -768,8 +796,7 @@ def _screen_html(index: int, node: PageNode, screen, titles: dict) -> str:
         parts.append('<p class="meta">Not visible until something is clicked '
                      "— each was opened safely and photographed.</p>")
         for state in states:
-            controls = [c.accessible_name or c.text for c in state.controls
-                        if (c.accessible_name or c.text)]
+            controls = _control_names(state.controls)
             fields = "".join(
                 f"<li>Field “{_esc(f.label)}” ({_esc(f.ui_type)})"
                 + (f", options: {_esc(' / '.join(f.options[:8]))}"
@@ -779,13 +806,14 @@ def _screen_html(index: int, node: PageNode, screen, titles: dict) -> str:
             )
             parts.append(
                 '<div class="state">'
-                f'<p><b>{_esc(state.name or "(unnamed)")}</b> '
+                f'<p><b>{_esc(_state_heading(state))}</b> '
                 f'<span class="pill">{_esc(state.kind)}</span><br>'
                 f'<span class="meta">opens when you click '
-                f'“{_esc(state.trigger_label)}”</span></p>'
-                + _thumb(state.screenshot, state.name or state.kind)
-                + (f'<p class="meta">Contains: '
-                   f'{_esc(", ".join(c for c in controls[:12]))}</p>'
+                f'“{_esc(state.trigger_label or "(an unlabelled control)")}”'
+                f'</span></p>'
+                + _thumb(state.screenshot,
+                         state.name or state.trigger_label or state.kind)
+                + (f'<p class="meta">Contains: {_esc(", ".join(controls))}</p>'
                    if controls else "")
                 + (f"<ul>{fields}</ul>" if fields else "")
                 + "</div>")

@@ -1033,10 +1033,22 @@ async def crawl_site(
             runtime_seconds=round(runtime, 3),
             pages_logged_out=logged_out,
             pages_empty=empty,
-            # Only an expiry if we actually presented a session. A blank app
-            # counts: some SPAs render nothing rather than redirect when their
-            # token is rejected.
-            auth_expired=bool(auth_state) and (logged_out + empty) > 0,
+            # Only an expiry if we actually presented a session, AND the
+            # evidence is proportionate to the claim.
+            #
+            # A login page reached while holding a session is unambiguous, so
+            # one is enough. A *blank* page is not: an SPA renders nothing for
+            # plenty of reasons that have nothing to do with auth — a deep link
+            # missing the query params it needs, a route that only resolves
+            # from inside the app. On a real portal three such pages out of
+            # thirty-eight flagged the whole capture as "the login/blank state,
+            # not the product" while thirty-five screens held real content.
+            # Telling someone to throw away a good capture is as bad as missing
+            # a bad one, so a blank-page verdict now requires blankness to be
+            # the dominant outcome rather than merely present.
+            auth_expired=bool(auth_state) and (
+                logged_out > 0 or (empty > 0 and empty * 2 >= len(nodes))
+            ),
         ),
         navigation=navigation,
         pages=ordered,

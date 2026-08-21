@@ -25,6 +25,39 @@ backend) is explicitly deferred in `ROADMAP.md` until data volume demands it.
 
 ---
 
+## [0.15.1] — Fixes from the first real-portal run
+
+Running 0.15.0 against a live QA portal (38 screens) surfaced three defects
+that fixture-sized captures could not.
+
+### Fixed
+
+- **Repeated components were photographed once per instance.** A grid of model
+  cards each carrying a "Try out" button opened the same drawer 37 times, and
+  the report listed all 37; across the capture, 158 states collapsed to 14
+  distinct affordances. A labelled trigger now *is* the state's identity — the
+  same control opening the same kind of thing is one affordance, reported once
+  with the number of controls that open it. Unlabelled (icon-only) triggers
+  still key on what they reveal, so genuinely different menus stay distinct.
+- **Unnamed containers were named with their own body text.** States came out
+  titled "What's New (V2.14.0)Version 2.14.0Aug 10, 2026What's New in ACME
+  We've been busy. Here's everything that landed recentl" — which was also the
+  image alt text. A container with no short name of its own now falls back to
+  the label of the control that opened it.
+- **A few blank pages condemned a whole capture.** Three `agent-builder/<uuid>`
+  deep links rendered nothing (they need query params the crawler did not
+  have), which flagged all 38 screens as "the login/blank state, not the
+  product" while 35 held real content. A login page reached while holding a
+  session still means expiry on sight; a *blank* page now has to be the
+  dominant outcome before the capture is condemned. Telling someone to throw
+  away a good capture is as bad as missing a bad one.
+
+### Tests
+
++9 (533 → 542).
+
+---
+
 ## [0.15.0] — Relationships, controls and visual capture
 
 The engine could say *what* it found; operators fed back that it could not say
