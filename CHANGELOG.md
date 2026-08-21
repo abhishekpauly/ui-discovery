@@ -177,7 +177,8 @@ run counted twice would corrupt exactly the trend the index exists to show.
 
 ### Tests
 
-+22 (576 → 598), covering share arithmetic that accounts for the whole run,
++18 (583 → 601 collected; 595 passed and 6 skipped when this shipped),
+covering share arithmetic that accounts for the whole run,
 the measured probe cost against a real crawl, splicing that preserves the rest
 of the summary and replaces itself rather than accumulating, one line per run
 under repetition, and a failed run still reaching the index.

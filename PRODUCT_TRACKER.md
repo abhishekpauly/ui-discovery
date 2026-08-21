@@ -5,7 +5,7 @@ The single source of truth for **what exists, what's in flight, and what's next*
 `CHANGELOG.md` (version history) and `ROADMAP.md` (detailed specs + acceptance
 criteria). Keep this file updated as work lands (see *Maintenance* at the end).
 
-**Current product version: `0.18.0`** · Schema `0.1.0` · **598 tests passing**
+**Current product version: `0.18.1`** · Schema `0.1.0` · **601 tests** — 594 passing, 7 skipped
 
 ## Legend
 
@@ -185,6 +185,11 @@ When an item lands, in the **same change**:
 3. Bump `SCHEMA_VERSION` **only** if the JSON model shape changed in a
    breaking way; otherwise leave it.
 4. Keep `pytest -q` green and update the **Tests** cell (✔) with new coverage.
+5. Quote the **collected** total above, with the pass/skip split beside it.
+   Passing-count alone drifts for reasons that have nothing to do with the
+   tests: `test_release_hygiene.py` skips its drift check when no `src/`
+   commit has landed since the last version bump, so the same suite reports
+   594/7 immediately after a release and 595/6 a few commits later.
 
 Status meanings for QA flow: mark **🧪 Ready for QA** when code + automated tests
 are done but real-world validation is pending; move to **✅ Shipped** once it's
