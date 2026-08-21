@@ -83,6 +83,18 @@ def _run_pipeline(argv: list[str]) -> int:
     return main([*argv, "--headless"])
 
 
+def _capture_dir(root):
+    """The capture folder inside an output root.
+
+    `next(root.iterdir())` used to do, back when a capture was the only thing
+    in the root. `runs.jsonl` (O5) now sits beside it as an index across runs,
+    and directory iteration order is not defined — on Linux the file came
+    first and every one of these tests exploded with NotADirectoryError.
+    Asking for the directory says what these tests actually mean.
+    """
+    return next(p for p in sorted(root.iterdir()) if p.is_dir())
+
+
 def test_pipeline_produces_every_artifact(serve, tmp_path):
     site = serve("fixtures/site")
     code = _run_pipeline([
@@ -91,7 +103,7 @@ def test_pipeline_produces_every_artifact(serve, tmp_path):
     ])
     assert code == 0
 
-    out = next(tmp_path.iterdir())
+    out = _capture_dir(tmp_path)
     produced = {p.name for p in out.iterdir()}
     for expected in ("crawl.json", "report.md", "analysis.json",
                      "semantics.json", "documentation.json", "qa.json",
@@ -108,7 +120,7 @@ def test_pipeline_respects_skip(serve, tmp_path):
     ])
     assert code == 0
 
-    produced = {p.name for p in next(tmp_path.iterdir()).iterdir()}
+    produced = {p.name for p in _capture_dir(tmp_path).iterdir()}
     assert "analysis.json" in produced
     assert "documentation.json" not in produced
     assert "qa.json" not in produced
@@ -118,7 +130,7 @@ def test_pipeline_is_deterministic_without_a_provider(serve, tmp_path):
     site = serve("fixtures/site")
     _run_pipeline([site.url("index.html"), "--output", str(tmp_path),
                    "--max-depth", "0", "--max-pages", "1"])
-    out = next(tmp_path.iterdir())
+    out = _capture_dir(tmp_path)
     qa = json.loads((out / "qa.json").read_text(encoding="utf-8"))
     assert qa["provider"] == "deterministic"
 
@@ -156,7 +168,7 @@ def test_a_failing_report_stage_does_not_lose_the_crawl(
     ])
     assert code == 0  # the run is not a failure
 
-    produced = {p.name for p in next(tmp_path.iterdir()).iterdir()}
+    produced = {p.name for p in _capture_dir(tmp_path).iterdir()}
     assert "crawl.json" in produced       # survived
     assert "analysis.json" in produced    # earlier stage survived
     assert "documentation.json" not in produced
@@ -292,7 +304,7 @@ def test_every_run_writes_the_plain_facts_artifacts(serve, tmp_path):
     assert main([site.url("index.html"), "--output", str(tmp_path),
                  "--max-depth", "1", "--max-pages", "3", "--headless"]) == 0
 
-    out = next(tmp_path.iterdir())
+    out = _capture_dir(tmp_path)
     produced = {p.name for p in out.iterdir()}
     for name in REQUIRED_ARTIFACTS:
         assert name in produced, f"{name} missing from {sorted(produced)}"

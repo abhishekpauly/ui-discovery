@@ -346,10 +346,18 @@ METRICS_HEADING = "## Where the time went"
 _METRICS_ANCHOR = "## Elements by kind (all screens)"
 
 
-def _seconds(ms: Optional[int]) -> str:
+def _duration(ms: Optional[int]) -> str:
+    """A duration a person reads at a glance. Minutes once seconds stop being
+    the unit anyone thinks in — `231.0s` is a number to convert, `3m 51s` is an
+    answer."""
     if not ms:
         return "—"
-    return f"{ms / 1000:.1f}s" if ms >= 100 else f"{ms}ms"
+    if ms < 1000:
+        return f"{ms}ms"
+    if ms < 60_000:
+        return f"{ms / 1000:.1f}s"
+    minutes, seconds = divmod(round(ms / 1000), 60)
+    return f"{minutes}m {seconds:02d}s"
 
 
 def _produced(stage: dict[str, Any]) -> str:
@@ -370,7 +378,7 @@ def metrics_markdown(manifest: dict[str, Any]) -> str:
     lines = [
         METRICS_HEADING, "",
         f"*run `{manifest.get('run_id', '')}` · {manifest.get('outcome', '')} "
-        f"· {_seconds(total)} total · engine "
+        f"· {_duration(total)} total · engine "
         f"{manifest.get('engine_version', '')}*", "",
         "| Stage | Duration | Share | Status | Produced |",
         "| --- | --- | --- | --- | --- |",
@@ -380,13 +388,13 @@ def metrics_markdown(manifest: dict[str, Any]) -> str:
         name = stage.get("name", "")
         pct = share.get(name)
         lines.append(
-            f"| {name} | {_seconds(stage.get('duration_ms'))} | "
+            f"| {name} | {_duration(stage.get('duration_ms'))} | "
             f"{f'{pct}%' if pct is not None else '—'} | "
             f"{stage.get('status', '')} | {_produced(stage)} |")
     outside = m.get("outside_stages_ms") or 0
     if outside:
         lines.append(
-            f"| _between stages_ | {_seconds(outside)} | "
+            f"| _between stages_ | {_duration(outside)} | "
             f"{round(outside * 100 / total, 1) if total else '—'}% | | "
             f"reports, inventory, module folders |")
 
@@ -395,14 +403,14 @@ def metrics_markdown(manifest: dict[str, Any]) -> str:
     if pages and ms_per_page:
         rate = m.get("pages_per_minute")
         lines.append(
-            f"**{pages} screens in {_seconds(m.get('crawl_ms'))}** — "
-            f"{_seconds(ms_per_page)} per screen"
+            f"**{pages} screens in {_duration(m.get('crawl_ms'))}** — "
+            f"{_duration(ms_per_page)} per screen"
             + (f", {rate} screens/minute." if rate else "."))
     probe_ms = m.get("probe_ms") or 0
     if probe_ms:
         pct = m.get("probe_share_of_crawl_pct")
         lines.append(
-            f"Interacting with the pages accounted for {_seconds(probe_ms)} "
+            f"Interacting with the pages accounted for {_duration(probe_ms)} "
             f"of that" + (f" ({pct}% of the crawl)" if pct else "")
             + " — clicking safe controls, opening panels and watching the "
               "network. Re-run with `--no-probe` to compare, remembering that "

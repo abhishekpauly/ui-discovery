@@ -17,7 +17,7 @@ coverage, and unlock the two things this engine is ultimately for (docs + tests)
 
 `X0 → R1 → H1 → H2 → C1 → C2 → H3 → H4 → (H5 + R2 + S1) → V4 → V5`
 
-Since shipped, the order continues: **`X3` (CI) → `O1…O5` (observability) → `G1…G4` (governance)**. `X3` was blocked on a git remote existing; once it does, CI is what makes every later item cheap to verify.
+Since shipped, the order continues: **`X3` (CI) → `O1…O5` (observability, complete at 0.18.0) → `G1…G4` (governance)**. `X3` was blocked on a git remote existing; once it does, CI is what makes every later item cheap to verify.
 
 X0 first — put the current green state under version control. R1 (library/SDK
 surface) is foundational and cheap — do it early so everything after is
@@ -370,7 +370,7 @@ runtime dependency — principle #11 stands.
 - **Files.** `run.py`, `models.py`, `pipeline.py`, `auth.py`.
 - **Depends-on.** O1.
 
-### O4 — Stage metrics  ·  Effort: S
+### O4 — Stage metrics  ·  ✅ SHIPPED (0.18.0)
 - **Goal.** Make "is the probe-on default too slow?" (`QA.3`) answerable from
   data rather than memory.
 - **Build.** Per-stage durations and counts in the manifest, and a `metrics`
@@ -379,7 +379,7 @@ runtime dependency — principle #11 stands.
 - **Files.** `run.py`, `inventory.py`, `reports.py`.
 - **Depends-on.** O3.
 
-### O5 — Run index  ·  Effort: S
+### O5 — Run index  ·  ✅ SHIPPED (0.18.0)
 - **Goal.** "Every run against this target, and how they trend", without a
   database.
 - **Build.** `runs.jsonl` appended at the output root, one line per run.

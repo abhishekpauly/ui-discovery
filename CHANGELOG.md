@@ -18,10 +18,65 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ## [Unreleased]
 
-`O1`–`O5` (run observability) and `G1`–`G4` (governance) are specified in
-`ROADMAP.md` and tracked as `EPIC-OBS` / `EPIC-GOV`. Still deliberately
-deferred: `X4` (incremental crawl) is a speculative optimization until crawl
-times actually hurt; `X6` (storage backend) waits on data volume.
+`G1`–`G4` (governance) are specified in `ROADMAP.md` and tracked as `EPIC-GOV`.
+Still deliberately deferred: `X4` (incremental crawl) is a speculative
+optimization until crawl times actually hurt; `X6` (storage backend) waits on
+data volume — `O5`'s `runs.jsonl` is the deliberate non-database answer.
+
+---
+
+## [0.18.0] — Where the time went (O4-O5)
+
+`0.17.0` made a run identifiable. This makes it *measurable*. `QA.3` asks
+whether probing every page by default is too slow for a real portal — a
+question that has been answered from impression since the day probing became
+the default, because nothing in a capture recorded what interacting cost.
+
+Closes `O4` and `O5`, completing `EPIC-OBS`.
+
+### Added
+
+- **`O4` Stage metrics.** A `metrics` block on the manifest: per-stage
+  durations and shares, what each stage produced, seconds per screen, screens
+  per minute, and the slowest stage. Everything is derived from the stage
+  records already in the manifest — nothing is measured twice, so nothing can
+  disagree.
+- **Probe cost is measured, not remembered.** `CrawlStats.probe_ms` accumulates
+  the time each page spent being interacted with — counted in the crawler, so a
+  `crawl` invoked directly can answer the question too. The manifest reports it
+  as a share of the crawl: *"interacting accounted for 18.0s, 58% of the
+  crawl"*. That is `QA.3`, answerable from a file.
+- **`Where the time went` in `summary.md`.** The timing table lands in the file
+  a person actually opens, spliced in once every stage has finished. The
+  summary is still written the moment the crawl ends — it is the artifact you
+  would most regret losing to a later stage falling over — so the block is
+  added afterwards rather than the summary held back.
+- **`O5` Run index.** `runs.jsonl` at the output *root*, one line per run:
+  when, against what, outcome, duration, screens, elements, seconds per screen,
+  engine version, config digest, and the folder to go and read. Deliberately
+  not a database (`X6`): a hundred runs is a 30KB file you can `tail`.
+- Per-stage counts (`run.count(...)`) and `run.stage()` now yielding the stage's
+  own record, so a stage can say what it produced.
+- `resolve_output_root()` in `cliconfig` — the index belongs above the dated and
+  per-product folders, or it only ever sees today's captures.
+- Public API: `read_index`.
+
+### Notes
+
+`probe_ms` is cumulative across pages, so under concurrency it can exceed the
+crawl's wall clock. It is reported as a share of the *work*, and the summary
+says so rather than leaving a reader to discover it from an impossible number.
+
+Indexing is idempotent per run: `finish()` can be reached twice — a caller that
+finishes explicitly inside a `with` block passes through `__exit__` too — and a
+run counted twice would corrupt exactly the trend the index exists to show.
+
+### Tests
+
++22 (576 → 598), covering share arithmetic that accounts for the whole run,
+the measured probe cost against a real crawl, splicing that preserves the rest
+of the summary and replaces itself rather than accumulating, one line per run
+under repetition, and a failed run still reaching the index.
 
 ---
 

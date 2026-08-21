@@ -484,12 +484,13 @@ the scenarios unchanged.
 
 ## What a run records about itself
 
-Every capture writes two files that describe the *run*, not the product:
+Every capture writes three files that describe the *run*, not the product:
 
 | File | What it answers |
 | --- | --- |
 | `run.json` | Who ran this, against what, under whose authorization, how long each stage took, and how it ended |
 | `events.jsonl` | What happened, in order — one JSON object per line |
+| `runs.jsonl` | *(at the output root)* Every run so far, one line each, and how they trend |
 
 ```bash
 # What did this run refuse to click, and why?
@@ -520,6 +521,40 @@ directory, so a manifest never advertises where credentials live.
 
 Files only: no service, no exporter, no new dependency, nothing listening. A
 run is accountable because it writes down what it did.
+
+### Where the time went
+
+`summary.md` opens with the capture, then says what the capture cost:
+
+```
+## Where the time went
+
+| Stage    | Duration | Share | Status | Produced                          |
+| crawl    | 3m 51.0s |   82% | ok     | 38 pages, 214 links               |
+| analyze  |     4.1s |    1% | ok     | 1904 unique elements, 22 shared … |
+| semantic |        — |     — | skipped| excluded with --skip              |
+| docgen   |     2.2s |    1% | ok     | 38 pages documented               |
+
+**38 screens in 3m 51.0s** — 6.1s per screen, 9.9 screens/minute.
+Interacting with the pages accounted for 2m 14.0s of that (58% of the crawl).
+```
+
+That last line is the one worth having. Probing is on by default, because a
+capture that never clicks anything misses most of a portal — but *how much it
+costs* was an impression until it became a number. Re-run with `--no-probe` and
+compare the two summaries.
+
+```bash
+# How have runs against this target trended?
+jq -r '"\(.at) \(.pages) screens \(.duration_ms/1000|floor)s \(.outcome)"' runs.jsonl
+
+# Which run captured fewer screens than the one before it?
+jq -s 'map(.pages)' runs.jsonl
+```
+
+`runs.jsonl` sits at the output root rather than inside a capture, so it spans
+every run against every target. It is deliberately not a database: a hundred
+runs is a 30KB file you can `tail`.
 
 ## Reading a capture
 
