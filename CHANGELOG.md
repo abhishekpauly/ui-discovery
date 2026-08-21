@@ -18,10 +18,122 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ## [Unreleased]
 
-`O1`–`O5` (run observability) and `G1`–`G4` (governance) are specified in
-`ROADMAP.md` and tracked as `EPIC-OBS` / `EPIC-GOV`. Still deliberately
-deferred: `X4` (incremental crawl) is a speculative optimization until crawl
-times actually hurt; `X6` (storage backend) waits on data volume.
+`G1`–`G4` (governance) are specified in `ROADMAP.md` and tracked as `EPIC-GOV`.
+Still deliberately deferred: `X4` (incremental crawl) is a speculative
+optimization until crawl times actually hurt; `X6` (storage backend) waits on
+data volume — `O5`'s `runs.jsonl` is the deliberate non-database answer.
+
+---
+
+## [0.18.0] — Where the time went (O4-O5)
+
+`0.17.0` made a run identifiable. This makes it *measurable*. `QA.3` asks
+whether probing every page by default is too slow for a real portal — a
+question that has been answered from impression since the day probing became
+the default, because nothing in a capture recorded what interacting cost.
+
+Closes `O4` and `O5`, completing `EPIC-OBS`.
+
+### Added
+
+- **`O4` Stage metrics.** A `metrics` block on the manifest: per-stage
+  durations and shares, what each stage produced, seconds per screen, screens
+  per minute, and the slowest stage. Everything is derived from the stage
+  records already in the manifest — nothing is measured twice, so nothing can
+  disagree.
+- **Probe cost is measured, not remembered.** `CrawlStats.probe_ms` accumulates
+  the time each page spent being interacted with — counted in the crawler, so a
+  `crawl` invoked directly can answer the question too. The manifest reports it
+  as a share of the crawl: *"interacting accounted for 18.0s, 58% of the
+  crawl"*. That is `QA.3`, answerable from a file.
+- **`Where the time went` in `summary.md`.** The timing table lands in the file
+  a person actually opens, spliced in once every stage has finished. The
+  summary is still written the moment the crawl ends — it is the artifact you
+  would most regret losing to a later stage falling over — so the block is
+  added afterwards rather than the summary held back.
+- **`O5` Run index.** `runs.jsonl` at the output *root*, one line per run:
+  when, against what, outcome, duration, screens, elements, seconds per screen,
+  engine version, config digest, and the folder to go and read. Deliberately
+  not a database (`X6`): a hundred runs is a 30KB file you can `tail`.
+- Per-stage counts (`run.count(...)`) and `run.stage()` now yielding the stage's
+  own record, so a stage can say what it produced.
+- `resolve_output_root()` in `cliconfig` — the index belongs above the dated and
+  per-product folders, or it only ever sees today's captures.
+- Public API: `read_index`.
+
+### Notes
+
+`probe_ms` is cumulative across pages, so under concurrency it can exceed the
+crawl's wall clock. It is reported as a share of the *work*, and the summary
+says so rather than leaving a reader to discover it from an impossible number.
+
+Indexing is idempotent per run: `finish()` can be reached twice — a caller that
+finishes explicitly inside a `with` block passes through `__exit__` too — and a
+run counted twice would corrupt exactly the trend the index exists to show.
+
+### Tests
+
++22 (576 → 598), covering share arithmetic that accounts for the whole run,
+the measured probe cost against a real crawl, splicing that preserves the rest
+of the summary and replaces itself rather than accumulating, one line per run
+under repetition, and a failed run still reaching the index.
+
+---
+
+## [0.17.0] — A run can account for itself (O1-O3)
+
+The engine could say what it found. It could not say who ran it, against what,
+under whose authorization, how long each stage took, or what happened along the
+way. `crawl_id` existed, but a *pipeline run* spanning crawl → analyze →
+semantic → docgen → qagen had no identity of its own.
+
+Closes `O1`, `O2`, `O3` (#4, #5, #6) — the first sprint tracked as GitHub
+issues, and the first change to land through the branch ruleset.
+
+### Added
+
+- **`run.py`** — `RunContext`: run identity, an event stream, and a manifest.
+  Files only. No service, no exporter, no new dependency, nothing listening; a
+  run is accountable because it writes down what it did, which keeps principle
+  #11 intact and means the record survives on a laptop with no network exactly
+  as it does in CI.
+- **`O1` Run identity.** One `run_id` per pipeline run, with `crawl_id` as its
+  child and `Crawl.run_id` recording the link. Twelve hex characters, matching
+  `crawl_id`, so the two read as siblings in a log. A `crawl` invoked directly
+  still has no run and is still a complete artifact.
+- **`O2` Event stream.** `events.jsonl` beside the capture: `run.started`,
+  `stage.started`/`finished`/`skipped`, `page.captured`, `page.skipped` (with
+  the budget that stopped it), `probe.executed`, `probe.refused` (with the
+  safety verdict and reason), `state.captured`, `auth.rejected`,
+  `budget.exhausted`, `run.finished`/`failed`. Flushed as they happen, because
+  the run that dies is precisely the run whose events you want.
+- **`O3` Manifest.** `run.json`: ids, versions, outcome, target, operator, host,
+  per-stage timings and status, a stats rollup, every artifact written, and
+  `config_sha256` over the *resolved* scope — so two runs are provably the same
+  configuration even when one used flags and the other a config file, and
+  differ the moment one setting does.
+- Public API: `RunContext`, `config_digest`, `read_events`, `write_manifest`.
+
+### Notes on what is deliberately absent
+
+The manifest records `auth_used`, the credential *source* and hours to expiry.
+It never contains the session. `command_line()` keeps the session filename —
+useful — and drops its directory, so a manifest never advertises where
+credentials live.
+
+### Fixed
+
+- **`emit()` silently dropped every `state.captured` event.** The crawler
+  passes the state's own name, which collided with the event-name parameter —
+  a `TypeError` that `emit`'s never-raises guarantee swallowed. A real crawl
+  reported `states_captured=4` beside zero such events. The event name is now
+  positional-only in both `emit()` and the crawler wrapper, so a payload key
+  can never bind to it, and a test asserts the count matches the probe stats.
+
+### Tests
+
++24 (552 → 576), covering ordering, flush-on-write, crash survival, secret
+absence, and the keyword collision above.
 
 ---
 

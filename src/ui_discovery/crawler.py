@@ -619,6 +619,7 @@ async def crawl_site(
     output_dir: str = "output",
     auth_state: dict | None = None,
     options: CrawlOptions | None = None,
+    run=None,
     **overrides,
 ) -> Crawl:
     """Crawl a same-domain site starting at `start_url`, extracting a UI model
@@ -635,7 +636,12 @@ async def crawl_site(
     With `probe=True`, every crawled page is additionally run through the V3
     safe-interaction + network probe (H2) — as the same logged-in user, on
     the page the crawler already has open. Only structurally-safe controls
-    are executed; see `interactions.probe_open_page_async`."""
+    are executed; see `interactions.probe_open_page_async`.
+
+    `run` is an optional `run.RunContext`. When given, the crawl reports what
+    it did page by page — captured, skipped for budget, probed, refused — into
+    that run's event stream. The crawl is unchanged without one: a `crawl`
+    invoked directly is still a complete artifact, it just leaves no trail."""
     opts = (options or CrawlOptions()).replace(**overrides)
 
     # Unpacked into locals so the body below reads the same as it always has.
@@ -713,6 +719,16 @@ async def crawl_site(
             return False
         return adapter_hooks.should_visit(active_adapters, u)
 
+    def event(name: str, /, **data) -> None:
+        """Report to the run, when there is one. A crawl without a run is not
+        a degraded crawl, so this stays a no-op rather than a branch at every
+        call site."""
+        if run is not None:
+            try:
+                run.emit(name, stage="crawl", **data)
+            except Exception:
+                pass
+
     root = _normalize(start_url)
     shots_dir = Path(output_dir) / "screenshots"
     shots_dir.mkdir(parents=True, exist_ok=True)
@@ -728,6 +744,10 @@ async def crawl_site(
     net_sinks: dict[int, list[NetworkRequest]] = {}
     # Per page: clickable elements the app never marked up as links.
     unmarked_total: dict[str, int] = {}
+    # O4: where the crawl's time went. A dict rather than a `nonlocal` int for
+    # the same reason as the line above — the page handler is a closure, and a
+    # mutable container keeps the accumulation visible at the call site.
+    timing: dict[str, int] = {"probe_ms": 0}
     # Shared across the crawl: labels already deep-clicked, the routes
     # they revealed, and a global click budget.
     deep_tried: set[str] = set()
@@ -832,6 +852,8 @@ async def crawl_site(
             if len(claimed) >= max_pages:
                 context.log.info(
                     f"Page budget ({max_pages}) reached; not capturing {url}")
+                event("page.skipped", url=url, reason="page budget reached",
+                      max_pages=max_pages)
                 return
             claimed.add(url)
 
@@ -894,6 +916,10 @@ async def crawl_site(
                 f"Session may be rejected at {url}: "
                 f"{model.auth.signal} ({model.auth.evidence})"
             )
+            event("auth.rejected", level="warning", url=url,
+                  signal=model.auth.signal, evidence=model.auth.evidence,
+                  looks_logged_out=model.auth.looks_logged_out,
+                  looks_empty=model.auth.looks_empty)
 
         # Build the page graph from the extracted anchors (deterministic, and
         # independent of Crawlee's internal enqueue bookkeeping). Each entry
@@ -931,6 +957,11 @@ async def crawl_site(
         edge_labels[url] = labelled
         node = PageNode(url=url, out_links=out_links, page=model)
         nodes[url] = node
+        event("page.captured", url=url, title=model.title,
+              elements=model.counts.get("total_elements", 0),
+              out_links=len(out_links),
+              http_status=readiness.get("http_status"),
+              components_cropped=len(component_shots))
 
         # Enqueue the links *we* resolved, rather than letting Crawlee
         # re-scan the DOM. Two reasons: our list already carries everything
@@ -959,6 +990,7 @@ async def crawl_site(
         # we've already captured. A probe failure must not fail the crawl: the
         # page's extraction is still valid without it.
         if profile.enabled:
+            probe_t0 = time.monotonic()
             try:
                 node.probe = await probe_open_page_async(
                     page,
@@ -978,8 +1010,29 @@ async def crawl_site(
                     f"{p.get('states_captured', 0)} states captured, "
                     f"{p.get('network_requests', 0)} requests"
                 )
+                event("probe.executed", url=url, executed=p.get("executed", 0),
+                      states_captured=p.get("states_captured", 0),
+                      api_requests=p.get("api_requests", 0))
+                # Every refusal, with the reason. "We did not click Delete" is
+                # a claim a capture should be able to substantiate.
+                for interaction in node.probe.interactions:
+                    if interaction.safety_label in ("BLOCK", "CAUTION"):
+                        event("probe.refused", url=url,
+                              target=interaction.target,
+                              interaction_type=interaction.interaction_type,
+                              verdict=interaction.safety_label,
+                              reason=interaction.skipped_reason)
+                for state in node.probe.states:
+                    event("state.captured", url=url, kind=state.kind,
+                          state_name=state.name, trigger=state.trigger_label,
+                          instances=state.instances)
             except Exception as exc:
                 context.log.warning(f"Probe failed for {url}: {exc}")
+            finally:
+                # O4: counted even when the probe failed. A probe that spent
+                # nine seconds before falling over still spent them, and a
+                # metric that quietly omits the slow cases is worse than none.
+                timing["probe_ms"] += int((time.monotonic() - probe_t0) * 1000)
 
     started = datetime.now(timezone.utc)
     t0 = time.monotonic()
@@ -1014,10 +1067,17 @@ async def crawl_site(
         1 for n in nodes.values() if n.page.auth and n.page.auth.looks_empty
     )
 
+    missed = discovered - set(nodes)
+    if missed:
+        event("budget.exhausted", level="warning",
+              discovered_not_captured=len(missed), max_pages=max_pages,
+              examples=sorted(missed)[:10])
+
     return Crawl(
         schema_version=SCHEMA_VERSION,
         engine_version=__version__,
         crawl_id=uuid.uuid4().hex[:12],
+        run_id=getattr(run, "run_id", None),
         started_at=started.isoformat(),
         finished_at=finished.isoformat(),
         config=CrawlConfig(
@@ -1072,6 +1132,7 @@ async def crawl_site(
             auth_expired=bool(auth_state) and (
                 logged_out > 0 or (empty > 0 and empty * 2 >= len(nodes))
             ),
+            probe_ms=timing["probe_ms"],
         ),
         navigation=navigation,
         pages=ordered,

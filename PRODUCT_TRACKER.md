@@ -5,7 +5,7 @@ The single source of truth for **what exists, what's in flight, and what's next*
 `CHANGELOG.md` (version history) and `ROADMAP.md` (detailed specs + acceptance
 criteria). Keep this file updated as work lands (see *Maintenance* at the end).
 
-**Current product version: `0.15.0`** · Schema `0.1.0` · **533 tests passing**
+**Current product version: `0.18.0`** · Schema `0.1.0` · **598 tests passing**
 
 ## Legend
 
@@ -89,7 +89,7 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 |----|-----------|-------|-----|--------|-------|
 | QA.1 | Run on a real **public** site | crawl/analyze/probe a live external app from the user's machine | P0 | 🧪 | — |
 | QA.2 | Run on a real **authenticated** portal | `login` → `--auth-state` against an actual SSO/login portal | P0 | 🧪 | — |
-| QA.3 | Probe-on-by-default runtime | confirm a real portal still captures in acceptable time now that every crawl interacts | P0 | 🧪 | — |
+| QA.3 | Probe-on-by-default runtime | confirm a real portal still captures in acceptable time now that every crawl interacts — `O4` now reports the probe's share of the crawl, so this is a number to read rather than a judgement to make | P0 | 🧪 | ✔ |
 | QA.4 | Report reviewed as product documentation | someone unfamiliar with the portal reads `report.html` and can describe it | P0 | 🧪 | — |
 
 ---
@@ -99,11 +99,11 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 ### Observability — make a run accountable · EPIC-OBS
 | ID | Feature | Scope | Pri | Status |
 |----|---------|-------|-----|--------|
-| O1 | Run identity | one `run_id` per pipeline run; `crawl_id` becomes its child | P0 | 📋 |
-| O2 | Run event stream | `events.jsonl` — stages, pages, probes, refusals, budget, auth | P0 | 📋 |
-| O3 | Run manifest | `run.json` — who/what/when/config hash/versions/outcome | P0 | 📋 |
-| O4 | Stage metrics | per-stage durations + counts; answers `QA.3` from data | P1 | 📋 |
-| O5 | Run index | `runs.jsonl` at the output root, one line per run | P2 | 📋 |
+| O1 | Run identity | one `run_id` per pipeline run; `crawl_id` becomes its child | P0 | ✅ |
+| O2 | Run event stream | `events.jsonl` — stages, pages, probes, refusals, budget, auth | P0 | ✅ |
+| O3 | Run manifest | `run.json` — who/what/when/config hash/versions/outcome | P0 | ✅ |
+| O4 | Stage metrics | per-stage durations + counts; answers `QA.3` from data | P1 | ✅ |
+| O5 | Run index | `runs.jsonl` at the output root, one line per run | P2 | ✅ |
 
 ### Governance — state the rules a capture ran under · EPIC-GOV
 | ID | Feature | Scope | Pri | Status |
