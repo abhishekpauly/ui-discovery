@@ -75,6 +75,38 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 - **Tags `v0.12.0`–`v0.18.0`**, backfilled onto the commits that introduced each
   version, dated as those commits. The repo previously had none.
   `v0.1.0`–`v0.11.0` predate this git history and remain changelog-only.
+- **Three epics and thirteen items in the backlog**, from a review of current
+  web-crawl platform capabilities against this engine's principles. Specs only —
+  no source changed.
+  - `EPIC-MAP` (`M1`–`M3`) — the engine finds URLs one way, by walking what it
+    has already rendered, so a module nothing links to is invisible and *what a
+    crawl would do* cannot be known without running it. Sitemap ingestion, a
+    `map` command that reports every URL with the rule that included or excluded
+    it, and `--dry-run`.
+  - `EPIC-FRESH` (`L1`–`L4`) — `requested_url` and `final_url` have both existed
+    since V0 and no report has ever compared them, so a capture of forty login
+    screens looks healthy. Per-page capture verdicts with evidence, capture age
+    in the reports, and a `verify` command that asks an old capture whether it
+    is still true. `L1` is what `QA.4` has been waiting on.
+  - `EPIC-INTERACT` (`I1`–`I3`) — the probe explores but cannot be *told*
+    anything, so the screens behind a filter selection are exactly the ones a
+    capture misses. Declarative, config-declared step recipes that run through
+    `safety.py` **unchanged**: a recipe narrows what is touched and can never
+    widen it, and a refused step ends the recipe loudly. Carries
+    `principle-risk` deliberately.
+  - `H6`–`H8` — subdomain policy (`util.same_site` is exact-netloc today),
+    external links recorded as edges rather than dropped in silence, and a
+    ledger of what a crawl did *not* capture.
+  - `X8` — a decision table for the nine commands, costed in wall-clock and
+    pages.
+- **`ROADMAP.md` § K — Considered and declined.** What that same review rejected
+  and on which principle: hosted LLM extraction, natural-language browser
+  agents, arbitrary script execution against the page, webhooks and hosted job
+  APIs, URL discovery via third-party indexes, and following links off the
+  target domain. Written down so the proposals are not re-litigated every few
+  months, and so a *changed circumstance* is what reopens one.
+- Labels `epic:MAP`, `epic:FRESH`, `epic:INTERACT` and `sprint:5-discovery`,
+  `sprint:6-liveness`, `sprint:7-reachability`.
 
 ### Changed
 
@@ -94,10 +126,16 @@ this reason, and fails from `0.19.0` onward.
 
 ---
 
-`G1`–`G4` (governance) are specified in `ROADMAP.md` and tracked as `EPIC-GOV`.
+`G1`–`G4` (governance) are specified in `ROADMAP.md` and tracked as `EPIC-GOV`,
+followed by `M1`–`M3` + `H6`–`H8`, then `L1`–`L3`, then `I1`–`I3` — consecutive
+sprints rather than parallel ones, because all three contend `models.py`,
+`config.py`, `crawler.py` and `reports.py`.
+
 Still deliberately deferred: `X4` (incremental crawl) is a speculative
 optimization until crawl times actually hurt; `X6` (storage backend) waits on
-data volume — `O5`'s `runs.jsonl` is the deliberate non-database answer.
+data volume — `O5`'s `runs.jsonl` is the deliberate non-database answer. `L4` is
+the time-boxed spike that could end `X4`'s deferral with a number rather than a
+judgement, now that `O4` reports where a run's time goes.
 
 ---
 

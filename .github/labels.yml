@@ -87,6 +87,15 @@ labels:
   - name: epic:DEFER
     color: 5319e7
     description: Deliberately deferred until evidence justifies it (X4, X6)
+  - name: epic:MAP
+    color: 5319e7
+    description: Discovery — know the URL surface before crawling it (M1-M3)
+  - name: epic:FRESH
+    color: 5319e7
+    description: Liveness & freshness — a capture that says how current it is (L1-L4)
+  - name: epic:INTERACT
+    color: 5319e7
+    description: Reachability — reach the screens a link cannot (I1-I3)
 
   # --- area ----------------------------------------------------------------
   # One per module cluster in the repo map at the top of CLAUDE.md.
@@ -95,13 +104,17 @@ labels:
     description: extract.py / extraction.py / browser.py / extract.js
   - name: area:crawl
     color: 1d76db
-    description: crawl.py / crawler.py — the Crawlee crawl and its budgets
+    description: >-
+      crawl.py / crawler.py — the Crawlee crawl and its budgets. Also the URL
+      surface around it: discovery.py, map.py and verify.py (M1-M3, L3).
   - name: area:analysis
     color: 1d76db
     description: analyze.py / analysis/ — fingerprints, regions, components, nav
   - name: area:probe
     color: 1d76db
-    description: probe.py / interactions.py / network.py — interaction and network
+    description: >-
+      probe.py / interactions.py / network.py — interaction and network. Also
+      steps.py, the declarative reachability recipes (I1-I3).
   - name: area:safety
     color: b60205
     description: safety.py — the allow-list and the word classifier. Handle with care.
@@ -186,6 +199,15 @@ labels:
   - name: sprint:4-deferred
     color: 006b75
     description: Lands on sprint/4-deferred (X4, X6) — parked by default
+  - name: sprint:5-discovery
+    color: 006b75
+    description: Lands on sprint/5-discovery (M1-M3, H6-H8)
+  - name: sprint:6-liveness
+    color: 006b75
+    description: Lands on sprint/6-liveness (L1-L3)
+  - name: sprint:7-reachability
+    color: 006b75
+    description: Lands on sprint/7-reachability (I1-I3)
 
   # --- flags this repo specifically cares about ----------------------------
   - name: breaking-change

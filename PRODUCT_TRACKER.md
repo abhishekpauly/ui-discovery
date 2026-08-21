@@ -113,6 +113,28 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | G3 | Data-handling posture | what was deliberately not persisted, and why | P1 | 📋 |
 | G4 | Retention | `outputs.retention_days` + a `prune` command | P2 | 📋 |
 
+### Discovery — know the URL surface before crawling it · EPIC-MAP
+| ID | Feature | Scope | Pri | Status |
+|----|---------|-------|-----|--------|
+| M1 | Sitemap ingestion | `robots.txt` + `sitemap.xml` (+ index, `.gz`) seed the crawl; scope rules still decide | P1 | 📋 |
+| M2 | `map` command | `map.json` + `urls.txt`: every URL with its source, verdict, and the rule that decided it | P1 | 📋 |
+| M3 | Scope dry-run | `--dry-run` on `crawl`/`pipeline` — the map and the budget verdict, navigating nothing | P2 | 📋 |
+
+### Liveness & freshness — a capture that says how current it is · EPIC-FRESH
+| ID | Feature | Scope | Pri | Status |
+|----|---------|-------|-----|--------|
+| L1 | Per-page capture verdict | `captured`/`redirected`/`auth_wall`/`error`/`empty`/`unknown` + evidence | P0 | 📋 |
+| L2 | Capture age surfaced | timestamp + age lead the reports; `diff` warns on stale or unhealthy sides | P1 | 📋 |
+| L3 | `verify` command | re-check a prior capture cheaply: live / redirected / gone / auth-walled | P2 | 📋 |
+| L4 | Revisit `X4` with `O4` metrics | **spike** — does capture reuse pay? Deliverable is a recorded answer | P3 | 📋 |
+
+### Reachability — reach the screens a link cannot · EPIC-INTERACT
+| ID | Feature | Scope | Pri | Status |
+|----|---------|-------|-----|--------|
+| I1 | Declarative action steps | typed `click`/`select`/`check`/`press`/`scroll`/`wait_for`/`open_tab`; choice inputs only; `safety.py` unchanged | P1 | 📋 |
+| I2 | Recipes in the scope config | named step sequences per module; resulting screen captured as first-class | P1 | 📋 |
+| I3 | Recipes on the record | `recipe.*` events + a `recipes` section in `run.json`, refusals included | P1 | 📋 |
+
 
 ### Infrastructure baseline
 | ID | Feature | Scope | Pri | Status |
@@ -127,6 +149,9 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | H3 | Shadow DOM & iframe traversal | extract inside open shadow roots + same-origin frames | P1 | ✅ 0.12.0 |
 | H4 | Session-expiry detection | warn/abort when a saved session is stale, not silently crawl login | P1 | ✅ 0.12.0 |
 | H5 | Config file + capability adapters | per-site YAML: budgets, URL patterns, auth signals | P2 | ✅ 0.12.0 |
+| H6 | Subdomain policy | `same-host` (today) / `registrable-domain` / explicit list | P2 | 📋 |
+| H7 | External links recorded, never followed | the authorization boundary as a visible edge, not a silence | P2 | 📋 |
+| H8 | Crawl failure ledger | what was *not* captured, with reasons — a rollup of `discovered_not_captured` + `page.skipped` | P2 | 📋 |
 
 ### Deliverables (deterministic, high value)
 | ID | Feature | Scope | Pri | Status |
@@ -173,6 +198,7 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | X5 | Politeness | robots.txt + rate limit + concurrency cap | P2 | ✅ 0.12.0 |
 | X6 | Storage backend seam | interface so SQLite/Postgres can slot in later (no DB now) — deferred by ROADMAP until data volume demands it | P3 | 🗄️ deferred |
 | X7 | Repo governance | branching model (`BRANCHING.md`), release process + `release` workflow (`RELEASING.md`), labels as data (`.github/labels.yml`), retroactive tags `v0.12.0`–`v0.18.0`, project board | P2 | 🚧 |
+| X8 | "Which command do I run?" | decision table over the nine commands, costed in wall-clock and pages | P2 | 📋 |
 
 ---
 

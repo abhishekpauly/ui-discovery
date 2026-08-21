@@ -135,12 +135,35 @@ keep it from becoming a merge queue:
 | `sprint/1-governance` | `EPIC-GOV` | `G1` `G2` `G3` `G4` | `ROADMAP.md` § G |
 | `sprint/2-field-validation` | `EPIC-QA` | `QA.1` `QA.2` `QA.3` `QA.4` | `PRODUCT_TRACKER.md` § Needs real-world validation |
 | `sprint/3-devex` | `EPIC-DEVEX` | `X7` — labels, releases, branching, project board | `BRANCHING.md`, `RELEASING.md` |
-| `sprint/4-deferred` | `EPIC-DEFER` | `X4` `X6` | `ROADMAP.md` § E — both deliberately deferred |
+| `sprint/4-deferred` | `EPIC-DEFER` | `X4` `X6` `L4` | `ROADMAP.md` § E, § I — deliberately deferred |
 
 `sprint/4-deferred` exists so the deferral is visible rather than forgotten.
 ROADMAP defers `X4` until crawl times actually hurt and `X6` until data volume
 demands a database. Do not open work branches off it without a reason that has
-changed.
+changed — `L4` is the spike that could supply one for `X4`.
+
+### Queued sprints
+
+Three more are specified and not yet cut. They are listed here because their
+*order* is the decision, and it was made up front rather than at the end.
+
+| Branch | Epic | Items | Cut after |
+| --- | --- | --- | --- |
+| `sprint/5-discovery` | `EPIC-MAP` | `M1` `M2` `M3` `H6` `H7` `H8` | `sprint/1-governance` merges |
+| `sprint/6-liveness` | `EPIC-FRESH` | `L1` `L2` `L3` | 5 merges |
+| `sprint/7-reachability` | `EPIC-INTERACT` | `I1` `I2` `I3` | 6 merges |
+
+These three **do not run in parallel**, for the reason the section above gives:
+`models.py`, `config.py`, `crawler.py` and `reports.py` are contended across all
+of them, and three sprints rewriting the same four files is the merge queue this
+model exists to avoid. Sprint 5 deliberately absorbs `H6`–`H8` rather than
+leaving them for a hardening sprint, because they turn on the same same-site and
+scope decisions `M1` and `M2` do — splitting them across two branches would
+contend `crawler.py` and `util.py` for no gain.
+
+Within sprint 5, land the `config.py` and `models.py` shape first (`M1`), then
+build on it — the same rule point 2 above states for any sprint touching the
+contended files.
 
 ---
 

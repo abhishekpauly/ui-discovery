@@ -17,7 +17,18 @@ coverage, and unlock the two things this engine is ultimately for (docs + tests)
 
 `X0 → R1 → H1 → H2 → C1 → C2 → H3 → H4 → (H5 + R2 + S1) → V4 → V5`
 
-Since shipped, the order continues: **`X3` (CI) → `O1…O5` (observability, complete at 0.18.0) → `G1…G4` (governance)**. `X3` was blocked on a git remote existing; once it does, CI is what makes every later item cheap to verify.
+Since shipped, the order continues: **`X3` (CI) → `O1…O5` (observability, complete
+at 0.18.0) → `G1…G4` (governance) → `M1…M3` + `H6…H8` (discovery) → `L1…L3`
+(liveness) → `I1…I3` (reachability)**. `X3` was blocked on a git remote existing;
+once it does, CI is what makes every later item cheap to verify.
+
+The last three groups arrived together from a capability review and are sequenced
+by file contention rather than by value — `models.py`, `config.py`, `crawler.py`
+and `reports.py` are contended across all of them, so they run as consecutive
+sprints, not parallel ones (`BRANCHING.md` § *Running sprints in parallel*).
+Discovery goes first because `M2`'s dry run makes scoping every later run cheap;
+liveness next because `L1` is what `QA.4` is waiting on; reachability last
+because it is the largest and benefits from the seeds `M1` provides.
 
 X0 first — put the current green state under version control. R1 (library/SDK
 surface) is foundational and cheap — do it early so everything after is
@@ -124,6 +135,53 @@ V5 (LLM layer) are the ambitious, optional payoffs and come last.
 - **Acceptance.** A config file reproduces a flag-driven run; precedence tested.
 - **Files.** new `config.py`, all CLIs, `tests/`, README.
 - **Depends-on.** H1 (so query rules live in config).
+
+### H6 — Subdomain policy  ·  Effort: S
+- **Goal.** `util.same_site` compares `netloc` exactly, so a product split across
+  `app.example.com` and `admin.example.com` captures as two unrelated targets, or
+  more often as one target with half its modules silently out of scope.
+- **Build.** `scope.subdomains: same-host | registrable-domain | list` (default
+  `same-host`, today's behaviour). `same_site` grows a policy argument; the
+  registrable-domain case uses the `tldextract` instance `crawler.py` already
+  pins offline — do not add a second suffix source or reach the network for one.
+  `list` takes explicit hostnames, for the common case of two known hosts.
+- **Acceptance.** A two-host fixture crawls as one site under
+  `registrable-domain` and as one host under the default; an unrelated host is
+  never enqueued under any policy; `test_util.py` covers each policy directly.
+- **Files.** `util.py`, `config.py`, `crawler.py`, `fixtures/site/`, `tests/`.
+- **Depends-on.** none.
+
+### H7 — External links recorded, never followed  ·  Effort: S
+- **Goal.** An outbound link is currently dropped without trace, so a report
+  cannot distinguish "this product has no integrations" from "we were not
+  authorized past this point". The authorization boundary should be visible in
+  the capture, not inferred from its absence.
+- **Build.** When a discovered link fails the same-site test, record it as a
+  navigation edge carrying `external: true` and its label/region (the labelled
+  edge `F6.1` already builds), and **never enqueue it**. Surface a short
+  "leaves the product" table in the crawl report and in `relations.json`.
+- **Acceptance.** A fixture page linking to an off-site host yields exactly one
+  external edge with its label, zero requests to that host (assert on the
+  request log, not on the page count), and a report row naming it.
+- **Files.** `crawler.py`, `models.py`, `relations.py`, `reports.py`, `tests/`.
+- **Depends-on.** H6 (both turn on the same-site decision, so land them together).
+
+### H8 — Crawl failure ledger  ·  Effort: S
+- **Goal.** A capture reports what it found and says nothing about what it
+  missed. `Crawl.stats.discovered_not_captured` is a single integer; the URLs
+  behind it are gone. "Is this product 40 screens, or 60 screens with 20
+  failures?" is currently unanswerable from the artifacts.
+- **Build.** A `failures` artifact rolling up every URL that errored, timed out,
+  was refused by robots, or was dropped by budget, each with its reason and
+  depth. **Extend** `discovered_not_captured` and the `page.skipped` event `O2`
+  already emits — this is a rollup of existing facts, not a third tally. A
+  `Not captured` section in `summary.md`.
+- **Acceptance.** A crawl capped below the fixture site's page count lists every
+  dropped URL with reason `budget`; a fixture with a deliberately broken link
+  lists it with its status; the ledger's length equals
+  `discovered_not_captured`, asserted in the test rather than by eye.
+- **Files.** `crawler.py`, `models.py`, `inventory.py`, `reports.py`, `tests/`.
+- **Depends-on.** none. Pairs with `O2`.
 
 ---
 
@@ -318,6 +376,16 @@ labels, QA scenarios). It is **quarantined**:
 - **X6 — Storage backend seam  ·  M.** Keep JSON default, but add a thin
   interface so SQLite/Postgres can slot in later without touching the models
   (deferred until data volume demands it — do NOT add a DB server now).
+- **X8 — "Which command do I run?"  ·  S.** There are now nine commands and no
+  page that says which one answers which question, so the honest default is
+  `pipeline` and everything cheaper goes unused. A decision table in
+  `PRODUCT_GUIDE.md`: for each of `extract` `map` `crawl` `probe` `pipeline`
+  `analyze` `diff` `verify` `docgen`/`qagen` — the question it answers, what it
+  needs (a URL, a config, a prior capture), what it costs in wall-clock and
+  pages, and what it will *not* tell you. Costed in time and pages, because
+  those are what this engine actually spends. Ends with the two-line version:
+  *exploring → `map` then `crawl`; documenting → `pipeline`; checking a change
+  → `crawl` then `diff`.*
 
 ---
 
@@ -430,6 +498,250 @@ runtime dependency — principle #11 stands.
   a dry-run mode lists without deleting.
 - **Files.** `config.py`, new `prune.py`, `inventory.py`.
 - **Depends-on.** O5.
+
+---
+
+## H. Discovery — know the URL surface before crawling it  ·  `EPIC-MAP`
+
+The engine finds URLs one way: by walking what it has already rendered, plus
+`D4`'s deep-nav clicking. That is thorough and slow, and it cannot see a module
+the landing page never links to. Most products publish their own answer at
+`/sitemap.xml` and the engine has never read it.
+
+Two things follow. The obvious one is faster, wider coverage. The less obvious
+one matters more: **you cannot currently find out what a crawl would do without
+running it.** Scoping a real portal — `S1`'s whole purpose — is guesswork until
+the run finishes and the budget is spent.
+
+### M1 — Sitemap ingestion  ·  Effort: M
+- **Goal.** Seed the crawl from the target's own declaration of its URLs, so
+  modules that nothing links to are still captured.
+- **Build.** New `discovery.py`: read `Sitemap:` directives from `/robots.txt`
+  and fall back to `/sitemap.xml`; follow `<sitemapindex>` one level; handle
+  `.gz`; ignore `lastmod`/`priority` for now (they are `L2`'s business). Filter
+  through `ScopeRules.include/exclude` with the existing `util.path_matches` —
+  a sitemap is a suggestion, not an authorization. Feed the survivors into the
+  crawler's **existing `seeds` option**; do not add a second seeding path.
+  Config: `discovery.sitemap: include | skip | only` (default `include`;
+  `only` crawls the sitemap and follows nothing, which is the fast survey).
+  Malformed XML, a 404, or a sitemap naming another host is a warning and an
+  empty list, never an exception — plenty of products ship a broken one.
+- **Acceptance.** A fixture serving `robots.txt` + a gzipped sitemap index +
+  two child sitemaps yields every listed URL; an orphan page listed only in the
+  sitemap is captured; an out-of-scope entry and a foreign-host entry are both
+  dropped with a reason; `skip` reproduces today's crawl exactly; a 404 sitemap
+  warns and crawls normally.
+- **Files.** new `discovery.py`, `config.py`, `crawler.py`,
+  `fixtures/sitemap/`, `tests/`.
+- **Depends-on.** none. Note `needs-real-run`: a fixture proves the parsing, not
+  what production sitemaps are actually like.
+
+### M2 — `map` command  ·  Effort: S
+- **Goal.** Answer "what would you crawl, and why?" in seconds and without
+  navigating — the dry run that makes scoping a decision rather than a bet.
+- **Build.** `python -m ui_discovery.map <url> [--config scope.yaml]
+  [--search <glob>]` → `map.json` (a `UrlMap` model) + `urls.txt`. Every entry
+  carries `url`, `source` (`seed` | `sitemap` | `link` | `deep-nav`),
+  `in_scope`, and **which rule decided it** — an include pattern, an exclude
+  pattern, the subdomain policy, or the budget. `--search` is a deterministic
+  glob over the path; there is no relevance ranking and no scoring, because a
+  ranked list nobody can reproduce is worse than an unranked one.
+- **Acceptance.** Over `fixtures/site/` the map lists every URL the equivalent
+  crawl captures, and names the excluding rule for each URL it does not; two
+  runs produce byte-identical `urls.txt`; `--search '/admin/*'` narrows without
+  changing any verdict.
+- **Files.** new `map.py`, `models.py` (`UrlMap`, `MappedUrl`), `reports.py`,
+  `tests/`.
+- **Depends-on.** M1.
+
+### M3 — Scope dry-run  ·  Effort: S
+- **Goal.** The same answer from the command you were going to run anyway.
+- **Build.** `--dry-run` on `crawl` and `pipeline`: resolve the config, build the
+  map, write it, print the page count against the budget and which modules would
+  be truncated — then exit zero having navigated nothing. Reuses `map.py`; no
+  second implementation of scope resolution.
+- **Acceptance.** `crawl --dry-run` opens no browser (assert on the absence of a
+  launch, not on runtime), writes `map.json`, and reports the budget verdict; a
+  config whose budget cannot reach a declared module says so by name.
+- **Files.** `crawl.py`, `pipeline.py`, `map.py`, `tests/`.
+- **Depends-on.** M2.
+
+---
+
+## I. Liveness & freshness — a capture that says how current it is  ·  `EPIC-FRESH`
+
+Every artifact carries `extracted_at`, and nothing does anything with it. Worse,
+nothing distinguishes a screen that was captured from a screen that *redirected
+to the login page and was captured anyway*. `Page.requested_url` and
+`Page.final_url` have both existed since V0; no report has ever compared them.
+
+The failure mode is specific and has already happened: a session expires
+mid-crawl, and the capture is forty screenshots of a login form with a page
+count that looks healthy. `H4` catches the run-level case. This is the
+per-screen case, and it is what stands between `report.html` and `QA.4`.
+
+### L1 — Per-page capture verdict  ·  Effort: M
+- **Goal.** Every screen states whether it is the screen it claims to be, with
+  the evidence for that claim.
+- **Build.** A `verdict` on `Page`: `captured` | `redirected` | `auth_wall` |
+  `error` | `empty` | `unknown`, alongside the evidence it was drawn from —
+  requested vs final URL, HTTP status, title, element count, and whether
+  `auth.py`'s logged-out heuristic fired. **Extend the existing
+  `Page.auth: Optional[AuthCheck]` pattern rather than paralleling it**, and
+  reuse `auth.session_status` — the logged-out reasoning is written and tested.
+  `unknown` is a real verdict and must be used when the evidence is thin; a
+  confident wrong verdict is worse than an honest `unknown`. Roll the counts up
+  into `summary.md`, `report.html` and `run.json`.
+- **Acceptance.** Against the cookie-gated auth fixture with no session, every
+  page is `auth_wall` with the login URL as evidence, and the report leads with
+  that rather than burying it; a fixture 302 is `redirected` with both URLs; a
+  page with no elements is `empty`; the normal fixture site is entirely
+  `captured`. A capture where fewer than half the screens are `captured` says so
+  at the top of `summary.md`.
+- **Files.** `extraction.py`, `models.py`, `auth.py` (reuse), `reports.py`,
+  `inventory.py`, `tests/`.
+- **Depends-on.** none. Serves `QA.4` directly.
+
+### L2 — Capture age surfaced  ·  Effort: S
+- **Goal.** A reader should never have to open JSON to find out whether they are
+  looking at last Tuesday.
+- **Build.** Capture timestamp and elapsed age at the head of `summary.md` and
+  `report.html`. `diff` gains two warnings: the captures are more than
+  `n` days apart, and either side contains non-`captured` verdicts — because
+  diffing a healthy capture against a capture of the login page produces a
+  spectacular and entirely fictional list of removals.
+- **Acceptance.** Both reports state age in the first screenful; a diff of two
+  fixture captures with divergent timestamps warns; a diff where one side is all
+  `auth_wall` refuses to present its removals as findings.
+- **Files.** `reports.py`, `diff.py`, `inventory.py`, `tests/`.
+- **Depends-on.** L1.
+
+### L3 — `verify` command  ·  Effort: M
+- **Goal.** Ask an old capture whether it is still true, without paying for a
+  new one.
+- **Build.** `python -m ui_discovery.verify output/<slug>/` re-requests the
+  captured URLs — no probe, no analysis, no screenshots by default — and writes
+  `verify.json` + a report classifying each: still live, now redirects (with the
+  destination), gone, or auth-walled. Reuses `L1`'s verdict vocabulary rather
+  than inventing a second one. Honours `politeness`; a verify is still a crawl.
+- **Acceptance.** Verifying a fixture capture against an unchanged fixture
+  reports every URL live; against a fixture with one page removed and one moved,
+  exactly those two are flagged with the right verdicts; runtime is a small
+  fraction of the original crawl's, asserted as a page count rather than a
+  wall-clock threshold.
+- **Files.** new `verify.py`, `models.py`, `reports.py`, `tests/`.
+- **Depends-on.** L1. Note `needs-real-run`.
+
+### L4 — Revisit `X4` now that stage timings exist  ·  Effort: S  ·  **spike**
+- **Goal.** `X4` (incremental crawl) was deferred because "crawl times actually
+  hurt" was a judgement nobody could check. `O4` now reports per-stage
+  durations, so it is a number.
+- **Build.** Time-boxed investigation, not code: read `O4` metrics from real
+  runs, work out what fraction of a capture is unchanged between runs, and say
+  whether reuse would pay for its own complexity. Record the answer — including
+  "no" — in this ROADMAP.
+- **Acceptance.** A decision, with the numbers behind it, written down. If the
+  answer is yes, `X4` gets a real spec; if no, its deferral gets a reason with a
+  date on it rather than a shrug.
+- **Files.** `ROADMAP.md`. No source changes.
+- **Depends-on.** O4. Belongs to `sprint/4-deferred`.
+
+---
+
+## J. Reachability — reach the screens a link cannot  ·  `EPIC-INTERACT`
+
+The probe explores: it clicks whatever the allow-list permits and records what
+happens. That is the right default and it has a hard ceiling. It cannot be
+*told* anything. There is no way to express "the Orders detail screen exists,
+and to see it you choose *Last 90 days* in the range filter and open the first
+row" — so on a real portal the most valuable screens are exactly the ones the
+capture misses, because they sit behind a selection nobody made.
+
+**This epic carries `principle-risk` and the risk is worth naming precisely.**
+Principle #6 says nothing is clicked unless its type is on the allow-list *and*
+its label classifies `SAFE`. A recipe is a *narrowing* of that — it says which
+of the already-permitted controls to touch and in what order. It is never a
+widening, and there is no config key that makes it one. A recipe step that needs
+a control the safety gate refuses fails the recipe, loudly, and captures nothing.
+If a design discussion ever reaches "the recipe should be able to override the
+classifier", that is the point to stop and re-read `CLAUDE.md`.
+
+### I1 — Declarative action steps  ·  Effort: M
+- **Goal.** A typed, inspectable vocabulary for "do this, then this" — data, not
+  a script.
+- **Build.** A `Step` model in `models.py` and an executor in new `steps.py`:
+  `click` | `select` | `check` | `press` | `scroll` | `wait_for` | `open_tab`.
+  Targets are addressed the way the engine already describes controls — role
+  plus accessible name, falling back to `data-testid` — so a recipe is written
+  in the same vocabulary the reports print. **No free-text `fill`**: choice
+  inputs only (select, radio, checkbox, tab), because `CONTRIBUTING.md` forbids
+  persisting what someone typed and a step that types is a step that gets
+  committed with a value in it. Every step goes through `safety.py` unchanged.
+  A step that matches nothing, matches ambiguously, or is refused ends the
+  recipe with a reason — never a silent skip and never a "best guess".
+- **Acceptance.** Against `fixtures/forms/`, a four-step recipe reaches a state
+  the exploratory probe does not; a step naming a destructive control is refused
+  with the safety verdict recorded and the recipe abandoned; an ambiguous target
+  errors naming both candidates; `test_safety.py` still passes untouched, and a
+  test asserts that no recipe path can reach an interaction the allow-list
+  rejects.
+- **Files.** `models.py`, new `steps.py`, `interactions.py`, `tests/`.
+- **Depends-on.** V6 (`F6.3` control options — a `select` step needs the options).
+
+### I2 — Recipes in the scope config  ·  Effort: M
+- **Goal.** Reachability is site-specific knowledge, so it belongs in config,
+  per principle #7 — never in the core and never in a branch on a hostname.
+- **Build.** A `recipes:` block, per module: a name, a start URL, and an ordered
+  list of `I1` steps. After the crawler reaches the start URL it runs each
+  recipe and captures the resulting screen as first-class, reusing `uistate.py`'s
+  revealed-state capture and its "what opens it" provenance so the report can
+  say how the screen was reached. Recipes are budgeted like everything else and
+  count against `max_interactions`.
+- **Acceptance.** A recipe in `examples/` opens a screen no crawl reaches
+  otherwise, and it appears in `report.html` with its recipe named as the path
+  to it; with the recipe removed the screen is absent, which is what makes the
+  test meaningful; a recipe whose start URL is out of scope is refused at config
+  load, not at run time.
+- **Files.** `config.py`, `crawler.py`, `uistate.py`, `examples/`, `tests/`.
+- **Depends-on.** I1.
+
+### I3 — Recipes on the record  ·  Effort: S
+- **Goal.** A directed interaction is the most consequential thing this engine
+  does. It should be the best-documented, not the least.
+- **Build.** `recipe.started`, `recipe.step.executed`, `recipe.step.refused`
+  (carrying the safety verdict) and `recipe.finished`/`recipe.failed` into
+  `events.jsonl`; a `recipes` section in `run.json` listing each recipe, its
+  steps, and its outcome. Follows `O2`'s event shape exactly — no new mechanism.
+- **Acceptance.** A successful recipe and a refused one are both fully
+  reconstructible from `events.jsonl` alone; the manifest names every recipe
+  that ran and every one that failed, with the step it failed on.
+- **Files.** `run.py`, `models.py`, `pipeline.py`, `tests/`.
+- **Depends-on.** I2, O2, O3.
+
+### Explicitly not in this epic
+Natural-language instructions, arbitrary script execution against the page, form
+submission, and live-view streaming. The first two are refused on principle (see
+§ K); the third is `safety.submit_forms`, which stays off and stays a separate
+decision; the fourth needs a service and this engine does not have one.
+
+---
+
+## K. Considered and declined
+
+Capabilities that were reviewed against this engine and deliberately not
+adopted, with the principle that decided each. This section exists so the same
+proposals are not re-litigated every few months — and so that a *changed*
+circumstance, rather than a fresh enthusiasm, is what reopens one.
+
+| Capability | Declined because |
+| --- | --- |
+| **Hosted LLM extraction endpoints** — agentic discovery, schema-driven JSON extraction, natural-language "find me X across the web" | Principles #2 and #11. Observation must be reproducible and the runtime must need no API key. V5 is the only place AI is permitted, it is quarantined under `[semantic]`, and it never writes to the observation path. `tests/test_no_ai_runtime.py` enforces this. |
+| **Natural-language browser agents** — "describe what you want and it clicks" | Principles #2 and #6. Safety here is a deterministic two-gate allow-list; an LLM deciding what to click is precisely the thing principle #6 forbids. `EPIC-INTERACT` is the deterministic answer to the same need. |
+| **Arbitrary script execution against the page** (inline Playwright/JS/bash) | Principles #6 and #7. An escape hatch that can do anything is a safety envelope that guarantees nothing, and site-specific behaviour belongs in config or an `R3` adapter with a reviewable seam. |
+| **Live-view streaming, outbound webhooks, hosted job API, server-side result expiry** | Principle #11. The engine is self-contained and talks to nothing but the target. `events.jsonl` (`O2`) is the local equivalent of a webhook stream and is greppable, which a webhook is not. |
+| **URL discovery via search engines or a vendor-side cache** | Principle #11. `M1` takes the same idea from the only source that is legitimately ours to read: the target's own sitemap. |
+| **Following links off the target domain** | The authorization boundary. `G1` exists to make authorization mean something; crawling a host nobody authorized would undo it. `H7` records the edge instead, which answers the actual question. |
+| **Credit and cost accounting** | Not applicable — artifacts are local files. The cost that matters here is wall-clock and pages, which `O4` reports. Retention is `G4`. |
 
 ---
 
