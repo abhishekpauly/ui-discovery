@@ -67,9 +67,20 @@ no remote, no CI, no gate on `main`, and a backlog that lived only in markdown.
 - `*.local.yaml` joins `session.json` in `.gitignore`. A config naming a real
   internal host is reconnaissance and stays out of the repo.
 
+### Fixed
+
+- **The suite only ran under `python -m pytest`.** Ten test modules do
+  `from tests.conftest import Server`, which needs the repository root on
+  `sys.path`. `-m` puts the working directory there as a side effect; the
+  `pytest` console script does not — so the first CI run failed five of six
+  shards with `ModuleNotFoundError`. A root `conftest.py` fixes it, because
+  pytest prepends the directory of every conftest it collects. Latent since
+  the helper was first shared; CI is what surfaced it.
+
 ### Tests
 
-`ruff check` clean; 117 tests run without a browser.
+`ruff check` clean; 117 tests run without a browser. The suite now runs
+identically under `pytest` and `python -m pytest`.
 
 ---
 
