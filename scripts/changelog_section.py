@@ -28,6 +28,16 @@ PYPROJECT = ROOT / "pyproject.toml"
 # "## [0.18.0] — Where the time went (O4-O5)"  ->  version, title
 HEADING = re.compile(r"^## \[(?P<version>\d+\.\d+\.\d+)\](?:\s*[—-]\s*(?P<title>.*))?$")
 
+# Entries up to 0.14.0 used "— 2026-08-20  ·  <title>  (minor)". The date is the
+# tag's own metadata and the bump size is the version number, so neither belongs
+# in a release title; strip them so every Release reads the same way.
+_LEADING_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}\s*[·-]\s*")
+_TRAILING_KIND = re.compile(r"\s*\((?:major|minor|patch|hotfix|initial)\)\s*$", re.I)
+
+
+def clean_title(title: str) -> str:
+    return _TRAILING_KIND.sub("", _LEADING_DATE.sub("", title.strip())).strip()
+
 
 def declared_version(pyproject: Path = PYPROJECT) -> str:
     return tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
@@ -56,7 +66,7 @@ def sections(changelog: Path = CHANGELOG) -> dict[str, tuple[str, str]]:
         if match:
             close()
             current = match.group("version")
-            title = (match.group("title") or "").strip()
+            title = clean_title(match.group("title") or "")
             body = []
         elif line.startswith("## "):
             close()
@@ -105,7 +115,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     title, body = found[version]
-    emit((f"{version} — {title}" if title else version) if args.title else body)
+    if not args.title:
+        emit(body)
+    else:
+        emit(f"{version} — {title}" if title else version)
     return 0
 
 

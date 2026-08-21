@@ -45,14 +45,21 @@ LATEST=0.18.0
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 note() { printf '   %s\n' "$*"; }
 
-preflight() {
+# Only `labels`, `releases` and `project` talk to the API. Tagging is plain git,
+# and is deliberately runnable without gh so a fresh clone can rebuild the tag
+# history with nothing but a checkout.
+need_gh() {
   command -v gh >/dev/null || { echo "gh is not on PATH"; exit 2; }
-  gh auth status >/dev/null 2>&1 || { echo "gh is not authenticated. Run: gh auth login --scopes 'repo,read:org,project,workflow'"; exit 2; }
-  note "gh $(gh --version | head -1 | awk '{print $3}') as $(gh api user -q .login)"
+  gh auth status >/dev/null 2>&1 || {
+    echo "gh is not authenticated. Run:"
+    echo "  gh auth login --scopes \"repo,read:org,project,workflow\""
+    exit 2
+  }
 }
 
 do_labels() {
   say "Labels"
+  need_gh
   "$PY" scripts/sync_labels.py --repo "$NWO"
 }
 
@@ -85,6 +92,7 @@ do_tags() {
 
 do_releases() {
   say "Releases"
+  need_gh
   local notes title flags
   notes=$(mktemp)
   for entry in "${TAG_MAP[@]}"; do
@@ -106,6 +114,7 @@ do_releases() {
 
 do_project() {
   say "Project board"
+  need_gh
   local number
   number=$(gh project list --owner "$OWNER" --format json \
            | "$PY" -c "import json,sys;print(next((p['number'] for p in json.load(sys.stdin)['projects'] if p['title']=='$PROJECT_TITLE'),''))")
@@ -145,7 +154,6 @@ do_project() {
 }
 
 main() {
-  preflight
   local sections=("$@")
   [ ${#sections[@]} -eq 0 ] && sections=(labels tags releases project)
   for section in "${sections[@]}"; do
