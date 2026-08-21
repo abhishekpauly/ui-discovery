@@ -107,8 +107,40 @@ def test_pipeline_produces_every_artifact(serve, tmp_path):
     produced = {p.name for p in out.iterdir()}
     for expected in ("crawl.json", "report.md", "analysis.json",
                      "semantics.json", "documentation.json", "qa.json",
-                     "generated_tests.py"):
+                     "generated_tests.py", "run.json", "events.jsonl"):
         assert expected in produced, f"{expected} missing from {sorted(produced)}"
+
+
+def test_a_pipeline_run_says_what_it_cost(serve, tmp_path):
+    """O4/O5 end to end: the timings reach the summary a person opens, and the
+    run reaches the index that spans every run."""
+    import json as _json
+
+    from ui_discovery.inventory import METRICS_HEADING
+    from ui_discovery.run import read_index
+
+    site = serve("fixtures/site")
+    assert _run_pipeline([site.url("index.html"), "--output", str(tmp_path),
+                          "--max-depth", "1", "--max-pages", "3"]) == 0
+
+    out = _capture_dir(tmp_path)
+    manifest = _json.loads((out / "run.json").read_text(encoding="utf-8"))
+    metrics = manifest["metrics"]
+    assert metrics["pages"] >= 1
+    assert metrics["ms_per_page"] and metrics["stage_ms"]["crawl"] > 0
+    # Every stage that ran said what it produced, not merely how long it took.
+    assert metrics["counts"]["crawl"]["pages"] == metrics["pages"]
+
+    summary = (out / "summary.md").read_text(encoding="utf-8")
+    assert METRICS_HEADING in summary
+    assert manifest["run_id"] in summary
+    assert "## Files in this folder" in summary   # splicing cost nothing
+
+    # The index sits above the capture, so it spans runs rather than one folder.
+    rows = read_index(str(tmp_path))
+    assert len(rows) == 1
+    assert rows[0]["run_id"] == manifest["run_id"]
+    assert rows[0]["folder"] == out.name
 
 
 def test_pipeline_respects_skip(serve, tmp_path):

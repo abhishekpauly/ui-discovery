@@ -403,7 +403,8 @@ def metrics_markdown(manifest: dict[str, Any]) -> str:
     if pages and ms_per_page:
         rate = m.get("pages_per_minute")
         lines.append(
-            f"**{pages} screens in {_duration(m.get('crawl_ms'))}** — "
+            f"**{pages} screen{'' if pages == 1 else 's'} in "
+            f"{_duration(m.get('crawl_ms'))}** — "
             f"{_duration(ms_per_page)} per screen"
             + (f", {rate} screens/minute." if rate else "."))
     probe_ms = m.get("probe_ms") or 0
