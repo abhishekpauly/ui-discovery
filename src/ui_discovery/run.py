@@ -43,12 +43,22 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, Iterator, Optional, TypeVar
 
 from pydantic import ValidationError
 
 from . import SCHEMA_VERSION, __version__
-from .models import RunEvent, RunManifest, SafetyEnvelope, StageRecord
+from .models import (
+    DataHandling,
+    RunEvent,
+    RunManifest,
+    SafetyEnvelope,
+    StageRecord,
+)
+
+# The manifest sections a run *describes* rather than measures — `G2`'s safety
+# envelope and `G3`'s data-handling posture. Both are validated the same way.
+_Section = TypeVar("_Section", SafetyEnvelope, DataHandling)
 
 EVENTS_FILE = "events.jsonl"
 MANIFEST_FILE = "run.json"
@@ -318,19 +328,26 @@ class RunContext:
             "probe_share_of_crawl_pct": pct(probe_ms, crawl_ms) if probe_ms else None,
         }
 
-    def _safety(self) -> Optional[SafetyEnvelope]:
-        """G2: the safety envelope, if the run got far enough to know it.
+    def _described(self, key: str, model: type[_Section]) -> Optional[_Section]:
+        """A manifest section the run described, validated.
 
-        Tolerant of a malformed envelope on purpose. This is a *description*
-        of the rules, not the rules themselves — the gates in `safety.py` are
-        what actually refuse a control — so a manifest that cannot describe
-        them must not be the reason a capture fails at the last step.
+        Covers `G2`'s safety envelope and `G3`'s data-handling posture, which
+        are the same shape of thing: a *description* of what the engine did,
+        assembled by the modules that did it.
+
+        Tolerant on purpose, and for a reason that applies to both. The gates
+        in `safety.py` are what actually refuse a control; the redactions in
+        `network`, `browser` and `extraction` are what actually drop the data.
+        These sections only describe them — so one that will not validate is
+        dropped rather than allowed to take a capture down at the last step,
+        and a missing section reads as `null` rather than as a guarantee that
+        was never applied.
         """
-        envelope = self._meta.get("safety")
-        if not envelope:
+        payload = self._meta.get(key)
+        if not payload:
             return None
         try:
-            return SafetyEnvelope.model_validate(envelope)
+            return model.model_validate(payload)
         except ValidationError:
             return None
 
@@ -357,7 +374,8 @@ class RunContext:
             authorized=self._meta.get("authorized"),
             authorized_by=self._meta.get("authorized_by"),
             environment=self._meta.get("environment"),
-            safety=self._safety(),
+            safety=self._described("safety", SafetyEnvelope),
+            data_handling=self._described("data_handling", DataHandling),
             auth_used=bool(self._meta.get("auth_used")),
             auth_source=self._meta.get("auth_source"),
             auth_expires_in_hours=self._meta.get("auth_expires_in_hours"),

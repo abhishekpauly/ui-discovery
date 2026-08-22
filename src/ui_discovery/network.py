@@ -42,6 +42,35 @@ def redact_url(url: str, extra_keys: tuple[str, ...] = ()) -> str:
     return urlunparse(parts._replace(query=urlencode(redacted)))
 
 
+def describe_redaction(extra_keys: tuple[str, ...] = ()) -> dict:
+    """G3: what network observation refuses to keep, as plain data.
+
+    Lives here so the description cannot drift from the behaviour: the same
+    module that drops the data says what it dropped. A manifest assembling this
+    from its own idea of the rules would be a second source of truth, and the
+    second one is always the one that goes stale.
+    """
+    return {
+        "never_persisted": [
+            "request headers (so bearer tokens and cookies never enter the model)",
+            "response headers (so Set-Cookie never enters the model)",
+            "request bodies",
+            "response bodies",
+        ],
+        "redactions": [
+            {
+                "rule": "network.query_values",
+                "applies_to": "recorded request URLs",
+                "detail": (
+                    "values of query keys matching token / api_key / secret / "
+                    "password / auth / session / signature / code / bearer are "
+                    "replaced with REDACTED"),
+            },
+        ],
+        "network_keys_extra": sorted(k.lower() for k in extra_keys),
+    }
+
+
 def endpoint_pattern(url: str) -> str:
     """Normalize identifier-looking path segments to `:id` so distinct records
     collapse onto a single endpoint template."""

@@ -529,6 +529,32 @@ in every manifest is noise a reader learns to skip, and `engine_version` already
 pins them. What a manifest cannot otherwise tell you is what *this* operator
 added on top — which is the part that varies, and so the part that is named.
 
+### What a capture deliberately does not keep
+
+`run.json`'s `data_handling` block makes the privacy guarantees auditable
+instead of folklore, and separates two different strengths of promise:
+
+| Key | What it holds |
+| --- | --- |
+| `never_persisted` | Request/response headers and bodies, and the session — data that never enters the model, so there is nothing to redact |
+| `redactions` | Data the engine *sees* and drops, each with a stable `rule` id, where it applies, and what it drops |
+| `network_keys_extra` | Query keys this config added to the sensitive-key match — additive only |
+| `value_recorded_for` | The input types whose value **is** kept, because it is a choice rather than something a person typed |
+
+```bash
+# What did this capture refuse to keep?
+jq -r '.data_handling.redactions[] | "\(.rule): \(.detail)"' run.json
+```
+
+Each rule is reported by the module that enforces it, and `value_recorded_for`
+is read out of `extract.js` rather than restated — so the manifest cannot
+describe a guarantee the engine does not actually make.
+
+> **This covers text, not pixels.** A screenshot renders a typed value as an
+> image, so a capture of an authenticated portal still contains readable
+> customer data in its screenshots. Masking those is `G5`/`G6` on the roadmap;
+> until then, treat capture folders as sensitive and see `outputs.retention_days`.
+
 Events cover `run.started`, `stage.started`/`finished`/`skipped`,
 `page.captured`, `page.skipped` (with the budget that stopped it),
 `probe.executed`, `probe.refused` (with the safety verdict and the reason),

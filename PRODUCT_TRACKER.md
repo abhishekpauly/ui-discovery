@@ -5,7 +5,7 @@ The single source of truth for **what exists, what's in flight, and what's next*
 `CHANGELOG.md` (version history) and `ROADMAP.md` (detailed specs + acceptance
 criteria). Keep this file updated as work lands (see *Maintenance* at the end).
 
-**Current product version: `0.18.1`** · Schema `0.1.0` · **641 tests** — 638 passing, 3 skipped
+**Current product version: `0.18.1`** · Schema `0.1.0` · **655 tests** — 652 passing, 3 skipped
 
 ## Legend
 
@@ -110,7 +110,7 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 |----|---------|-------|-----|--------|
 | G1 | Authorization enforced | `authorized` / `environment` stop being inert metadata — a `prod` config without `authorized: true` + `authorized_by` exits 3 before anything opens | P0 | ✅ |
 | G2 | Safety envelope recorded | allow-list in full, word counts *in force* + this config's additions, `never_touch`, `submit_forms`, resolved probe profiles | P1 | ✅ |
-| G3 | Data-handling posture | what was deliberately not persisted, and why | P1 | 📋 |
+| G3 | Data-handling posture | `never_persisted` vs `redactions`, each rule named by the module that enforces it; value types read from `extract.js`, not mirrored | P1 | ✅ |
 | G4 | Retention | `outputs.retention_days` + a `prune` command | P2 | 📋 |
 
 

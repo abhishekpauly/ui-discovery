@@ -257,6 +257,33 @@ def redact_aria_snapshot(tree: str | None) -> str | None:
     )
 
 
+def describe_redaction() -> dict:
+    """G3: what the ARIA snapshot refuses to carry.
+
+    Beside `redact_aria_snapshot` rather than in the manifest builder, so the
+    roles named here are the roles actually stripped — `_TYPED_VALUE_ROLES` is
+    read, not restated.
+    """
+    return {
+        "redactions": [
+            {
+                "rule": "aria.typed_values",
+                "applies_to": "the ARIA snapshot on every page",
+                # The illustration uses a placeholder rather than a
+                # password-shaped literal: this string ends up in every
+                # manifest, and a capture that contains something looking like
+                # a credential is exactly what a scan of these folders is for.
+                "detail": (
+                    "Playwright renders typed text inline "
+                    '(`- textbox "API token": <what the user typed>`); the '
+                    f"value is stripped for {' and '.join(_TYPED_VALUE_ROLES)} "
+                    "roles, keeping the role and accessible name so the page "
+                    "shape is unchanged"),
+            },
+        ],
+    }
+
+
 def aria_snapshot(page: Page) -> str | None:
     """The browser's own ARIA snapshot (YAML) for the document body.
 
