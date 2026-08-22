@@ -603,14 +603,28 @@ runtime dependency — principle #11 stands.
   `models.py`, `pipeline.py`.
 - **Depends-on.** O3.
 
-### G4 — Retention  ·  Effort: S
+### G4 — Retention  ·  ✅ SHIPPED
 - **Goal.** Captures contain screenshots of authenticated internal screens and
   currently accumulate in Downloads forever.
-- **Build.** `outputs.retention_days` in the scope config plus a `prune`
-  command that deletes captures past it, reporting what it removed.
-- **Acceptance.** Prune removes only expired run folders and says which;
-  a dry-run mode lists without deleting.
-- **Files.** `config.py`, new `prune.py`, `inventory.py`.
+- **Build.** `outputs.retention_days` (default `0` = off) plus
+  `python -m ui_discovery.prune`. A folder is a capture **iff it contains
+  `run.json`**; age comes from that manifest and never from the filesystem, so
+  a capture that cannot be dated is kept *and reported* rather than guessed at.
+  `runs.jsonl` is never rewritten — it is append-only history, and the index
+  recording that a run happened outlives the folder.
+- **Departure from this spec, deliberate.** Listing is the **default** and
+  `--delete` is required to remove anything, which is the inverse of what this
+  item asked for. Every other destructive decision in the engine refuses by
+  default and must be asked twice; a command that irreversibly deletes a
+  directory tree because someone mistyped `--output` would be the one place
+  that pattern did not hold.
+- **Acceptance.** Prune removes only expired run folders and says which; the
+  listing is provably the same set the delete takes.
+  `tests/test_g4_retention.py` (26), including two that run the real pipeline
+  and prune its output — the only way to prove `prune` reads the manifest shape
+  the engine actually writes.
+- **Files.** `config.py`, new `prune.py`, `__init__.py` (library surface).
+  `inventory.py` was untouched: nothing there needed to change.
 - **Depends-on.** O5.
 
 ### G5 — Redact the people out of the model  ·  Effort: M  ·  **P0**

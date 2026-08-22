@@ -20,6 +20,43 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ### Added
 
+- **`G4` Retention — captures stop living forever.** A capture of an
+  authenticated portal is a folder of screenshots of somebody's internal
+  screens. They land in Downloads and stay there, and `G3` is explicit that the
+  redaction guarantees cover text and not pixels — so the only thing between a
+  stale capture and an indefinite copy of customer data was somebody
+  remembering to delete it.
+
+  `outputs.retention_days` (default `0`, meaning off) plus a new command:
+
+  ```bash
+  python -m ui_discovery.prune                     # what would go
+  python -m ui_discovery.prune --days 30 --delete  # actually remove them
+  ```
+
+  **Listing is the default; `--delete` is required to remove anything.** That
+  is the inverse of what the ROADMAP asked for, and the departure is
+  deliberate: every other destructive decision here refuses by default and has
+  to be asked twice — the probe needs two independent gates to agree before it
+  clicks, and forms are never submitted at all. A command that irreversibly
+  deleted a directory tree because someone mistyped `--output` would be the one
+  place that pattern did not hold.
+
+  Three rules keep it from taking the wrong thing:
+
+  - **A folder is a capture only if it contains `run.json`.** Anything else in
+    the output root belongs to somebody and is never touched, or even counted.
+  - **Age comes from the manifest, never the filesystem.** A capture whose
+    manifest will not parse or carries no timestamp is kept *and reported* —
+    a capture nobody can date is one retention would otherwise let accumulate
+    in silence, which is the exact failure this item exists to fix.
+  - **`runs.jsonl` is left alone.** Append-only history (principle #4): the
+    index records that a run happened, the folder is merely its artifact.
+    Rewriting it to hide a pruned run would destroy the trend `O5` exists for.
+
+  `find_captures` and `prune_captures` are on the public library surface, so
+  a scheduled prune needs no CLI.
+
 - **`G3` The data-handling posture is on the record.** The engine drops typed
   values, password fields, request bodies and sensitive query values. Every one
   of those guarantees lived in a docstring and a `CONTRIBUTING.md` bullet — so

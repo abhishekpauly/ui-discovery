@@ -135,6 +135,11 @@ class Outputs(BaseModel):
     # snapshots exist to compare with `diff` (C1).
     keep_history: bool = False
     run_label: Optional[str] = None
+    # G4: how long a capture may live before `prune` will offer to remove it.
+    # Zero means retention is off, which is the default — a capture is somebody's
+    # deliverable, and an engine that started deleting them because a config
+    # gained a key would be worse than one that never deletes at all.
+    retention_days: int = 0
 
 
 class AdapterSpec(BaseModel):
