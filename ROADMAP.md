@@ -415,14 +415,26 @@ runtime dependency — principle #11 stands.
 - **Files.** `run.py`, `safety.py`, `models.py`, `pipeline.py`.
 - **Depends-on.** O3.
 
-### G3 — Data-handling posture  ·  Effort: S
+### G3 — Data-handling posture  ·  ✅ SHIPPED
 - **Goal.** The engine redacts typed values, password fields and sensitive
   query keys. That guarantee is currently folklore; make it auditable.
-- **Build.** A manifest section recording what was deliberately not persisted,
-  and the redaction rules in force.
+- **Build.** `RunManifest.data_handling` (`DataHandling`): `never_persisted`
+  (headers, bodies, the session — data that never enters the model) kept apart
+  from `redactions` (data the engine sees and drops), each named with a stable
+  `rule` id, where it applies and what it drops. Every rule is reported by the
+  module that enforces it — `network`, `browser`, `extraction` — and the input
+  types are **read out of `extract.js`** rather than mirrored, so the
+  description cannot drift from the behaviour.
 - **Acceptance.** The manifest names each redaction; a grep for known secret
   shapes over a whole capture returns nothing.
-- **Files.** `run.py`, `browser.py`, `network.py`.
+  `tests/test_g3_data_handling.py` (14) greps a real capture of
+  `fixtures/forms/` — which plants a password and an email for the purpose —
+  and separately asserts that choice-shaped values *survive*, because a capture
+  that dropped everything would pass the grep and be worthless.
+- **Known limitation.** Text artifacts only. A screenshot renders a typed value
+  as pixels, so no grep can speak for it; `G5`/`G6` are what close that.
+- **Files.** `run.py`, `browser.py`, `network.py`, `extraction.py`,
+  `models.py`, `pipeline.py`.
 - **Depends-on.** O3.
 
 ### G4 — Retention  ·  Effort: S

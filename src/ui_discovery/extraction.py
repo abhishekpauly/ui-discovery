@@ -7,6 +7,7 @@ a screenshot → assemble and validate the Pydantic model.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -25,6 +26,58 @@ from .taxonomy import classify
 JS = (Path(__file__).with_name("extract.js")).read_text(encoding="utf-8")
 
 DEFAULT_VIEWPORT = {"width": 1440, "height": 900}
+
+
+def _js_string_set(name: str) -> list[str]:
+    """Read a `const NAME = new Set([...])` literal out of `extract.js`.
+
+    G3 has to state which input types keep their value, and that list lives in
+    the JS because that is where the decision is enforced. Parsing it back is
+    unusual, and it is still the right call: mirroring the list in Python would
+    create a second copy, and the copy that drifts is always the one nobody
+    runs. Here there is exactly one source, and a rename raises rather than
+    silently reporting an empty guarantee.
+    """
+    match = re.search(rf"const\s+{re.escape(name)}\s*=\s*new Set\(\[(.*?)\]\)",
+                      JS, re.S)
+    if not match:
+        raise RuntimeError(
+            f"{name} is no longer a `new Set([...])` literal in extract.js. "
+            f"G3's data-handling posture reads it from there; update "
+            f"`_js_string_set` rather than duplicating the list.")
+    return sorted(re.findall(r'"([^"]+)"', match.group(1)))
+
+
+def describe_redaction() -> dict:
+    """G3: what the per-element pass refuses to keep.
+
+    The types are read from `extract.js` rather than restated, so this cannot
+    describe a guarantee the extractor does not actually make.
+    """
+    choice_types = _js_string_set("VALUE_SAFE_TYPES")
+    return {
+        "redactions": [
+            {
+                "rule": "element.typed_values",
+                "applies_to": "Element.value on every input and textarea",
+                "detail": (
+                    "only choice-shaped values are recorded "
+                    f"({', '.join(choice_types)}); free text, email, search, "
+                    "tel, url and password values are dropped, keeping only "
+                    "`has_value` — whether the field arrives pre-filled is a "
+                    "fact about the UI, what it says is a fact about a person"),
+            },
+            {
+                "rule": "element.value_attribute",
+                "applies_to": "Element.attributes['value']",
+                "detail": (
+                    "kept only where it names a control or a choice; dropped "
+                    "on every textarea and on any input whose type is not "
+                    f"one of {', '.join(_js_string_set('VALUE_ATTR_SAFE_TYPES'))}"),
+            },
+        ],
+        "value_recorded_for": choice_types,
+    }
 
 
 def _origin(url: str) -> tuple[str, str]:

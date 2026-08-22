@@ -20,6 +20,45 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ### Added
 
+- **`G3` The data-handling posture is on the record.** The engine drops typed
+  values, password fields, request bodies and sensitive query values. Every one
+  of those guarantees lived in a docstring and a `CONTRIBUTING.md` bullet — so
+  a reader had to take the engine's word for it, and a regression would have
+  been invisible in exactly the artifact it damaged.
+
+  `run.json` gains a `data_handling` block, and it keeps two different
+  strengths of promise apart on purpose:
+
+  - **`never_persisted`** — request and response headers, request and response
+    bodies, and the session itself. This data never enters the model, so there
+    is nothing to redact and nothing to leak.
+  - **`redactions`** — data the engine *sees* and deliberately drops on the way
+    out, each with a stable `rule` id, where it applies, and what it drops.
+    That is the weaker guarantee and the one worth enumerating, because it is
+    the one a change to the extractor could silently break.
+
+  Four rules are named: `network.query_values`, `element.typed_values`,
+  `element.value_attribute` and `aria.typed_values`.
+
+  **Every rule is reported by the module that enforces it** — `network.py`,
+  `browser.py` and `extraction.py` each describe their own — and `pipeline.py`
+  only orders and merges them. The moment the manifest starts describing a rule
+  itself is the moment it can disagree with the engine.
+
+  The input types whose value *is* kept are **read out of `extract.js`** rather
+  than mirrored in Python. Parsing a JS constant back is unusual and it is the
+  right call: a mirrored list is a second copy, and the copy that drifts is
+  always the one nobody runs. A rename raises with a message naming the
+  constant, rather than silently reporting an empty guarantee — which would be
+  the worst outcome available, a manifest claiming nothing is redacted while
+  the extractor still redacts.
+
+  **Known limitation, stated because it matters.** The acceptance grep covers
+  text artifacts. A screenshot renders a typed value as pixels, so no grep can
+  speak for it — a capture of an authenticated portal is still full of readable
+  customer data in its images. `G5` and `G6` are what close that, and this item
+  is the thing that makes the gap visible rather than assumed.
+
 - **`G2` The safety envelope is on the record.** The engine has always refused
   destructive controls. *Which* controls, and on whose say-so, was inferable
   only from the engine version — so "the probe never clicked Delete" was
