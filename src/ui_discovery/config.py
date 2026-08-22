@@ -36,6 +36,25 @@ class ScopeRules(BaseModel):
     include: list[str] = Field(default_factory=list)  # empty = everything
     exclude: list[str] = Field(default_factory=list)
 
+    # H6: how much of a hostname counts as the same site. Default is today's
+    # behaviour, so nothing moves for a config that does not mention it.
+    #   same-host           — exact netloc, port included
+    #   registrable-domain  — subdomains unify (app./admin. of one domain)
+    #   list                — the explicit hosts below, plus the start URL's own
+    subdomains: str = "same-host"
+    subdomain_hosts: list[str] = Field(default_factory=list)
+
+    @field_validator("subdomains")
+    @classmethod
+    def _known_policy(cls, value: str) -> str:
+        from .util import SUBDOMAIN_POLICIES
+
+        if value not in SUBDOMAIN_POLICIES:
+            raise ValueError(
+                f"scope.subdomains: {value!r} is not one of "
+                f"{', '.join(SUBDOMAIN_POLICIES)}.")
+        return value
+
 
 class AuthSettings(BaseModel):
     required: bool = False

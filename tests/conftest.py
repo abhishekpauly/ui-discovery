@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import http.server
+import pathlib
 import socket
 import threading
 from pathlib import Path
@@ -57,7 +58,12 @@ def serve():
     servers: list[Server] = []
 
     def _serve(rel_dir: str, port: int | None = None) -> Server:
-        s = Server(ROOT / rel_dir, port=port)
+        # Repo-relative by default; an absolute path lets a test serve a
+        # directory it generated. `H6` needs that: a fixture that links to a
+        # second host has to know the port, and a port cannot be committed.
+        directory = pathlib.Path(rel_dir)
+        s = Server(directory if directory.is_absolute() else ROOT / rel_dir,
+                   port=port)
         servers.append(s)
         return s
 

@@ -175,7 +175,7 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | H3 | Shadow DOM & iframe traversal | extract inside open shadow roots + same-origin frames | P1 | ✅ 0.12.0 |
 | H4 | Session-expiry detection | warn/abort when a saved session is stale, not silently crawl login | P1 | ✅ 0.12.0 |
 | H5 | Config file + capability adapters | per-site YAML: budgets, URL patterns, auth signals | P2 | ✅ 0.12.0 |
-| H6 | Subdomain policy | `same-host` (today) / `registrable-domain` / explicit list | P2 | 📋 |
+| H6 | Subdomain policy | `same-host` (today) / `registrable-domain` / explicit list | P2 | ✅ |
 | H7 | External links recorded, never followed | the authorization boundary as a visible edge, not a silence | P2 | 📋 |
 | H8 | Crawl failure ledger | what was *not* captured, with reasons — a rollup of `discovered_not_captured` + `page.skipped` | P2 | 📋 |
 | H9 | Exclude the furniture | `capture.exclude_selectors` — cookie banners and chat widgets out of the model, counted not silent | P2 | 📋 |

@@ -58,6 +58,7 @@ from .safety import (
 )
 from .uistate import component_filename, component_targets
 from .util import (
+    SAME_HOST,
     bfs_depths,
     module_for_path,
     normalize_url,
@@ -530,6 +531,10 @@ class CrawlOptions:
     # Scope (S1)
     include: list[str] | None = None
     exclude: list[str] | None = None
+    # H6: how much of a hostname counts as the same site. Default is exact
+    # netloc — today's behaviour — so an unchanged config crawls identically.
+    subdomains: str = SAME_HOST
+    subdomain_hosts: tuple[str, ...] = ()
     # Capabilities (R2)
     # Off for the *library*, on for the *product*. `crawl_site(url)` is the
     # low-level API: a programmatic caller should have to ask before the engine
@@ -683,6 +688,7 @@ async def crawl_site(
     policy, redact_keys = opts.policy, opts.redact_keys
     adapters = opts.adapters
     seeds, reveal_nav, deep_nav = opts.seeds, opts.reveal_nav, opts.deep_nav
+    subdomains, subdomain_hosts = opts.subdomains, tuple(opts.subdomain_hosts)
     max_requests_per_minute = opts.max_requests_per_minute
     max_concurrency = opts.max_concurrency
     respect_robots_txt = opts.respect_robots_txt
@@ -1016,6 +1022,8 @@ async def crawl_site(
             dedupe_queries=dedupe_queries,
             drop_params=drop_params,
             hash_routes=hash_routes,
+            subdomains=subdomains,
+            subdomain_hosts=subdomain_hosts,
         )
         out_links = [link["url"] for link in labelled]
         edges[url] = out_links
@@ -1046,9 +1054,16 @@ async def crawl_site(
             # Explicit unique_key, because Crawlee's default strips the
             # fragment — which would collapse every `#/route` of a
             # hash-routed SPA into a single request (H1).
-            await context.enqueue_links(requests=[
-                Request.from_url(u, unique_key=u) for u in queueable
-            ])
+            await context.enqueue_links(
+                requests=[Request.from_url(u, unique_key=u) for u in queueable],
+                # H6: Crawlee applies its own same-hostname filter on top of
+                # the list it is given, which would silently drop a second
+                # host the scope config deliberately admitted. Our gate has
+                # already run — `queueable` is `_in_scope` *and* same-site
+                # under the configured policy — so this defers to it rather
+                # than filtering twice by two different rules.
+                strategy="all",
+            )
 
         # H2: probe last — after extraction, the screenshot and link discovery
         # have all seen the pristine page. Interactions only ever mutate state

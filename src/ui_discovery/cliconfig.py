@@ -238,6 +238,9 @@ def crawl_options(scope: Scope, args) -> CrawlOptions:  # noqa: ANN001
         state_capture=default_profile.state_capture,
         include=scope.scope.include,
         exclude=scope.scope.exclude,
+        # H6: a product split across app./admin. is one product.
+        subdomains=scope.scope.subdomains,
+        subdomain_hosts=tuple(scope.scope.subdomain_hosts),
         screenshots=pick(
             False if getattr(args, "no_screenshots", None) else None,
             scope.capabilities.screenshots, True),
