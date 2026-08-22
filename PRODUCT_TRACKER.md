@@ -5,7 +5,7 @@ The single source of truth for **what exists, what's in flight, and what's next*
 `CHANGELOG.md` (version history) and `ROADMAP.md` (detailed specs + acceptance
 criteria). Keep this file updated as work lands (see *Maintenance* at the end).
 
-**Current product version: `0.18.1`** · Schema `0.1.0` · **703 tests** — 700 passing, 3 skipped
+**Current product version: `0.19.0`** · Schema `0.1.0` · **703 tests** — 700 passing, 3 skipped
 
 ## Legend
 
