@@ -615,6 +615,33 @@ element is masked where it sits in the layout, not where a full-page screenshot
 renders it; and content in a cross-origin frame never enters the model, so it is
 not masked either.
 
+### Keeping the furniture out of the model
+
+Cookie banners, chat widgets and support bubbles are on every screen of a real
+portal. The engine models them all: they inflate element counts, invent
+components that span every page, and put a vendor's UI in the middle of a
+document about *your* product.
+
+```yaml
+capture:
+  exclude_selectors: ["#cookie-banner", ".chat-widget", "[data-vendor]"]
+```
+
+Those DOM subtrees are excluded from extraction entirely. This is a different
+thing from `safety.never_touch`, which forbids *interacting* with something the
+model still describes — the right answer for a Delete button. This forbids
+*modelling*, which is the right answer for someone else's widget.
+
+Two guardrails:
+
+- **A landmark is never excluded.** A selector matching `main` or `nav` is
+  refused with a reason, because a selector broad enough to catch the page's
+  own structure is a mistake rather than an instruction.
+- **Exclusions are counted, per page and per selector**, and appear in
+  `summary.md` under *Excluded from the model*. A selector that matched nothing
+  says so, so a typo looks like a typo rather than like a widget that was not
+  there.
+
 ### Choosing how much to capture
 
 Nine capability toggles is the right amount of control and the wrong amount of

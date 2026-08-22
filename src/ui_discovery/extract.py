@@ -85,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
             # it; only the wrapper was missing.
             redaction=redaction_policy(scope),
             mask_screenshots=scope.privacy.mask_screenshots(),
+            exclude_selectors=tuple(scope.capture.exclude_selectors),
         )
     except Exception as exc:  # surface a clean, actionable error
         print(f"[ERROR] Extraction failed: {exc}", file=sys.stderr)

@@ -535,6 +535,10 @@ class CrawlOptions:
     # netloc — today's behaviour — so an unchanged config crawls identically.
     subdomains: str = SAME_HOST
     subdomain_hosts: tuple[str, ...] = ()
+    # H9: DOM subtrees excluded from *modelling* — a vendor's chat widget is
+    # not part of your product. Distinct from `never_touch`, which forbids
+    # interacting with something the model still describes.
+    exclude_selectors: tuple[str, ...] = ()
     # Capabilities (R2)
     # Off for the *library*, on for the *product*. `crawl_site(url)` is the
     # low-level API: a programmatic caller should have to ask before the engine
@@ -906,7 +910,8 @@ async def crawl_site(
         # R3: adapter waits run after the generic readiness checks and
         # before anything is read, so they can cover what those miss.
         await adapter_hooks.post_navigate(active_adapters, page)
-        raw = await page.evaluate(JS)
+        raw = await page.evaluate(
+            JS, {"exclude_selectors": list(opts.exclude_selectors)})
         frames = await _extract_frames_async(page, raw)
         aria = await _aria(page) if accessibility_tree else None
 

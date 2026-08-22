@@ -193,6 +193,11 @@ class Page(BaseModel):
 
     screenshot_path: Optional[str] = None
 
+    # H9: what `capture.exclude_selectors` kept out of this page's model, and
+    # any selector refused for matching a landmark. Empty when nothing was
+    # excluded, which is the default.
+    excluded: dict[str, Any] = Field(default_factory=dict)
+
 
 # --- V1: crawl-level models -------------------------------------------------
 

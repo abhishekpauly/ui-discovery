@@ -516,6 +516,31 @@ def build_markdown(crawl: Crawl, relations: Relations | None = None) -> str:
         lines.append(f"- Network requests: {totals['network_requests']} "
                      f"(API: {totals['api_requests']})")
         lines.append("")
+
+    # H9: what was deliberately not modelled. Reported only when it happened,
+    # but reported loudly then — an exclusion nobody can see is
+    # indistinguishable from a product that never had the thing.
+    excluded_total = sum((n.page.excluded or {}).get("count", 0)
+                         for n in crawl.pages)
+    refusals = [r for n in crawl.pages
+                for r in (n.page.excluded or {}).get("refused", [])]
+    if excluded_total or refusals:
+        lines.append("## Excluded from the model")
+        lines.append("")
+        if excluded_total:
+            per_selector: Counter = Counter()
+            for node in crawl.pages:
+                for entry in (node.page.excluded or {}).get("selectors", []):
+                    per_selector[entry["selector"]] += entry.get("matched", 0)
+            lines.append(f"- {excluded_total} element(s) across "
+                         f"{len(crawl.pages)} page(s), by "
+                         f"`capture.exclude_selectors`")
+            for selector, matched in sorted(per_selector.items()):
+                lines.append(f"  - `{selector}` — {matched} subtree(s) matched")
+        for refusal in {r["selector"]: r for r in refusals}.values():
+            lines.append(f"- **Refused** `{refusal['selector']}` — "
+                         f"{refusal['reason']}")
+        lines.append("")
         top = _api_endpoints(crawl)
         if top:
             lines.append("Observed API endpoints:")

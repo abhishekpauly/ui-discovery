@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>A portal with furniture</title></head>
+<body>
+  <!-- The vendor UI that is on every screen of every real portal and is not
+       part of the product being documented. -->
+  <div id="cookie-banner">
+    <h2>We value your privacy</h2>
+    <p>This site uses cookies.</p>
+    <button type="button">Accept all</button>
+    <button type="button">Reject non-essential</button>
+    <a href="/cookie-policy">Cookie policy</a>
+  </div>
+
+  <div class="chat-widget">
+    <h2>Need help?</h2>
+    <button type="button">Start chat</button>
+    <input type="text" placeholder="Type a message">
+  </div>
+
+  <!-- The actual product. -->
+  <main>
+    <h1>Orders</h1>
+    <form id="order-form">
+      <label for="ref">Reference</label>
+      <input id="ref" type="text">
+      <button type="submit">Search orders</button>
+    </form>
+    <table>
+      <thead><tr><th>Order</th><th>Status</th></tr></thead>
+      <tbody><tr><td>1001</td><td>Shipped</td></tr></tbody>
+    </table>
+  </main>
+</body>
+</html>

@@ -250,6 +250,7 @@ def assemble_page(
     *from* this model, so redacting it once means no write site can leak a copy
     the others redacted. No unredacted `Page` is ever constructed.
     """
+    excluded = raw.get("excluded") or {}
     elements = [element_from_raw(e) for e in raw.get("elements", [])]
     headings = [Heading(**h) for h in raw.get("headings", [])]
     title = raw.get("title", "")
@@ -276,6 +277,9 @@ def assemble_page(
         frames=frames or [],
         accessibility_tree=aria_tree,
         screenshot_path=screenshot_path,
+        # H9: counted rather than merely dropped. An exclusion nobody can see
+        # is indistinguishable from a product that never had the thing.
+        excluded=excluded,
     )
 
 
@@ -335,6 +339,7 @@ def extract_page(
     auth_state: Optional[dict] = None,
     redaction: Optional[RedactionPolicy] = None,
     mask_screenshots: bool = False,
+    exclude_selectors: tuple[str, ...] = (),
 ) -> Page:
     """Render `url` (sync Playwright) and return a validated `Page` model. If
     `screenshot_path` is given, a full-page screenshot is written there.
@@ -359,7 +364,7 @@ def extract_page(
             page = context.new_page()
 
             readiness = navigate(page, url, timeout_ms=timeout_ms)
-            raw = page.evaluate(JS)
+            raw = page.evaluate(JS, {"exclude_selectors": list(exclude_selectors)})
             frames = extract_frames_sync(page, raw)
             tree = aria_snapshot(page)
 

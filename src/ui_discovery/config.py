@@ -113,6 +113,23 @@ class Capabilities(BaseModel):
     deep_nav: bool = True
 
 
+class Capture(BaseModel):
+    """H9 — what the engine models, as opposed to what it interacts with.
+
+    Deliberately separate from `Safety`: `safety.never_touch` forbids
+    *interacting* with something the model still describes, which is the right
+    answer for a Delete button. This forbids *modelling* at all, which is the
+    right answer for a vendor's chat widget — it is not part of your product
+    and does not belong in a document about it.
+    """
+
+    # CSS selectors whose subtrees are excluded from extraction entirely.
+    # A selector matching a landmark is refused rather than honoured: `main`
+    # and `nav` are the page's own structure, and a selector broad enough to
+    # catch one is a mistake rather than an instruction.
+    exclude_selectors: list[str] = Field(default_factory=list)
+
+
 class Safety(BaseModel):
     """Additions to the interaction safety envelope. Deliberately additive:
     config can make the engine *more* cautious, never less. There is no
@@ -336,6 +353,7 @@ class Scope(BaseModel):
     budget: Budget = Field(default_factory=Budget)
     identity: Identity = Field(default_factory=Identity)
     capabilities: Capabilities = Field(default_factory=Capabilities)
+    capture: Capture = Field(default_factory=Capture)
     # Defaults for every module. A module's own `probe:` overrides these
     # field by field; anything unset here falls back to `capabilities.probe`
     # and `budget.max_interactions`, so existing configs keep working.

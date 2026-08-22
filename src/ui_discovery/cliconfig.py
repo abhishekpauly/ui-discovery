@@ -250,6 +250,7 @@ def crawl_options(scope: Scope, args) -> CrawlOptions:  # noqa: ANN001
         # H6: a product split across app./admin. is one product.
         subdomains=scope.scope.subdomains,
         subdomain_hosts=tuple(scope.scope.subdomain_hosts),
+        exclude_selectors=tuple(scope.capture.exclude_selectors),
         screenshots=pick(
             False if getattr(args, "no_screenshots", None) else None,
             scope.capabilities.screenshots, True),

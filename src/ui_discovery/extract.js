@@ -4,7 +4,9 @@
 // page: headings + an inventory of interactive/structural elements, each with
 // the identity signals the UI model needs. This runs entirely against browser
 // / web standards — no assumption about React/Angular/Vue/etc.
-() => {
+(options) => {
+  const OPTS = options || {};
+
   // Shadow boundaries are marked with " >>> " — Playwright's shadow-piercing
   // combinator, so the resulting path stays resolvable via query_selector
   // while still showing a reader exactly where the boundary is.
@@ -577,6 +579,63 @@
 
   const roots = collectRoots();
 
+  // H9 — the furniture.
+  //
+  // Cookie banners, chat widgets, session-timeout warnings and support bubbles
+  // are on every screen of a real portal. The engine models all of them: they
+  // inflate element counts, invent components that span every page, and put a
+  // third-party vendor's UI in the middle of a document about *your* product.
+  //
+  // This excludes DOM subtrees from *modelling*, which is a different thing
+  // from `safety.never_touch` — that forbids interacting with something the
+  // model still describes.
+  //
+  // A landmark is never excluded. `main`, `nav` and their ARIA equivalents are
+  // the page's own structure, and a selector broad enough to catch one is a
+  // mistake rather than an instruction; refusing loudly beats quietly
+  // returning an empty capture.
+  // Reuses the tables `landmarkOf` already works from, so "what is a landmark"
+  // has one answer in this file rather than two that can drift apart.
+  const isLandmark = (el) => {
+    const role = (el.getAttribute("role") || "").trim().split(/\s+/)[0];
+    if (role) return LANDMARK_ROLES.includes(role);
+    return Boolean(LANDMARK_TAGS[el.nodeName]);
+  };
+
+  const excludedRoots = [];
+  const excludedRefused = [];
+  const excludedSelectors = [];
+  for (const selector of (OPTS.exclude_selectors || [])) {
+    let matched = 0;
+    let refused = 0;
+    for (const root of roots) {
+      let found;
+      try { found = root.querySelectorAll(selector); } catch (e) { found = []; }
+      found.forEach((el) => {
+        if (isLandmark(el)) { refused++; return; }
+        excludedRoots.push(el);
+        matched++;
+      });
+    }
+    if (refused) {
+      excludedRefused.push({
+        selector: selector, refused: refused,
+        reason: "matches a landmark — excluding it would remove the page's own structure",
+      });
+    }
+    excludedSelectors.push({ selector: selector, matched: matched });
+  }
+
+  // Counted, not merely dropped: an exclusion nobody can see is
+  // indistinguishable from a product that never had the thing.
+  let excludedCount = 0;
+  const isExcluded = (el) => {
+    for (const root of excludedRoots) {
+      if (root === el || root.contains(el)) return true;
+    }
+    return false;
+  };
+
   const seen = new Set();
   const elements = [];
   // Node -> its record, so the second pass can resolve a relationship to an
@@ -588,6 +647,7 @@
       root.querySelectorAll(sel).forEach((el) => {
         if (seen.has(el)) return;
         seen.add(el);
+        if (excludedRoots.length && isExcluded(el)) { excludedCount++; return; }
         const record = describe(el, cat);
         elements.push(record);
         byNode.set(el, record);
@@ -631,6 +691,7 @@
   const headings = [];
   for (const root of roots) {
     root.querySelectorAll("h1,h2,h3,h4,h5,h6,[role=heading]").forEach((el) => {
+      if (excludedRoots.length && isExcluded(el)) { excludedCount++; return; }
       let level;
       if (/^H[1-6]$/.test(el.nodeName)) level = parseInt(el.nodeName[1], 10);
       else level = parseInt(el.getAttribute("aria-level") || "2", 10);
@@ -669,5 +730,12 @@
     frames,
     // How many roots were queried: 1 = no open shadow DOM on this page.
     roots_scanned: roots.length,
+    // H9: what was deliberately not modelled, and what was refused.
+    excluded: {
+      count: excludedCount,
+      subtrees: excludedRoots.length,
+      selectors: excludedSelectors,
+      refused: excludedRefused,
+    },
   };
 }
