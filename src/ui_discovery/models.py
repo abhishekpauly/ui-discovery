@@ -228,6 +228,23 @@ class CrawlConfig(BaseModel):
     probe_profiles: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class CrawlFailure(BaseModel):
+    """H8 — one URL the crawl discovered and did not capture, with why.
+
+    `Crawl.stats.discovered_not_captured` was a single integer and the URLs
+    behind it were gone, so "is this product 40 screens, or 60 screens with 20
+    failures?" could not be answered from the artifacts at all. A capture that
+    reports only what it found overstates its own coverage.
+    """
+
+    url: str
+    # budget | error | out-of-scope | not-reached
+    reason: str
+    detail: str = ""
+    depth: Optional[int] = None
+    http_status: Optional[int] = None
+
+
 class CrawlStats(BaseModel):
     pages_crawled: int
     pages_failed: int
@@ -277,6 +294,10 @@ class Crawl(BaseModel):
     stats: CrawlStats
     navigation: list[dict[str, str]] = Field(default_factory=list)  # {"from","to"}
     pages: list[PageNode] = Field(default_factory=list)
+    # H8: every URL discovered and not captured, with the reason. Its length
+    # is `stats.discovered_not_captured` — the integer and the list are the
+    # same fact, so they cannot disagree.
+    failures: list[CrawlFailure] = Field(default_factory=list)
 
 
 # --- Relationships: how screens and elements connect -------------------------

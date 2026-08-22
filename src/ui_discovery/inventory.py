@@ -147,7 +147,10 @@ def build_inventory(crawl: Crawl) -> dict[str, Any]:
         "screens": screens,
         "endpoints": endpoints,
         "discovered_not_captured": missed,
-        "budget_exhausted": bool(missed),
+        "budget_exhausted": any(f.reason == "budget" for f in crawl.failures),
+        # H8: the same URLs, each with why. `discovered_not_captured` stays a
+        # plain list so existing readers are unaffected.
+        "failures": [f.model_dump() for f in crawl.failures],
         "ui_types": dict(sorted(_ui_types(crawl).items(), key=lambda kv: -kv[1])),
         "ui_coverage": coverage(_ui_types(crawl)),
         "unmarked_clickables": crawl.config.unmarked_clickables,
@@ -271,11 +274,18 @@ def _summary_markdown(inv: dict[str, Any]) -> str:
         ]
     if inv["discovered_not_captured"]:
         missed = inv["discovered_not_captured"]
+        # H8: say *why*. This banner used to attribute every miss to the page
+        # budget, which made a broken link and an exhausted budget read the
+        # same — and only one of them is fixed by raising `--max-pages`.
+        counts = Counter(f["reason"] for f in inv.get("failures", []))
+        why = ", ".join(f"{n} {reason}" for reason, n in counts.most_common())
+        advice = (" Raise `--max-pages` and re-run."
+                  if counts.get("budget") or counts.get("not-reached") else "")
         lines[6:6] = [
             f"> ⚠️ **This capture is incomplete.** {len(missed)} screen(s) "
-            f"were discovered but not visited — the page budget ran out. "
-            f"Raise `--max-pages` and re-run. They are listed at the "
-            f"bottom of this file.",
+            f"were discovered but not captured"
+            + (f" ({why})" if why else "") + f".{advice} They are listed at "
+            f"the bottom of this file.",
             "",
         ]
     for kind, count in inv["totals_by_category"].items():
@@ -313,9 +323,18 @@ def _summary_markdown(inv: dict[str, Any]) -> str:
                      f"{s['elements_total']} | {s['elements_visible']} | "
                      f"{s['out_links']} | {shot} |")
     if inv["discovered_not_captured"]:
-        lines += ["", "## Discovered but not captured", "",
-                  "_Found via links, never visited — the page budget ran out._", ""]
-        lines += [f"- `{u}`" for u in inv["discovered_not_captured"][:100]]
+        lines += ["", "## Not captured", "",
+                  "_Discovered, and not in the capture. A report that lists "
+                  "only what it found overstates its own coverage._", "",
+                  "| Screen | Why | Depth |", "| --- | --- | --- |"]
+        for failure in inv.get("failures", [])[:100]:
+            depth = "—" if failure.get("depth") is None else str(failure["depth"])
+            detail = failure.get("detail") or ""
+            lines.append(f"| `{failure['url']}` | **{failure['reason']}**"
+                         + (f" — {detail}" if detail else "") + f" | {depth} |")
+        if not inv.get("failures"):
+            lines += [f"| `{u}` | — | — |"
+                      for u in inv["discovered_not_captured"][:100]]
 
     lines += ["", "## Files in this folder", "",
               "| File | What it is |", "| --- | --- |",

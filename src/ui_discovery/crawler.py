@@ -45,7 +45,14 @@ from .interactions import (
     probe_open_page_async,
 )
 from .mask import apply_mask_async, clear_mask_async
-from .models import Crawl, CrawlConfig, CrawlStats, NetworkRequest, PageNode
+from .models import (
+    Crawl,
+    CrawlConfig,
+    CrawlFailure,
+    CrawlStats,
+    NetworkRequest,
+    PageNode,
+)
 from .network import build_ledger, redact_url
 from .redact import DISABLED as DISABLED_REDACTION
 from .redact import RedactionPolicy, Redactor, redact_probe
@@ -768,6 +775,10 @@ async def crawl_site(
     # is off — an egress ledger that only existed on probed runs would be
     # answering a different question than the one it claims to.
     egress_urls: list[str] = []
+    # H8: why each URL we discovered was not captured. Keyed by URL so the
+    # rollup at the end can annotate the `missed` set rather than keep a
+    # second tally that could drift from it.
+    failure_reasons: dict[str, dict] = {}
     # Per page: clickable elements the app never marked up as links.
     unmarked_total: dict[str, int] = {}
     # O4: where the crawl's time went. A dict rather than a `nonlocal` int for
@@ -877,6 +888,25 @@ async def crawl_site(
         async def _adapter_pre_nav(context) -> None:  # noqa: ANN001
             await adapter_hooks.pre_navigate(active_adapters, context)
 
+    # H8: a request that errored or timed out never reaches the default
+    # handler, so without this the only trace it left was a number in
+    # `stats.pages_failed`. Crawlee calls this after its own retries are spent.
+    @crawler.failed_request_handler
+    async def _record_failure(context, error: Exception) -> None:  # noqa: ANN001
+        failed_url = _normalize(context.request.url)
+        status = None
+        try:
+            status = context.response.status if context.response else None
+        except Exception:
+            status = None
+        failure_reasons[failed_url] = {
+            "reason": "error",
+            "detail": f"{type(error).__name__}: {error}"[:300],
+            "http_status": status,
+        }
+        event("page.failed", level="warning", url=failed_url,
+              error=type(error).__name__, http_status=status)
+
     @crawler.router.default_handler
     async def handler(context: PlaywrightCrawlingContext) -> None:
         page = context.page
@@ -901,6 +931,10 @@ async def crawl_site(
                     f"Page budget ({max_pages}) reached; not capturing {url}")
                 event("page.skipped", url=url, reason="page budget reached",
                       max_pages=max_pages)
+                failure_reasons[url] = {
+                    "reason": "budget",
+                    "detail": f"page budget ({max_pages}) reached",
+                }
                 return
             claimed.add(url)
 
@@ -1054,7 +1088,17 @@ async def crawl_site(
         # to live in the enqueue transform, which passing an explicit request
         # list bypasses — an excluded area would otherwise be crawled anyway.
         # The page graph still records every link the page really has.
-        queueable = [u for u in out_links if _in_scope(u)]
+        queueable = []
+        for candidate in out_links:
+            if _in_scope(candidate):
+                queueable.append(candidate)
+            else:
+                # H8: a link the scope rules declined is a deliberate absence,
+                # not a gap. Recorded so a reader can tell the two apart.
+                failure_reasons.setdefault(candidate, {
+                    "reason": "out-of-scope",
+                    "detail": "excluded by the scope rules for this config",
+                })
         if queueable:
             # Explicit unique_key, because Crawlee's default strips the
             # fragment — which would collapse every `#/route` of a
@@ -1169,6 +1213,24 @@ async def crawl_site(
               discovered_not_captured=len(missed), max_pages=max_pages,
               examples=sorted(missed)[:10])
 
+    # H8: the ledger *is* `discovered_not_captured`, annotated. Built from the
+    # same set the integer is computed from rather than from a parallel tally,
+    # so the count and the list cannot disagree — the test asserts they are
+    # equal rather than leaving a reader to check by eye.
+    failures = []
+    for url in sorted(missed):
+        recorded = failure_reasons.get(url) or {
+            "reason": "not-reached",
+            "detail": "discovered, but the crawl ended before reaching it",
+        }
+        failures.append(CrawlFailure(
+            url=url,
+            reason=recorded["reason"],
+            detail=recorded.get("detail", ""),
+            depth=depths.get(url),
+            http_status=recorded.get("http_status"),
+        ))
+
     # G7: the ledger goes on the manifest rather than on the crawl, because it
     # is a fact about the *run* — the same reason `O3` owns authorization and
     # the safety envelope. Reported even when it is unremarkable; a section
@@ -1244,4 +1306,5 @@ async def crawl_site(
         ),
         navigation=navigation,
         pages=ordered,
+        failures=failures,
     )
