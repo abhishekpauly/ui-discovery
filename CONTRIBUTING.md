@@ -71,6 +71,7 @@ of them restates another:
 | --- | --- |
 | `ROADMAP.md` | what the item *is* — goal, build, acceptance, files, effort |
 | `PRODUCT_TRACKER.md` | what exists today, at what version, with what coverage |
+| `SPRINT_STATUS.md` | where the branches are today, and what merges next |
 | GitHub issues + the **UI Discovery Engine** project | who is on it and where it has got to |
 
 An issue points at its spec; it does not restate it. Use the **Epic**, **Story**
