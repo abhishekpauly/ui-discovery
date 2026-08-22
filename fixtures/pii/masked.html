@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Masked capture fixture</title>
+<style>
+  /* Deliberately plain: the pixel assertions read exact colours, so anything
+     with a gradient or a shadow behind a target would turn "is this box
+     opaque?" into a judgement call instead of a comparison. */
+  body { margin: 0; background: #ffffff; font: 16px/1.4 monospace; color: #111; }
+  form, table { border: 1px solid #999; margin: 12px; width: 460px; }
+  form { padding: 10px; }
+  td, th { border: 1px solid #ccc; padding: 4px 8px; }
+  .spacer { height: 1400px; background: #ffffff; }
+  dialog { border: 1px solid #333; padding: 12px; }
+</style>
+</head>
+<body>
+  <main>
+    <!-- The engine captures controls and containers, not bare paragraphs, so
+         a `<form>` carrying an address is the unit a mask can actually be
+         hung on. That is what each section below is: one container that must
+         be covered, beside one that must not. -->
+
+    <!-- 1. Above the fold. -->
+    <form id="contact-form">
+      <h2>Contact</h2>
+      <p>Primary contact alice@acme.example</p>
+      <button type="button">Save contact</button>
+    </form>
+
+    <form id="order-form">
+      <h2>Order</h2>
+      <p>Order 1234567890123456 opened 2026-08-22, updated 08.22.2026</p>
+      <button type="button">Update order</button>
+    </form>
+
+    <!-- 2. Nested containers, so the ancestor-pruning has something to prune:
+         the table carries the address, the form around it does not. Masking
+         the form would swallow the button beside it. -->
+    <form id="nested-form">
+      <h2>Directory</h2>
+      <table id="nested-table">
+        <tbody><tr><td>Owner</td><td>grace@acme.example</td></tr></tbody>
+      </table>
+      <button type="button" id="nested-keep">Export directory</button>
+    </form>
+
+    <!-- 3. Below the fold, so the full-page shot is taller than the viewport
+         and document coordinates stop agreeing with viewport coordinates.
+         This is the case a naive `bounding_box` mask gets wrong. -->
+    <div class="spacer"></div>
+
+    <table id="deep-contacts">
+      <caption>Contacts</caption>
+      <tbody><tr><td>Ada</td><td>Card 4111 1111 1111 1111</td></tr></tbody>
+    </table>
+
+    <table id="deep-orders">
+      <caption>Orders</caption>
+      <tbody><tr><td>Ref 12-345-678</td><td>Ports 8080 9090</td></tr></tbody>
+    </table>
+
+    <!-- 4. Only reachable by clicking: the revealed-state capture. -->
+    <button id="open" type="button">Show settlement details</button>
+    <dialog id="panel">
+      <h2>Settlement</h2>
+      <table id="settlement">
+        <tbody><tr><td>IBAN</td><td>GB82 WEST 1234 5698 7654 32</td></tr></tbody>
+      </table>
+      <button id="close" type="button">Close</button>
+    </dialog>
+  </main>
+  <script>
+    document.getElementById("open").addEventListener("click", () => {
+      document.getElementById("panel").show();
+    });
+    document.getElementById("close").addEventListener("click", () => {
+      document.getElementById("panel").close();
+    });
+  </script>
+</body>
+</html>

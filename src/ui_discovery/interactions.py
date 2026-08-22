@@ -30,7 +30,8 @@ from playwright.sync_api import sync_playwright
 
 from . import SCHEMA_VERSION, __version__
 from .browser import navigate
-from .extraction import JS
+from .extraction import JS, mask_targets_for_raw
+from .mask import apply_mask, apply_mask_async, clear_mask, clear_mask_async
 from .models import (
     Interaction,
     InteractionProbe,
@@ -432,6 +433,8 @@ async def probe_open_page_async(
     states_dir: str | None = None,
     capture_states: bool = True,
     profile: ProbeProfile = DEFAULT_PROBE_PROFILE,
+    redaction=None,
+    mask_screenshots: bool = False,
 ) -> InteractionProbe:
     """Probe an **already-open** async page in place, and return the result.
 
@@ -505,6 +508,8 @@ async def probe_open_page_async(
                     index=len(states) + 1,
                     states_dir=states_dir,
                     seen=states,
+                    redaction=redaction,
+                    mask_screenshots=mask_screenshots,
                 )
                 if state is not None and _remember_state(states, state):
                     states.append(state)
@@ -541,6 +546,7 @@ async def probe_open_page_async(
 async def _capture_state_async(
     page, *, trigger: dict, before_visible: set[str], url: str,
     index: int, states_dir: str | None, seen: list | None = None,
+    redaction=None, mask_screenshots: bool = False,
 ):
     """Identify and photograph the state a click just opened.
 
@@ -559,20 +565,35 @@ async def _capture_state_async(
     if seen is not None and not _would_be_new(seen, state):
         return state
     path = _shot_path(states_dir, url, index, state.kind)
+    # G6: a revealed state shows content the page-load pass never saw, so its
+    # mask is computed from *this* DOM rather than inherited. `after_raw` is
+    # the extraction that produced the state, so it costs no extra evaluate.
+    masked = False
+    if mask_screenshots and redaction is not None:
+        targets = mask_targets_for_raw(after_raw, redaction)
+        if targets:
+            await apply_mask_async(page, targets)
+            masked = True
     try:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         # Clipped to the revealed container, not the page: a modal photographed
-        # full-page is a picture of the page behind it.
+        # full-page is a picture of the page behind it. The overlay lives in
+        # the page, so the crop carries it without any coordinate translation.
         await page.locator(state.dom_path).first.screenshot(path=path, timeout=5000)
         state.screenshot = path
     except Exception:
         pass
+    if masked:
+        # Removed before the next interaction re-extracts, or the mask layer
+        # would be read back as page content.
+        await clear_mask_async(page)
     return state
 
 
 def _capture_state_sync(
     page, *, trigger: dict, before_visible: set[str], url: str,
     index: int, states_dir: str | None, seen: list | None = None,
+    redaction=None, mask_screenshots: bool = False,
 ):
     """Sync twin of `_capture_state_async`."""
     try:
@@ -585,12 +606,20 @@ def _capture_state_sync(
     if seen is not None and not _would_be_new(seen, state):
         return state
     path = _shot_path(states_dir, url, index, state.kind)
+    masked = False
+    if mask_screenshots and redaction is not None:
+        targets = mask_targets_for_raw(after_raw, redaction)
+        if targets:
+            apply_mask(page, targets)
+            masked = True
     try:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         page.locator(state.dom_path).first.screenshot(path=path, timeout=5000)
         state.screenshot = path
     except Exception:
         pass
+    if masked:
+        clear_mask(page)
     return state
 
 
@@ -605,6 +634,8 @@ def probe_page(
     states_dir: str | None = None,
     capture_states: bool = True,
     profile: ProbeProfile = DEFAULT_PROBE_PROFILE,
+    redaction=None,
+    mask_screenshots: bool = False,
 ) -> InteractionProbe:
     network: list[NetworkRequest] = []
     interactions: list[Interaction] = []
@@ -672,6 +703,8 @@ def probe_page(
                             index=len(states) + 1,
                             states_dir=states_dir,
                             seen=states,
+                            redaction=redaction,
+                            mask_screenshots=mask_screenshots,
                         )
                         if state is not None and _remember_state(states, state):
                             states.append(state)

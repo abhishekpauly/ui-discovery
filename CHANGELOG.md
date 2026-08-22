@@ -20,6 +20,67 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ### Added
 
+- **`G6` The people come out of the captured screenshots.** `G5` cleaned the
+  model and left the harder half untouched: a capture of an authenticated
+  portal is mostly *pictures* of that portal, and a picture of a customer list
+  is a customer list. A clean `page.json` beside a `screenshots/` folder
+  showing every address has protected nobody, and `F6.5` component crops and
+  `F6.6` revealed states multiply the copies.
+
+  ```yaml
+  privacy:
+    redact_content: true       # G5
+    redact_screenshots: true   # G6 — unset follows redact_content
+  ```
+
+  The two default to moving together deliberately. Two independent switches is
+  precisely how a clean model ends up beside an unmasked picture; set
+  `redact_screenshots` explicitly to break the pairing, and the manifest says
+  which way it was set either way.
+
+  **Masked by identity, not by pixels.** The boxes come from the elements `G5`
+  already redacted, so the two passes cannot disagree about what counts as a
+  person. Nothing reads an image and nothing classifies anything — if the model
+  was clean, the picture is.
+
+  **Painted into the page, not onto the file.** The overlay is a DOM node added
+  before the shutter fires, so no unmasked image is ever written and a crop
+  carries the mask without any coordinate translation. Compositing afterwards
+  would have meant an unmasked PNG existing first, which is the thing the
+  feature exists to prevent.
+
+  Two traps the implementation had to avoid, both of which are asserted against
+  by sampling pixels rather than by checking arithmetic:
+
+  - **Viewport versus document coordinates.** `extract.js` records
+    `getBoundingClientRect`, which is viewport-relative; a full-page screenshot
+    is in document coordinates. They agree only while the page has not
+    scrolled. Positioning the overlay in the browser, against the layer's own
+    rect, sidesteps the arithmetic entirely.
+  - **Over-masking.** `Element.text` is `textContent`, so an address in a table
+    is also in the text of the form around it and of every ancestor above that.
+    Masking every match paints the page black — which would pass any "is the
+    secret gone?" check while destroying the capture. Any candidate containing
+    another candidate is dropped, so a table inside a form is covered and the
+    controls beside it are not.
+
+  Granularity is the honest limitation: the engine captures controls and
+  containers, not bare paragraphs, so the unit a mask hangs on is the `<form>`,
+  `<table>` or `<dialog>` whose text carried the value. A table with one
+  address in it is covered whole. That errs toward covering more, which is the
+  right direction here, but it is a real cost to a capture's readability.
+
+  Masking a revealed state is computed from that state's own DOM: a dialog is
+  `display:none` at page load, its box is zero-sized, and there is nothing to
+  paint until the click that opens it.
+
+- **`extract` and `probe` now honour the `privacy` block they were already
+  accepting.** Both CLIs read a scope config and then dropped its redaction
+  settings on the floor, so `redact_content: true` produced an unredacted
+  `page.json` and a probe record carrying every accessible name the page
+  displayed. `extraction.extract_page` had supported it since `G5`; only the
+  two wrappers were missing. Found while wiring `G6` through the same paths.
+
 - **`G5` The people come out of the captured model.** The engine has always
   redacted what a person *typed*: password fields, free-text values, sensitive
   query keys. It has never redacted what the page *displayed* — and on a

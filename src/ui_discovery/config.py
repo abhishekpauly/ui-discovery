@@ -137,6 +137,18 @@ class Privacy(BaseModel):
     # this is the seam where knowledge the engine cannot have gets in.
     person_names: list[str] = Field(default_factory=list)
 
+    # G6: cover the same people in the pictures. Unset follows
+    # `redact_content`, because a capture whose model is clean and whose
+    # screenshots are not protects nobody, and two independent switches is how
+    # that happens by accident. Set it explicitly to break the pairing.
+    redact_screenshots: Optional[bool] = None
+
+    def mask_screenshots(self) -> bool:
+        """Whether screenshots are masked, after the default is resolved."""
+        if self.redact_screenshots is None:
+            return bool(self.redact_content)
+        return bool(self.redact_screenshots)
+
 
 # Captures are deliverables, not build output: you open them, attach them to
 # a ticket, hand them to someone. Downloads is where a person looks for a file

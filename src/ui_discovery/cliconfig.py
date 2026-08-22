@@ -247,6 +247,8 @@ def crawl_options(scope: Scope, args) -> CrawlOptions:  # noqa: ANN001
         policy=safety_policy(scope),
         redact_keys=tuple(scope.privacy.redact_network_keys),
         redaction=redaction_policy(scope),
+        # G6: masking follows content redaction unless a config says otherwise.
+        mask_screenshots=scope.privacy.mask_screenshots(),
         adapters=tuple(adapters_for(scope)),
         max_requests_per_minute=pick(
             flag("max_requests_per_minute"),

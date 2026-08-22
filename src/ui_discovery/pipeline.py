@@ -74,7 +74,8 @@ def data_handling_posture(scope: Scope) -> dict:
     # G5 rides on G3's posture rather than inventing a second section: what the
     # engine removes from *displayed* content is the same kind of promise as
     # what it removes from a URL, and a reader should find them together.
-    content = describe_content_redaction(redaction_policy(scope))
+    content = describe_content_redaction(
+        redaction_policy(scope), scope.privacy.mask_screenshots())
     return {
         "never_persisted": [
             *network["never_persisted"],
@@ -93,6 +94,10 @@ def data_handling_posture(scope: Scope) -> dict:
         # posture it ran under, or a reader cannot tell a clean capture from an
         # unredacted one.
         "content_redaction": content["content_redaction"],
+        # G6: same rule, one level out — a capture must say whether its
+        # pictures were masked, because a clean model beside an unmasked
+        # screenshot folder is the failure this section exists to expose.
+        "screenshot_redaction": content["screenshot_redaction"],
     }
 
 

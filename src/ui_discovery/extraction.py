@@ -18,8 +18,9 @@ from playwright.sync_api import sync_playwright
 from . import SCHEMA_VERSION, __version__
 from .auth import check_auth
 from .browser import LIVE_CONNECTION_PROBE_JS, aria_snapshot, navigate
+from .mask import apply_mask
 from .models import Element, FrameInfo, Geometry, Heading, Option, Page
-from .redact import RedactionPolicy, Redactor, redact_element
+from .redact import RedactionPolicy, Redactor, redact_element, redact_heading
 from .taxonomy import classify
 
 # The deterministic in-page pass, shared by the sync extractor (V0) and the
@@ -256,7 +257,7 @@ def assemble_page(
     if redactor is not None and redactor.active:
         elements = [redact_element(e, redactor) for e in elements]
         for heading in headings:
-            heading.text = redactor.text(heading.text) or ""
+            redact_heading(heading, redactor)
         title = redactor.text(title) or ""
         aria_tree = redactor.text(aria_tree)
 
@@ -276,6 +277,32 @@ def assemble_page(
         accessibility_tree=aria_tree,
         screenshot_path=screenshot_path,
     )
+
+
+def mask_targets_for_raw(raw: dict, policy: RedactionPolicy) -> list:
+    """G6: which elements of a raw extraction a screenshot must cover.
+
+    Used where there is no `Page` to read the answer off — the probe, which
+    photographs a revealed state that exists only between two clicks and is
+    never assembled into a page model.
+
+    Deliberately runs the *same* `redact_element` over throwaway models rather
+    than matching patterns against the raw dict directly. Detection has one
+    implementation; a second one here would be the copy that drifts, and it
+    would drift silently, because a mask that covers slightly less than the
+    model redacted looks fine until someone reads the picture.
+    """
+    if not policy.enabled:
+        return []
+    redactor = Redactor(policy)
+    for entry in raw.get("elements", []) or []:
+        try:
+            redact_element(element_from_raw(entry), redactor)
+        except Exception:
+            # A malformed entry costs one box, not the capture. The probe is
+            # the caller and it never raises over a picture.
+            continue
+    return list(redactor.mask_targets)
 
 
 def extract_frames_sync(page, raw: dict) -> list[FrameInfo]:
@@ -307,13 +334,18 @@ def extract_page(
     headless: bool = True,
     auth_state: Optional[dict] = None,
     redaction: Optional[RedactionPolicy] = None,
+    mask_screenshots: bool = False,
 ) -> Page:
     """Render `url` (sync Playwright) and return a validated `Page` model. If
     `screenshot_path` is given, a full-page screenshot is written there.
     `auth_state` is a Playwright storage-state dict for authenticated portals.
 
     G5: `redaction` strips people out of the captured text. Off unless asked
-    for, so the default behaviour of this function is unchanged."""
+    for, so the default behaviour of this function is unchanged.
+
+    G6: `mask_screenshots` covers those same elements in the image. It requires
+    `redaction` — there is nothing to mask without it — and it is why the model
+    is assembled before the shutter fires rather than after."""
     viewport = viewport or DEFAULT_VIEWPORT
 
     with sync_playwright() as p:
@@ -331,22 +363,27 @@ def extract_page(
             frames = extract_frames_sync(page, raw)
             tree = aria_snapshot(page)
 
-            saved_screenshot: Optional[str] = None
-            if screenshot_path:
-                Path(screenshot_path).parent.mkdir(parents=True, exist_ok=True)
-                page.screenshot(path=screenshot_path, full_page=True)
-                saved_screenshot = screenshot_path
-
+            # G6: the model comes first because redaction is what discovers
+            # which elements carry a person — the mask has no input until it
+            # has run.
+            redactor = Redactor(redaction) if redaction else None
             page_model = assemble_page(
                 requested_url=url,
                 raw=raw,
                 readiness=readiness,
                 aria_tree=tree,
-                screenshot_path=saved_screenshot,
+                screenshot_path=None,
                 viewport=viewport,
                 frames=frames,
-                redactor=Redactor(redaction) if redaction else None,
+                redactor=redactor,
             )
+
+            if screenshot_path:
+                Path(screenshot_path).parent.mkdir(parents=True, exist_ok=True)
+                if mask_screenshots and redactor and redactor.mask_targets:
+                    apply_mask(page, redactor.mask_targets)
+                page.screenshot(path=screenshot_path, full_page=True)
+                page_model.screenshot_path = screenshot_path
             page_model.auth = check_auth(page_model)
             return page_model
         finally:

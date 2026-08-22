@@ -220,6 +220,20 @@ class RedactionPolicy:
 DISABLED = RedactionPolicy()
 
 
+@dataclass(frozen=True)
+class MaskTarget:
+    """One element a screenshot must cover, named by identity rather than by
+    pixels — `G6`'s input.
+
+    `dom_path` and `frame` are the two signals `G5` deliberately leaves alone
+    (they cannot carry a person and a redacted selector is a broken one), which
+    is what makes them safe to carry through to the masking pass.
+    """
+
+    dom_path: str
+    frame: Optional[str] = None
+
+
 class Redactor:
     """Applies a policy to text. Stateless apart from counting what it found,
     which is what lets a capture report how much was redacted rather than
@@ -230,6 +244,11 @@ class Redactor:
         self.counts: dict[str, int] = {}
         self._detectors = policy.active_detectors() if policy.enabled else ()
         self._person = policy.person_pattern() if policy.enabled else None
+        # G6: which elements a substitution actually fired on, so a screenshot
+        # can cover the same things the model dropped. Recorded here, at
+        # substitution time, because `remove` style leaves no marker behind —
+        # re-scanning the output afterwards would find nothing to key on.
+        self.mask_targets: list[MaskTarget] = []
 
     @property
     def active(self) -> bool:
@@ -238,6 +257,19 @@ class Redactor:
     @property
     def total(self) -> int:
         return sum(self.counts.values())
+
+    def witness(self, dom_path: Optional[str], frame: Optional[str] = None,
+                *, since: int) -> None:
+        """Record that redaction fired on the element at `dom_path`.
+
+        `since` is a `total` reading taken before the element was processed, so
+        one comparison covers every field of it at once — text, accessible
+        name, options, attributes — without each call site having to know which
+        of them matched.
+        """
+        if not dom_path or self.total <= since:
+            return
+        self.mask_targets.append(MaskTarget(dom_path=dom_path, frame=frame))
 
     def text(self, value: Optional[str]) -> Optional[str]:
         """Redact one string, preserving `None` and `""` exactly.
@@ -301,7 +333,8 @@ def build_policy(privacy) -> RedactionPolicy:
                            replace_style=style, person_names=names)
 
 
-def describe_redaction(policy: RedactionPolicy = DISABLED) -> dict:
+def describe_redaction(policy: RedactionPolicy = DISABLED,
+                       mask_screenshots: bool = False) -> dict:
     """G3-shaped description of what this policy removes, for the manifest.
 
     Reported even when redaction is off, and that is the point: a capture has to
@@ -317,10 +350,15 @@ def describe_redaction(policy: RedactionPolicy = DISABLED) -> dict:
                     "content redaction is off — captured text is recorded as "
                     "the page displayed it (privacy.redact_content)"),
             },
+            "screenshot_redaction": {
+                "enabled": False,
+                "detail": (
+                    "screenshot masking is off — captures show the page as it "
+                    "rendered (privacy.redact_screenshots)"),
+            },
         }
     entities = sorted(policy.entities)
-    return {
-        "redactions": [
+    rules = [
             {
                 "rule": "content.detected_entities",
                 "applies_to": (
@@ -332,7 +370,20 @@ def describe_redaction(policy: RedactionPolicy = DISABLED) -> dict:
                     f"style {policy.replace_style!r}; matching runs at capture "
                     f"time, so no unredacted copy reaches disk"),
             },
-        ],
+    ]
+    if mask_screenshots:
+        rules.append({
+            "rule": "screenshot.masked_boxes",
+            "applies_to": (
+                "full-page screenshots, component crops and revealed-state "
+                "captures"),
+            "detail": (
+                "every element the content pass redacted is covered with an "
+                "opaque box, painted into the page before the shutter fires, "
+                "so no unmasked image is written"),
+        })
+    return {
+        "redactions": rules,
         "content_redaction": {
             "enabled": True,
             "entities": entities,
@@ -341,6 +392,16 @@ def describe_redaction(policy: RedactionPolicy = DISABLED) -> dict:
             "detail": (
                 "shapes, not meaning — a name in prose is not found unless the "
                 "operator supplied it in privacy.person_names"),
+        },
+        "screenshot_redaction": {
+            "enabled": bool(mask_screenshots),
+            "detail": (
+                "masked by element identity, not by reading pixels: the boxes "
+                "come from the elements the content pass redacted"
+                if mask_screenshots else
+                "screenshot masking is off while content redaction is on — "
+                "the model is clean but the pictures are not "
+                "(privacy.redact_screenshots)"),
         },
     }
 
@@ -365,8 +426,10 @@ def redact_element(element, redactor: "Redactor"):
 
     `dom_path`, `role` and the geometry are untouched on purpose: they are how
     a reader finds the control again, they cannot carry a person, and a redacted
-    selector is a broken one.
+    selector is a broken one. `G6` then reuses `dom_path` to cover the same
+    element in the screenshot.
     """
+    before = redactor.total
     element.text = redactor.text(element.text)
     element.accessible_name = redactor.text(element.accessible_name)
     element.described_by = redactor.text(element.described_by)
@@ -379,7 +442,18 @@ def redact_element(element, redactor: "Redactor"):
     for key in _TEXTUAL_ATTRS:
         if key in element.attributes:
             element.attributes[key] = redactor.text(element.attributes[key]) or ""
+    redactor.witness(element.dom_path, element.frame, since=before)
     return element
+
+
+def redact_heading(heading, redactor: "Redactor"):
+    """A heading carries the same risk an element does — `<h1>Account for
+    alice@acme.example</h1>` is the shape a portal actually uses — and it
+    carries a `dom_path`, so it can be masked like one."""
+    before = redactor.total
+    heading.text = redactor.text(heading.text) or ""
+    redactor.witness(heading.dom_path, heading.frame, since=before)
+    return heading
 
 
 def redact_form_field(field_model, redactor: "Redactor"):
@@ -393,6 +467,7 @@ def redact_form_field(field_model, redactor: "Redactor"):
 
 
 def redact_state(state, redactor: "Redactor"):
+    before = redactor.total
     state.name = redactor.text(state.name) or ""
     state.trigger_label = redactor.text(state.trigger_label) or ""
     state.headings = [redactor.text(h) or "" for h in state.headings]
@@ -400,6 +475,7 @@ def redact_state(state, redactor: "Redactor"):
         redact_element(control, redactor)
     for field_model in state.fields:
         redact_form_field(field_model, redactor)
+    redactor.witness(getattr(state, "dom_path", ""), since=before)
     return state
 
 

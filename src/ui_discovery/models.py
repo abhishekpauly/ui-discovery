@@ -515,6 +515,12 @@ class DataHandling(BaseModel):
     # be indistinguishable from one where the pass never ran.
     content_redaction: dict[str, Any] = Field(default_factory=dict)
 
+    # G6: and whether the pictures were masked to match. Separate from
+    # `content_redaction` because the two can legitimately differ, and a reader
+    # who assumed they moved together would draw the wrong conclusion from a
+    # capture where only one of them ran.
+    screenshot_redaction: dict[str, Any] = Field(default_factory=dict)
+
 
 class RunManifest(BaseModel):
     """The answer to "what was this run, and can I trust it?".
