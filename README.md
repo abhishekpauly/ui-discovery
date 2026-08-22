@@ -553,7 +553,28 @@ describe a guarantee the engine does not actually make.
 > **This covers text, not pixels.** A screenshot renders a typed value as an
 > image, so a capture of an authenticated portal still contains readable
 > customer data in its screenshots. Masking those is `G5`/`G6` on the roadmap;
-> until then, treat capture folders as sensitive and see `outputs.retention_days`.
+> until then, treat capture folders as sensitive — and put a retention on them.
+
+### Retention — captures should not live forever
+
+```bash
+python -m ui_discovery.prune                     # what would go, and why
+python -m ui_discovery.prune --days 30 --delete  # actually remove them
+```
+
+Set `outputs.retention_days` in the scope config, or pass `--days`. It is `0`
+(off) by default: a capture is somebody's deliverable, and an engine that
+started deleting them because a config gained a key would be worse than one
+that never deletes at all.
+
+**Listing is the default — `--delete` is required to remove anything.** Three
+rules keep it from taking the wrong thing:
+
+| Rule | Why |
+| --- | --- |
+| A folder is a capture only if it contains `run.json` | Anything else in the output root is somebody's, and is never touched or counted |
+| Age comes from the manifest, never the filesystem | A capture that cannot be dated is kept **and reported** — guessing an age is how you delete the wrong week |
+| `runs.jsonl` is never rewritten | Append-only history: the index records that a run happened, the folder is merely its artifact |
 
 Events cover `run.started`, `stage.started`/`finished`/`skipped`,
 `page.captured`, `page.skipped` (with the budget that stopped it),

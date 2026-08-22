@@ -35,6 +35,7 @@ _ANALYSIS = "ui_discovery.analysis"
 _RELATIONS = "ui_discovery.relations"
 _RUN = "ui_discovery.run"
 _DIFF = "ui_discovery.diff"
+_PRUNE = "ui_discovery.prune"
 _NARRATE = "ui_discovery.narrate"
 _TAXONOMY = "ui_discovery.taxonomy"
 _CONFIG = "ui_discovery.config"
@@ -64,6 +65,9 @@ _EXPORTS = {
     "probe_page": _INTERACTIONS,
     # C1 — deterministic change diff between two analyses.
     "diff_analyses": _DIFF,
+    # G4 — retention: find captures under an output root, and prune expired ones.
+    "find_captures": _PRUNE,
+    "prune_captures": _PRUNE,
     # UI type taxonomy — what kind of control an element is.
     "classify_ui_type": _TAXONOMY,
     "ui_coverage": _TAXONOMY,
