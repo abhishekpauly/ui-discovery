@@ -9,7 +9,9 @@ body:
         Stories reuse the IDs already in `ROADMAP.md` and `PRODUCT_TRACKER.md`
         — `F` feature · `X` cross-cutting · `H` hardening · `C` deliverable ·
         `R` reusability · `S` scoping · `V` phase · `QA` validation ·
-        `O` observability · `G` governance.
+        `O` observability · `G` governance · `M` discovery/map ·
+        `L` liveness & freshness · `I` interaction recipes · `W` watch ·
+        `PV` presentation variants · `T` design tokens & vocabulary.
 
         The spec lives in the markdown. This issue points at it; it does not
         restate it, because two copies of a spec disagree eventually.

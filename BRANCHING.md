@@ -135,12 +135,56 @@ keep it from becoming a merge queue:
 | `sprint/1-governance` | `EPIC-GOV` | `G1` `G2` `G3` `G4` | `ROADMAP.md` § G |
 | `sprint/2-field-validation` | `EPIC-QA` | `QA.1` `QA.2` `QA.3` `QA.4` | `PRODUCT_TRACKER.md` § Needs real-world validation |
 | `sprint/3-devex` | `EPIC-DEVEX` | `X7` — labels, releases, branching, project board | `BRANCHING.md`, `RELEASING.md` |
-| `sprint/4-deferred` | `EPIC-DEFER` | `X4` `X6` | `ROADMAP.md` § E — both deliberately deferred |
+| `sprint/4-deferred` | `EPIC-DEFER` | `X4` `X6` `L4` | `ROADMAP.md` § E, § I — deliberately deferred |
 
 `sprint/4-deferred` exists so the deferral is visible rather than forgotten.
 ROADMAP defers `X4` until crawl times actually hurt and `X6` until data volume
 demands a database. Do not open work branches off it without a reason that has
-changed.
+changed — `L4` is the spike that could supply one for `X4`.
+
+### Queued sprints
+
+Seven more are specified and not yet cut. They are listed here because their
+*order* is the decision, and it was made up front rather than at the end.
+
+| Branch | Epic | Items | Cut after |
+| --- | --- | --- | --- |
+| `sprint/8-redaction` | `EPIC-GOV` | `G5` `G6` `G7` | `sprint/1-governance` merges |
+| `sprint/5-discovery` | `EPIC-MAP` | `M1` `M2` `M3` `M4` `H6` `H7` `H8` | 8 merges |
+| `sprint/6-liveness` | `EPIC-FRESH` | `L1` `L2` `L3` `C3` | 5 merges |
+| `sprint/7-reachability` | `EPIC-INTERACT` | `I1` `I2` `I3` | 6 merges |
+| `sprint/9-watch` | `EPIC-WATCH` | `W1` `W2` `W3` `W4` `H10` `X9` | 7 merges |
+| `sprint/10-variants` | `EPIC-VARIANT` | `PV1` `PV2` `PV3` `H9` `H11` | 9 merges |
+| `sprint/11-vocabulary` | `EPIC-VOCAB` | `T1` `T2` `T3` | 10 merges |
+
+These **do not run in parallel**, for the reason the section above gives:
+`models.py`, `config.py`, `crawler.py` and `reports.py` are contended across all
+of them, and seven sprints rewriting the same four files is the merge queue this
+model exists to avoid. The numbers are identifiers, not an order — the order is
+the *Cut after* column, and `sprint/8-redaction` goes first despite its number.
+
+**Why 8 jumps the queue.** `G5`–`G7` are the only P0s in the queued set.
+`QA.2` — a real run against a real authenticated portal — is already in flight,
+and every such run writes a capture folder containing real customer names,
+addresses and account references in the element model, the ARIA snapshot,
+`elements.csv` and every screenshot. `G4` governs how long that survives; `G5`
+and `G6` govern whether it is written at all. The weaker guarantee does not go
+first.
+
+Several sprints deliberately absorb items from other epics rather than leaving
+them for a themed sprint of their own, because the alternative is contending the
+same file twice:
+
+- 5 takes `H6`–`H8`: they turn on the same same-site and scope decisions as
+  `M1`/`M2`, all in `crawler.py` and `util.py`.
+- 6 takes `C3`: `diff.py` is already open for `L2`.
+- 9 takes `H10` and `X9`: a scheduled run wants a fixed URL list and a cheap
+  profile, and both are what make `W1` worth scheduling at all.
+- 10 takes `H9` and `H11`: both are capture-configuration items in
+  `browser.py`/`extraction.py`, exactly where `PV1` and `PV2` live.
+
+Within each sprint, land the `config.py` and `models.py` shape first — `M1` in
+5, `G5` in 8, `PV1` in 10 — then build on it. Same rule as point 2 above.
 
 ---
 
