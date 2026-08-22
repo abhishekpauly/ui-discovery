@@ -45,8 +45,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
+from pydantic import ValidationError
+
 from . import SCHEMA_VERSION, __version__
-from .models import RunEvent, RunManifest, StageRecord
+from .models import RunEvent, RunManifest, SafetyEnvelope, StageRecord
 
 EVENTS_FILE = "events.jsonl"
 MANIFEST_FILE = "run.json"
@@ -152,6 +154,17 @@ class RunContext:
 
     def record_stats(self, **stats: Any) -> None:
         self._stats.update(stats)
+
+    def safety_envelope(self) -> dict[str, Any]:
+        """G2: the envelope recorded so far.
+
+        `describe` merges at the top level only, so a caller adding one key to
+        a nested dict has to hand back the whole thing. Returning a copy means
+        it cannot be mutated in place by accident — which would change the
+        manifest without going through `describe`, and so without any of the
+        None-filtering it does.
+        """
+        return dict(self._meta.get("safety") or {})
 
     # --- events ------------------------------------------------------------
 
@@ -305,6 +318,22 @@ class RunContext:
             "probe_share_of_crawl_pct": pct(probe_ms, crawl_ms) if probe_ms else None,
         }
 
+    def _safety(self) -> Optional[SafetyEnvelope]:
+        """G2: the safety envelope, if the run got far enough to know it.
+
+        Tolerant of a malformed envelope on purpose. This is a *description*
+        of the rules, not the rules themselves — the gates in `safety.py` are
+        what actually refuse a control — so a manifest that cannot describe
+        them must not be the reason a capture fails at the last step.
+        """
+        envelope = self._meta.get("safety")
+        if not envelope:
+            return None
+        try:
+            return SafetyEnvelope.model_validate(envelope)
+        except ValidationError:
+            return None
+
     def manifest(self, outcome: Optional[str] = None) -> RunManifest:
         if outcome is None:
             outcome = "failed" if self._meta.get("fatal") else (
@@ -328,6 +357,7 @@ class RunContext:
             authorized=self._meta.get("authorized"),
             authorized_by=self._meta.get("authorized_by"),
             environment=self._meta.get("environment"),
+            safety=self._safety(),
             auth_used=bool(self._meta.get("auth_used")),
             auth_source=self._meta.get("auth_source"),
             auth_expires_in_hours=self._meta.get("auth_expires_in_hours"),

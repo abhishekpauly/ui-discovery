@@ -427,6 +427,46 @@ class StageRecord(BaseModel):
     counts: dict[str, int] = Field(default_factory=dict)
 
 
+class SafetyEnvelope(BaseModel):
+    """G2: the interaction rules a capture actually ran under.
+
+    A capture already refuses destructive controls. Which controls, and on
+    whose say-so, was inferable only from the engine version — so "the probe
+    never clicked Delete" was folklore a reader had to take on trust, and a
+    run made more cautious by config looked identical to one that was not.
+
+    The word lists are recorded as **counts plus this config's additions**
+    rather than in full. Forty default block words in every manifest would be
+    noise a reader learns to skip, and they are already pinned by
+    `engine_version`; what a manifest cannot otherwise tell you is what *this
+    operator* added on top, which is exactly the part that varies.
+
+    `submit_forms` is always `False` and is recorded anyway. A guarantee that
+    appears in the artifact is worth more than one that lives in a docstring,
+    and the day it is ever not `False` is the day a reader most needs to see it.
+    """
+
+    # The primary gate: interaction types that may be executed at all.
+    allow_list: list[str] = Field(default_factory=list)
+
+    # The secondary gate, as totals in force during this run...
+    block_words: int = 0
+    caution_words: int = 0
+    # ...and the part this config contributed, named.
+    block_words_extra: list[str] = Field(default_factory=list)
+    caution_words_extra: list[str] = Field(default_factory=list)
+
+    # Controls this run was forbidden to touch regardless of either gate.
+    never_touch: list[str] = Field(default_factory=list)
+
+    # Never true. See the class docstring.
+    submit_forms: bool = False
+
+    # The resolved per-module probe settings, so a reader can tell "this
+    # portal has no Audit tab" from "we chose not to open it".
+    probe_profiles: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class RunManifest(BaseModel):
     """The answer to "what was this run, and can I trust it?".
 
@@ -463,6 +503,12 @@ class RunManifest(BaseModel):
     authorized: Optional[bool] = None
     authorized_by: Optional[str] = None
     environment: Optional[str] = None
+
+    # G2: the interaction rules this run operated under. Optional because a
+    # manifest written by a run that never reached the crawl is still a valid
+    # manifest — and one that claims an envelope it never applied would be
+    # worse than one that admits it does not know.
+    safety: Optional[SafetyEnvelope] = None
 
     # Auth posture. Never the session itself.
     auth_used: bool = False

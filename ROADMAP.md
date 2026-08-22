@@ -400,15 +400,19 @@ runtime dependency — principle #11 stands.
 - **Files.** `config.py`, `cliconfig.py`, `pipeline.py`, `crawl.py`.
 - **Depends-on.** O3.
 
-### G2 — The safety envelope on the record  ·  Effort: S
+### G2 — The safety envelope on the record  ·  ✅ SHIPPED
 - **Goal.** A capture should state the rules it operated under, not leave them
   to be inferred from the engine version.
-- **Build.** Manifest section: allow-list, block/caution word counts,
-  `never_touch` rules, and the resolved probe profiles
-  (`CrawlConfig.probe_profiles` already carries the last).
+- **Build.** `RunManifest.safety` (`SafetyEnvelope`): the allow-list in full,
+  block/caution word counts **as they were in force** plus the additions this
+  config made, `never_touch` rules, `submit_forms`, and the resolved probe
+  profiles. `safety.describe_envelope()` owns the numbers, so they come from
+  the gates rather than from a second reading of the config. Built in two
+  steps — the rules up front, the probe profiles once the crawl has resolved
+  them — so a run that dies mid-crawl still says what it would have refused.
 - **Acceptance.** Two runs with different safety configs produce visibly
-  different manifests.
-- **Files.** `run.py`, `safety.py`, `models.py`.
+  different manifests. `tests/test_g2_safety_envelope.py` (18).
+- **Files.** `run.py`, `safety.py`, `models.py`, `pipeline.py`.
 - **Depends-on.** O3.
 
 ### G3 — Data-handling posture  ·  Effort: S
