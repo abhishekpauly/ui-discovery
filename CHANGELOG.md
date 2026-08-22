@@ -16,7 +16,28 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ---
 
-## [Unreleased]
+## [0.20.0] — The people come out of the capture (G5-G7)
+
+Three items, one theme: a capture of an authenticated portal stops being a copy
+of somebody's customer list. `G3` put the engine's privacy promises on the
+record; `G5` and `G6` close the hole those promises were leaving open, in the
+model and then in the pictures. `G7` evidences the one claim in `CLAUDE.md`
+that nothing had ever checked.
+
+Two properties hold across all three. **Detection is a deterministic
+classifier, never a model** — the same rule as `safety.py`, and the same
+reason: a redaction you cannot reproduce is one you cannot audit. And
+**every posture is recorded whether or not it was on**, because a capture that
+stayed silent about redaction would be indistinguishable from one where the
+pass never ran.
+
+> **`0.19.0` ships inside this release and was never tagged.** Sprint 8 was cut
+> from `sprint/1-governance` rather than from `main`, so sprint 1's version
+> bump reached `main` on *this* sprint's merge (#72) rather than its own (#70).
+> By the time that was noticed there was no commit whose tree said `0.19.0`
+> without also containing `G5`-`G7`, and a tag is never moved once pushed. The
+> `[0.19.0]` section below is therefore part of what `v0.20.0` contains —
+> `G1`-`G4` are in this release too, and `v0.18.1` is the previous tag.
 
 ### Added
 
@@ -158,7 +179,38 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
   **Known limitation.** Shapes, not meaning. A name in prose is not found
   unless supplied; 7-digit local numbers without an area code are deliberately
-  out of range. And this is still text: screenshots remain `G6`.
+  out of range. This pass covers text only — the pictures are `G6`, above, and
+  the two ship together.
+
+### Changed
+
+- **`extract` and `probe` honour the `privacy` block they already accepted.**
+  Both CLIs loaded a scope config and then dropped its redaction settings, so
+  `redact_content: true` produced an unredacted `page.json` and a probe record
+  carrying every accessible name the page displayed. `extraction.extract_page`
+  had supported it since `G5`; only the two wrappers were missing. Found while
+  wiring `G6` through the same capture paths.
+- **Network observation is attached on every crawl, not only when probing.**
+  `G7` needs it, and a ledger that was silently empty on unprobed runs would
+  answer a different question than the one it advertises. The additional
+  listener records URLs only.
+
+### Tests
+
++26 (753 → 779 collected; 776 passed and 3 skipped when this shipped) for `G6`
+and `G7` — and +178 (601 → 779) since `v0.18.1`, the previous tag, because
+`0.19.0` ships inside this release.
+
+`tests/test_g6_screenshot_redaction.py` asserts by **sampling pixels** rather
+than by checking box arithmetic, because every interesting failure of masking
+is a box painted in the wrong place: below the fold, where viewport and
+document coordinates diverge; inside a crop, which has its own origin; and over
+an ancestor, which blacks out the page. A ~40-line stdlib PNG reader does it —
+**Pillow is deliberately not added as a dependency.**
+
+`tests/test_g7_egress_ledger.py` reaches a refused loopback port rather than a
+real CDN, so the off-scope case needs no second server, no DNS and no network,
+and the suite stays runnable offline.
 
 
 ---
