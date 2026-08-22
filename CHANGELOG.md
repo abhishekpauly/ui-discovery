@@ -20,6 +20,55 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ### Added
 
+- **`G5` The people come out of the captured model.** The engine has always
+  redacted what a person *typed*: password fields, free-text values, sensitive
+  query keys. It has never redacted what the page *displayed* — and on a
+  logged-in portal that is the larger half. Element text, accessible names,
+  select options, table cells and the ARIA snapshot carry real customer names,
+  emails and account references, and `elements.csv` carries them again in a
+  form built for spreadsheets. `G3` put the engine's privacy promises on the
+  record; this closes the hole they were quietly leaving open.
+
+  ```yaml
+  privacy:
+    redact_content: true          # off by default
+    redact_entities: [EMAIL, CARD]  # empty = all but PERSON
+    redact_style: tag             # tag <EMAIL> | mask **** | remove
+    person_names: [Ada Lovelace]  # a pattern cannot find a name
+  ```
+
+  Detectors are deterministic — the same rule as `safety.py`, for the same
+  reason: a redaction you cannot reproduce is one you cannot audit. EMAIL,
+  PHONE, CARD (Luhn-checked), IBAN (mod-97), NATIONAL_ID (US-SSN-shaped only,
+  and the docstring says so rather than implying generality), and PERSON, which
+  matches only names an operator supplied.
+
+  **Over-redaction was treated as a real failure, not a safe default.** An
+  engine that scrubbed every label would pass any secrets grep and produce a
+  useless capture. Dates (`2026-08-22`), references (`12-345-678`), adjacent
+  counts (`Ports 8080 9090`) and 16-digit order numbers all reached an early
+  draft of the detectors; the Luhn and mod-97 checks and a much stricter phone
+  validator are what stopped them, and the suite spends as much effort on what
+  must *survive* as on what must go.
+
+  Redaction runs in `assemble_page` — the one point both the crawler and the
+  extractor pass through — so `elements.csv`, `controls.csv`, the reports and
+  `docgen` all inherit it by rendering from the model rather than needing their
+  own pass. **`PageNode.probe` is the exception, and it was a real miss:**
+  `interactions.py` builds that record separately, so a fully-redacted page
+  shipped beside a probe carrying `probe.title`, every `interaction.target` and
+  every revealed state in the clear. Only the end-to-end grep caught it.
+  `redact.py` now owns "which fields can carry a person" for every model, so
+  the next one added cannot repeat it.
+
+  `G3`'s manifest posture gains `content_redaction`, **present whether or not
+  redaction ran** — a capture that stayed silent about this would be
+  indistinguishable from one where the pass never happened.
+
+  **Known limitation.** Shapes, not meaning. A name in prose is not found
+  unless supplied; 7-digit local numbers without an area code are deliberately
+  out of range. And this is still text: screenshots remain `G6`.
+
 - **`G4` Retention — captures stop living forever.** A capture of an
   authenticated portal is a folder of screenshots of somebody's internal
   screens. They land in Downloads and stay there, and `G3` is explicit that the

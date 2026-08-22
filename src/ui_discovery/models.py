@@ -510,6 +510,11 @@ class DataHandling(BaseModel):
     # something a person typed. The boundary of the guarantee, stated.
     value_recorded_for: list[str] = Field(default_factory=list)
 
+    # G5: whether displayed page content was redacted, and how. Always present,
+    # including when it is off — a capture that stayed silent about this would
+    # be indistinguishable from one where the pass never ran.
+    content_redaction: dict[str, Any] = Field(default_factory=dict)
+
 
 class RunManifest(BaseModel):
     """The answer to "what was this run, and can I trust it?".

@@ -19,6 +19,7 @@ from . import SCHEMA_VERSION, __version__
 from .auth import check_auth
 from .browser import LIVE_CONNECTION_PROBE_JS, aria_snapshot, navigate
 from .models import Element, FrameInfo, Geometry, Heading, Option, Page
+from .redact import RedactionPolicy, Redactor, redact_element
 from .taxonomy import classify
 
 # The deterministic in-page pass, shared by the sync extractor (V0) and the
@@ -233,22 +234,39 @@ def assemble_page(
     screenshot_path: Optional[str],
     viewport: Optional[dict[str, int]] = None,
     frames: Optional[list[FrameInfo]] = None,
+    redactor: Optional["Redactor"] = None,
 ) -> Page:
     """Pure model-builder: given the raw output of `JS` plus the readiness
     report / ARIA tree / screenshot path, assemble a validated `Page`.
 
     This is deliberately free of any browser object, so it can be shared by the
     sync extractor (V0) and the async Crawlee handler (V1) unchanged.
+
+    G5: `redactor` runs here rather than at any of the write sites, and that is
+    the whole design. This is the one point both capture paths pass through, so
+    a single application covers the crawler and the extractor — and everything
+    downstream (`elements.csv`, `controls.csv`, the reports, `docgen`) renders
+    *from* this model, so redacting it once means no write site can leak a copy
+    the others redacted. No unredacted `Page` is ever constructed.
     """
     elements = [element_from_raw(e) for e in raw.get("elements", [])]
     headings = [Heading(**h) for h in raw.get("headings", [])]
+    title = raw.get("title", "")
+
+    if redactor is not None and redactor.active:
+        elements = [redact_element(e, redactor) for e in elements]
+        for heading in headings:
+            heading.text = redactor.text(heading.text) or ""
+        title = redactor.text(title) or ""
+        aria_tree = redactor.text(aria_tree)
+
     return Page(
         schema_version=SCHEMA_VERSION,
         engine_version=__version__,
         extracted_at=datetime.now(timezone.utc).isoformat(),
         requested_url=requested_url,
         final_url=raw.get("final_url", requested_url),
-        title=raw.get("title", ""),
+        title=title,
         viewport=raw.get("viewport", viewport or DEFAULT_VIEWPORT),
         readiness=readiness,
         counts=_counts(elements, headings),
@@ -288,10 +306,14 @@ def extract_page(
     timeout_ms: int = 30000,
     headless: bool = True,
     auth_state: Optional[dict] = None,
+    redaction: Optional[RedactionPolicy] = None,
 ) -> Page:
     """Render `url` (sync Playwright) and return a validated `Page` model. If
     `screenshot_path` is given, a full-page screenshot is written there.
-    `auth_state` is a Playwright storage-state dict for authenticated portals."""
+    `auth_state` is a Playwright storage-state dict for authenticated portals.
+
+    G5: `redaction` strips people out of the captured text. Off unless asked
+    for, so the default behaviour of this function is unchanged."""
     viewport = viewport or DEFAULT_VIEWPORT
 
     with sync_playwright() as p:
@@ -323,6 +345,7 @@ def extract_page(
                 screenshot_path=saved_screenshot,
                 viewport=viewport,
                 frames=frames,
+                redactor=Redactor(redaction) if redaction else None,
             )
             page_model.auth = check_auth(page_model)
             return page_model

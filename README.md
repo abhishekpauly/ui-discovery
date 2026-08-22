@@ -552,8 +552,40 @@ describe a guarantee the engine does not actually make.
 
 > **This covers text, not pixels.** A screenshot renders a typed value as an
 > image, so a capture of an authenticated portal still contains readable
-> customer data in its screenshots. Masking those is `G5`/`G6` on the roadmap;
-> until then, treat capture folders as sensitive — and put a retention on them.
+> customer data in its screenshots. Masking those is `G6` on the roadmap; until
+> then, treat capture folders as sensitive — and put a retention on them.
+
+### Keeping people out of the capture
+
+Element text, accessible names, options, table cells and the ARIA snapshot
+carry whatever the page displayed — on a logged-in portal, that is customer
+data. Turn redaction on per target:
+
+```yaml
+privacy:
+  redact_content: true            # off by default
+  redact_entities: [EMAIL, CARD]  # omit for all but PERSON
+  redact_style: tag               # tag <EMAIL> | mask **** | remove
+  person_names: [Ada Lovelace]    # a pattern cannot find a name
+```
+
+| Entity | How it is decided |
+| --- | --- |
+| `EMAIL` | pattern |
+| `PHONE` | pattern, then a validator that rejects dates, references and adjacent counts |
+| `CARD` | pattern **plus Luhn** — without it every 16-digit order number becomes a card |
+| `IBAN` | pattern **plus mod-97** |
+| `NATIONAL_ID` | US-SSN-shaped only. A pattern loose enough for every country would redact date ranges instead |
+| `PERSON` | only names you supply — matching is exact and word-bounded |
+
+Detection is deterministic, never a model — the same rule as `safety.py`, and
+the same reason: a redaction you cannot reproduce is one you cannot audit. The
+price is recall. **This finds shapes, not meaning**, so a name in prose is not
+found unless you list it, and 7-digit local numbers are out of range.
+
+Redaction runs at capture time, so no unredacted copy reaches disk, and
+`run.json`'s `data_handling.content_redaction` records which way it was set —
+including when it was off.
 
 ### Retention — captures should not live forever
 
