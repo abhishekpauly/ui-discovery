@@ -6,18 +6,19 @@
 <body>
   <main>
     <h1>A page that reaches off-site</h1>
-    <p>Everything below is served locally; the second host stands in for a CDN.</p>
-    <!-- Rewritten at load time to whichever port the "third party" server got.
-         A fixture cannot hard-code a port, and it must never reach the real
-         internet — the suite has to stay runnable offline. -->
-    <img id="offsite" alt="a third-party asset" width="40" height="40">
+    <p>The stylesheet above is same-host. The image below is not.</p>
+
+    <!-- A third-party asset, entirely statically: port 1 on loopback refuses
+         instantly, so the request fails without DNS, without leaving the
+         machine, and without the suite needing a second server or the real
+         internet. A host the engine *tried* to reach is exactly what the
+         ledger is for, so recording a failed request is the point rather than
+         a compromise — it is also the only coverage the `requestfailed`
+         listener gets. -->
+    <img src="http://127.0.0.1:1/pixel.png" alt="a third-party asset"
+         width="40" height="40">
+
     <a href="second.html">Second page</a>
   </main>
-  <script>
-    const other = new URLSearchParams(location.search).get("third_party");
-    if (other) {
-      document.getElementById("offsite").src = other + "/pixel.png";
-    }
-  </script>
 </body>
 </html>

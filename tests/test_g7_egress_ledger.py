@@ -114,17 +114,23 @@ def test_a_described_ledger_survives_the_round_trip(tmp_path):
 # --- against a real crawl ---------------------------------------------------
 
 
-def _crawl(url: str, out: Path, run=None, **kw) -> None:
+def _crawl(url: str, out: Path, run=None, *, max_pages: int = 2,
+           max_depth: int = 1, **kw) -> None:
     asyncio.run(crawl_site(
         url, output_dir=str(out), run=run,
-        options=CrawlOptions(max_pages=2, max_depth=1, screenshots=False, **kw),
+        options=CrawlOptions(max_pages=max_pages, max_depth=max_depth,
+                             screenshots=False, **kw),
     ))
 
 
 def test_a_fixture_run_names_exactly_the_fixture_host(serve, tmp_path):
+    """Depth 0 on purpose: `second.html` links back to `index.html`, which
+    reaches off-site by design, so following it would be testing the other
+    case. The quiet ledger is the one worth pinning here."""
     server = serve("fixtures/egress")
     run = RunContext.begin(str(tmp_path), target=server.base)
-    _crawl(server.url("second.html"), tmp_path, run=run, probe=False)
+    _crawl(server.url("second.html"), tmp_path, run=run, probe=False,
+           max_pages=1, max_depth=0)
 
     ledger = run.manifest().egress
     hosts = [h.host for h in ledger.hosts]
@@ -134,21 +140,32 @@ def test_a_fixture_run_names_exactly_the_fixture_host(serve, tmp_path):
 
 
 def test_a_third_party_asset_is_listed_and_flagged(serve, tmp_path):
-    """The fixture points at a second local server rather than a real CDN: the
-    suite must never depend on an external site, and a test that reached one
-    would fail offline for reasons that have nothing to do with the engine."""
-    target = serve("fixtures/egress")
-    third_party = serve("fixtures/egress/third-party")
+    """The fixture references `127.0.0.1:1`, which refuses instantly.
 
+    The suite must never depend on an external site — a test that reached one
+    would fail offline for reasons that have nothing to do with the engine —
+    and an earlier version of this fixture rewrote the asset URL from a query
+    parameter so a second local server could stand in for a CDN. CodeQL was
+    right to reject that: reading `location.search` into `img.src` is an XSS
+    and open-redirect shape whether or not the file is a fixture.
+
+    A refused port needs no server, no DNS and no port discovery, and a host
+    the engine *tried* to reach is exactly what the ledger is for — so this
+    also covers the `requestfailed` listener, which nothing else exercises.
+    """
+    target = serve("fixtures/egress")
     run = RunContext.begin(str(tmp_path), target=target.base)
-    _crawl(f"{target.url('index.html')}?third_party={third_party.base}",
-           tmp_path, run=run, probe=False)
+    _crawl(target.url("index.html"), tmp_path, run=run, probe=False)
 
     ledger = run.manifest().egress
-    assert host_of(third_party.base) in ledger.off_scope
+    assert ledger.off_scope == ["127.0.0.1:1"]
     flagged = [h for h in ledger.hosts if not h.in_scope]
-    assert [h.host for h in flagged] == [host_of(third_party.base)]
+    assert [h.host for h in flagged] == ["127.0.0.1:1"]
     assert flagged[0].first_path == "/pixel.png"
+
+    # The target is still listed, in scope, and first.
+    assert ledger.hosts[0].host == host_of(target.base)
+    assert ledger.hosts[0].in_scope is True
 
 
 def test_the_ledger_does_not_depend_on_the_probe(serve, tmp_path):
@@ -157,5 +174,6 @@ def test_the_ledger_does_not_depend_on_the_probe(serve, tmp_path):
     operator schedules."""
     server = serve("fixtures/egress")
     run = RunContext.begin(str(tmp_path), target=server.base)
-    _crawl(server.url("second.html"), tmp_path, run=run, probe=False)
+    _crawl(server.url("second.html"), tmp_path, run=run, probe=False,
+           max_pages=1, max_depth=0)
     assert run.manifest().egress.total_requests > 0
