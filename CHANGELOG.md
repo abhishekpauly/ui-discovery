@@ -20,6 +20,36 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ### Added
 
+- **`G7` Every host a run talked to, on the record.** `CLAUDE.md` principle #11
+  says the engine talks to nothing but the target. That is a design claim, and
+  every other claim a capture makes is evidenced — the safety envelope, the
+  data-handling posture, the authorization. This one was not, so a reader had
+  to take it on trust and a regression that started fetching a third-party
+  asset would have been invisible in the artifact it damaged.
+
+  `run.json` gains an `egress` section: every host contacted, with a request
+  count and the first path that reached it, foreign hosts flagged and listed
+  separately so nobody has to filter to find them. An `egress.off_scope`
+  warning event fires when there are any.
+
+  Two decisions worth stating:
+
+  - **It is on every manifest, never `null`.** `safety` and `data_handling` are
+    nullable because a run that dies early genuinely cannot describe them.
+    "This run contacted only the target" is different — an absent section
+    cannot make that claim, so a run that never reached the crawl reports an
+    empty ledger instead.
+  - **It does not depend on the probe.** The per-request record `F3.4` builds
+    only exists when probing is on, and a ledger that inherited that condition
+    would be silently empty on exactly the cheap scheduled runs where it
+    matters. Observation is attached unconditionally and keeps URLs only —
+    already `redact_url`-processed, so it can carry no secret the probe's
+    record would not.
+
+  Scope is exact host match, because `same-host` is the engine's only subdomain
+  policy today; a ledger calling `cdn.target.com` in-scope would be claiming
+  something the crawler does not believe. `H6` is the item that widens it.
+
 - **`G6` The people come out of the captured screenshots.** `G5` cleaned the
   model and left the harder half untouched: a capture of an authenticated
   portal is mostly *pictures* of that portal, and a picture of a customer list

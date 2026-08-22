@@ -114,7 +114,7 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | G4 | Retention | `outputs.retention_days` (default off) + `prune`; lists by default, `--delete` to act; only folders with `run.json`, aged from the manifest | P2 | ✅ |
 | G5 | Redact the people out of the model | EMAIL/PHONE/CARD(Luhn)/IBAN(mod-97)/NATIONAL_ID + operator name list; at capture time, page model **and** probe record; off by default, posture recorded either way | P0 | ✅ |
 | G6 | Redact the people out of the screenshots | mask element boxes using geometry already recorded; crops and revealed states too | P0 | ✅ |
-| G7 | Egress ledger | every host contacted during a run, in the manifest; off-scope hosts flagged | P1 | 📋 |
+| G7 | Egress ledger | every host contacted during a run, in the manifest; off-scope hosts flagged | P1 | ✅ |
 
 ### Discovery — know the URL surface before crawling it · EPIC-MAP
 | ID | Feature | Scope | Pri | Status |

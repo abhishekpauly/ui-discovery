@@ -615,6 +615,31 @@ element is masked where it sits in the layout, not where a full-page screenshot
 renders it; and content in a cross-origin frame never enters the model, so it is
 not masked either.
 
+### Where a run sent traffic
+
+The engine talks to nothing but the target. `run.json` now proves it rather
+than asserting it:
+
+```json
+"egress": {
+  "target_host": "portal.example.com",
+  "hosts": [
+    {"host": "portal.example.com", "requests": 214, "first_path": "/", "in_scope": true},
+    {"host": "cdn.vendor.net", "requests": 3, "first_path": "/a.js", "in_scope": false}
+  ],
+  "total_requests": 217,
+  "off_scope": ["cdn.vendor.net"]
+}
+```
+
+Foreign hosts are flagged and listed separately, and an `egress.off_scope`
+warning event fires when there are any. The section is on **every** manifest,
+including when it is empty — a ledger that appeared only on the interesting
+runs would say nothing about the rest.
+
+Scope is exact host match, matching the engine's `same-host` crawl policy, so
+`cdn.portal.example.com` is reported off-scope. Widening that is `H6`.
+
 ### Retention — captures should not live forever
 
 ```bash

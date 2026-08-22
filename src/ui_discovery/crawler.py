@@ -46,6 +46,7 @@ from .interactions import (
 )
 from .mask import apply_mask_async, clear_mask_async
 from .models import Crawl, CrawlConfig, CrawlStats, NetworkRequest, PageNode
+from .network import build_ledger, redact_url
 from .redact import DISABLED as DISABLED_REDACTION
 from .redact import RedactionPolicy, Redactor, redact_probe
 from .safety import (
@@ -752,6 +753,11 @@ async def crawl_site(
     # from a pre-navigation hook so page-load traffic is captured, then read
     # by the handler once that page has been extracted.
     net_sinks: dict[int, list[NetworkRequest]] = {}
+    # G7: every request URL the run made, kept flat and separately from the
+    # per-page sinks. Those are popped by the probe and are empty when probing
+    # is off — an egress ledger that only existed on probed runs would be
+    # answering a different question than the one it claims to.
+    egress_urls: list[str] = []
     # Per page: clickable elements the app never marked up as links.
     unmarked_total: dict[str, int] = {}
     # O4: where the crawl's time went. A dict rather than a `nonlocal` int for
@@ -828,12 +834,33 @@ async def crawl_site(
     # H2: start observing network traffic before the page navigates, so the
     # probe's record includes page-load requests, not just those triggered by
     # the interactions we execute.
-    if probe or any(rule.enabled for _, rule in probe_rules):
-        @crawler.pre_navigation_hook
-        async def _attach_probe_network(context) -> None:  # noqa: ANN001
+    #
+    # G7 rides along, but unconditionally: the probe's sink is the richer
+    # record and only exists when probing is on, while "which hosts did this
+    # run talk to?" has to be answerable for every run or the answer means
+    # nothing. Its listener keeps URLs only — already `redact_url`-processed,
+    # so it can carry no secret the probe's record would not.
+    probing = probe or any(rule.enabled for _, rule in probe_rules)
+
+    @crawler.pre_navigation_hook
+    async def _attach_network_observation(context) -> None:  # noqa: ANN001
+        page = context.page
+        if probing:
             sink: list[NetworkRequest] = []
-            net_sinks[id(context.page)] = sink
-            attach_network_async(context.page, sink, redact_keys)
+            net_sinks[id(page)] = sink
+            attach_network_async(page, sink, redact_keys)
+
+        def note(url: str) -> None:
+            try:
+                egress_urls.append(redact_url(url, redact_keys))
+            except Exception:
+                pass
+
+        page.on("response", lambda response: note(response.url))
+        # A blocked or refused request never produces a response, and a host
+        # the engine tried and failed to reach is exactly what this ledger is
+        # for — recording only successes would hide the interesting case.
+        page.on("requestfailed", lambda request: note(request.url))
 
     if active_adapters:
         @crawler.pre_navigation_hook
@@ -1121,6 +1148,18 @@ async def crawl_site(
         event("budget.exhausted", level="warning",
               discovered_not_captured=len(missed), max_pages=max_pages,
               examples=sorted(missed)[:10])
+
+    # G7: the ledger goes on the manifest rather than on the crawl, because it
+    # is a fact about the *run* — the same reason `O3` owns authorization and
+    # the safety envelope. Reported even when it is unremarkable; a section
+    # that appeared only on the interesting runs would say nothing about the
+    # rest.
+    ledger = build_ledger(egress_urls, start_url)
+    if run is not None:
+        run.describe(egress=ledger)
+    if ledger["off_scope"]:
+        event("egress.off_scope", level="warning",
+              hosts=ledger["off_scope"], target_host=ledger["target_host"])
 
     return Crawl(
         schema_version=SCHEMA_VERSION,

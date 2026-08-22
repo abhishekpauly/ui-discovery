@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Egress fixture</title>
+<link rel="stylesheet" href="local.css">
+</head>
+<body>
+  <main>
+    <h1>A page that reaches off-site</h1>
+    <p>Everything below is served locally; the second host stands in for a CDN.</p>
+    <!-- Rewritten at load time to whichever port the "third party" server got.
+         A fixture cannot hard-code a port, and it must never reach the real
+         internet — the suite has to stay runnable offline. -->
+    <img id="offsite" alt="a third-party asset" width="40" height="40">
+    <a href="second.html">Second page</a>
+  </main>
+  <script>
+    const other = new URLSearchParams(location.search).get("third_party");
+    if (other) {
+      document.getElementById("offsite").src = other + "/pixel.png";
+    }
+  </script>
+</body>
+</html>

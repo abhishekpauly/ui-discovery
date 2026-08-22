@@ -522,6 +522,38 @@ class DataHandling(BaseModel):
     screenshot_redaction: dict[str, Any] = Field(default_factory=dict)
 
 
+class EgressHost(BaseModel):
+    """One host this run talked to."""
+
+    host: str
+    requests: int = 0
+    # The first path that reached this host — enough to answer "why did we
+    # contact it?" without keeping a second copy of every URL.
+    first_path: str = ""
+    in_scope: bool = True
+
+
+class EgressLedger(BaseModel):
+    """G7: every host contacted during a run.
+
+    Principle #11 says the engine talks to nothing but the target. That is a
+    design claim, and every other claim in a capture is evidenced — this one
+    should be too, particularly once `M1` starts fetching sitemaps and `H7`
+    starts recording links that leave the product.
+
+    Present in every manifest, including when it is empty and including when
+    nothing unusual happened. A ledger that appeared only on the interesting
+    runs would say nothing about the others.
+    """
+
+    target_host: str = ""
+    hosts: list[EgressHost] = Field(default_factory=list)
+    total_requests: int = 0
+    # Hosts outside the target's scope, counted separately so a reader does
+    # not have to filter the list to find out whether there were any.
+    off_scope: list[str] = Field(default_factory=list)
+
+
 class RunManifest(BaseModel):
     """The answer to "what was this run, and can I trust it?".
 
@@ -569,6 +601,11 @@ class RunManifest(BaseModel):
     # reason as `safety` — a manifest that cannot describe the posture says so
     # rather than claiming one it never applied.
     data_handling: Optional[DataHandling] = None
+
+    # G7: every host this run contacted. Not optional, unlike the two above —
+    # "we contacted nothing outside the target" is a claim worth making
+    # explicitly, and an absent section cannot make it.
+    egress: EgressLedger = Field(default_factory=EgressLedger)
 
     # Auth posture. Never the session itself.
     auth_used: bool = False
