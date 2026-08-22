@@ -18,6 +18,25 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.19.0] — A capture states the rules it ran under (G1-G4)
+
+Four items, one theme: the engine's guarantees stop being folklore. A capture
+could always say what it *found*; it could not say what rules it ran under,
+what it deliberately did not keep, or how long it would live.
+
+Two properties hold across all four. **Every section is described by the code
+that enforces it** — `G2`'s word counts come from `safety.py`'s gates, `G3`'s
+rules from the three modules that do the dropping, and the input types are
+parsed out of `extract.js` rather than mirrored — because a manifest that
+assembled its own idea of the rules would be a second source of truth, and the
+second one always goes stale. And **describing a guarantee never becomes a way
+to fail**: a section that will not validate is dropped rather than allowed to
+take a capture down at the last step.
+
 ### Added
 
 - **`G5` The people come out of the captured model.** The engine has always

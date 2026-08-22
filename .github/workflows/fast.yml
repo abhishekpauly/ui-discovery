@@ -32,6 +32,13 @@ jobs:
         python: ["3.11", "3.14"]
     steps:
       - uses: actions/checkout@v7
+        with:
+          # `test_release_hygiene`'s drift guard finds the release commit with
+          # `git log -S`, which a shallow clone cannot see — so it skipped on
+          # every run and gated nothing, which is how four items reached this
+          # branch past a limit of three. Full history costs a second or two on
+          # a repo this size and is what makes the guard real.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v7
         with:
