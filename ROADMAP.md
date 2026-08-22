@@ -566,35 +566,65 @@ runtime dependency — principle #11 stands.
 - **Files.** `config.py`, `cliconfig.py`, `pipeline.py`, `crawl.py`.
 - **Depends-on.** O3.
 
-### G2 — The safety envelope on the record  ·  Effort: S
+### G2 — The safety envelope on the record  ·  ✅ SHIPPED
 - **Goal.** A capture should state the rules it operated under, not leave them
   to be inferred from the engine version.
-- **Build.** Manifest section: allow-list, block/caution word counts,
-  `never_touch` rules, and the resolved probe profiles
-  (`CrawlConfig.probe_profiles` already carries the last).
+- **Build.** `RunManifest.safety` (`SafetyEnvelope`): the allow-list in full,
+  block/caution word counts **as they were in force** plus the additions this
+  config made, `never_touch` rules, `submit_forms`, and the resolved probe
+  profiles. `safety.describe_envelope()` owns the numbers, so they come from
+  the gates rather than from a second reading of the config. Built in two
+  steps — the rules up front, the probe profiles once the crawl has resolved
+  them — so a run that dies mid-crawl still says what it would have refused.
 - **Acceptance.** Two runs with different safety configs produce visibly
-  different manifests.
-- **Files.** `run.py`, `safety.py`, `models.py`.
+  different manifests. `tests/test_g2_safety_envelope.py` (18).
+- **Files.** `run.py`, `safety.py`, `models.py`, `pipeline.py`.
 - **Depends-on.** O3.
 
-### G3 — Data-handling posture  ·  Effort: S
+### G3 — Data-handling posture  ·  ✅ SHIPPED
 - **Goal.** The engine redacts typed values, password fields and sensitive
   query keys. That guarantee is currently folklore; make it auditable.
-- **Build.** A manifest section recording what was deliberately not persisted,
-  and the redaction rules in force.
+- **Build.** `RunManifest.data_handling` (`DataHandling`): `never_persisted`
+  (headers, bodies, the session — data that never enters the model) kept apart
+  from `redactions` (data the engine sees and drops), each named with a stable
+  `rule` id, where it applies and what it drops. Every rule is reported by the
+  module that enforces it — `network`, `browser`, `extraction` — and the input
+  types are **read out of `extract.js`** rather than mirrored, so the
+  description cannot drift from the behaviour.
 - **Acceptance.** The manifest names each redaction; a grep for known secret
   shapes over a whole capture returns nothing.
-- **Files.** `run.py`, `browser.py`, `network.py`.
+  `tests/test_g3_data_handling.py` (14) greps a real capture of
+  `fixtures/forms/` — which plants a password and an email for the purpose —
+  and separately asserts that choice-shaped values *survive*, because a capture
+  that dropped everything would pass the grep and be worthless.
+- **Known limitation.** Text artifacts only. A screenshot renders a typed value
+  as pixels, so no grep can speak for it; `G5`/`G6` are what close that.
+- **Files.** `run.py`, `browser.py`, `network.py`, `extraction.py`,
+  `models.py`, `pipeline.py`.
 - **Depends-on.** O3.
 
-### G4 — Retention  ·  Effort: S
+### G4 — Retention  ·  ✅ SHIPPED
 - **Goal.** Captures contain screenshots of authenticated internal screens and
   currently accumulate in Downloads forever.
-- **Build.** `outputs.retention_days` in the scope config plus a `prune`
-  command that deletes captures past it, reporting what it removed.
-- **Acceptance.** Prune removes only expired run folders and says which;
-  a dry-run mode lists without deleting.
-- **Files.** `config.py`, new `prune.py`, `inventory.py`.
+- **Build.** `outputs.retention_days` (default `0` = off) plus
+  `python -m ui_discovery.prune`. A folder is a capture **iff it contains
+  `run.json`**; age comes from that manifest and never from the filesystem, so
+  a capture that cannot be dated is kept *and reported* rather than guessed at.
+  `runs.jsonl` is never rewritten — it is append-only history, and the index
+  recording that a run happened outlives the folder.
+- **Departure from this spec, deliberate.** Listing is the **default** and
+  `--delete` is required to remove anything, which is the inverse of what this
+  item asked for. Every other destructive decision in the engine refuses by
+  default and must be asked twice; a command that irreversibly deletes a
+  directory tree because someone mistyped `--output` would be the one place
+  that pattern did not hold.
+- **Acceptance.** Prune removes only expired run folders and says which; the
+  listing is provably the same set the delete takes.
+  `tests/test_g4_retention.py` (26), including two that run the real pipeline
+  and prune its output — the only way to prove `prune` reads the manifest shape
+  the engine actually writes.
+- **Files.** `config.py`, new `prune.py`, `__init__.py` (library surface).
+  `inventory.py` was untouched: nothing there needed to change.
 - **Depends-on.** O5.
 
 ### G5 — Redact the people out of the model  ·  Effort: M  ·  **P0**

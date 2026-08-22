@@ -488,7 +488,7 @@ Every capture writes three files that describe the *run*, not the product:
 
 | File | What it answers |
 | --- | --- |
-| `run.json` | Who ran this, against what, under whose authorization, how long each stage took, and how it ended |
+| `run.json` | Who ran this, against what, under whose authorization, **under which safety rules**, how long each stage took, and how it ended |
 | `events.jsonl` | What happened, in order — one JSON object per line |
 | `runs.jsonl` | *(at the output root)* Every run so far, one line each, and how they trend |
 
@@ -501,11 +501,80 @@ jq -r '.stages[] | "\(.name) \(.duration_ms)ms \(.status)"' run.json
 
 # Was this the same configuration as last time?
 jq -r .config_sha256 run.json
+
+# What rules was this capture operating under?
+jq '.safety | {allow_list, block_words, never_touch, submit_forms}' run.json
 ```
 
 `config_sha256` is taken over the **resolved** scope, so two runs are provably
 the same configuration even when one passed flags and the other used a config
 file — and differ the moment a single setting does.
+
+### The safety envelope
+
+`run.json`'s `safety` block states the interaction rules the capture actually
+ran under, so a reader never has to infer them from the engine version:
+
+| Field | What it holds |
+| --- | --- |
+| `allow_list` | The interaction types that may be executed at all |
+| `block_words` / `caution_words` | How many words were **in force** — this config's additions *plus* the defaults they joined, not the config alone |
+| `block_words_extra` / `caution_words_extra` | What this config added, named |
+| `never_touch` | Controls this run was forbidden to touch, in full — that is what explains a gap in coverage |
+| `submit_forms` | Always `false`, recorded anyway |
+| `probe_profiles` | The resolved per-module probe settings, so "this portal has no Audit tab" is distinguishable from "we chose not to open it" |
+
+The word lists are counted rather than listed because forty default block words
+in every manifest is noise a reader learns to skip, and `engine_version` already
+pins them. What a manifest cannot otherwise tell you is what *this* operator
+added on top — which is the part that varies, and so the part that is named.
+
+### What a capture deliberately does not keep
+
+`run.json`'s `data_handling` block makes the privacy guarantees auditable
+instead of folklore, and separates two different strengths of promise:
+
+| Key | What it holds |
+| --- | --- |
+| `never_persisted` | Request/response headers and bodies, and the session — data that never enters the model, so there is nothing to redact |
+| `redactions` | Data the engine *sees* and drops, each with a stable `rule` id, where it applies, and what it drops |
+| `network_keys_extra` | Query keys this config added to the sensitive-key match — additive only |
+| `value_recorded_for` | The input types whose value **is** kept, because it is a choice rather than something a person typed |
+
+```bash
+# What did this capture refuse to keep?
+jq -r '.data_handling.redactions[] | "\(.rule): \(.detail)"' run.json
+```
+
+Each rule is reported by the module that enforces it, and `value_recorded_for`
+is read out of `extract.js` rather than restated — so the manifest cannot
+describe a guarantee the engine does not actually make.
+
+> **This covers text, not pixels.** A screenshot renders a typed value as an
+> image, so a capture of an authenticated portal still contains readable
+> customer data in its screenshots. Masking those is `G5`/`G6` on the roadmap;
+> until then, treat capture folders as sensitive — and put a retention on them.
+
+### Retention — captures should not live forever
+
+```bash
+python -m ui_discovery.prune                     # what would go, and why
+python -m ui_discovery.prune --days 30 --delete  # actually remove them
+```
+
+Set `outputs.retention_days` in the scope config, or pass `--days`. It is `0`
+(off) by default: a capture is somebody's deliverable, and an engine that
+started deleting them because a config gained a key would be worse than one
+that never deletes at all.
+
+**Listing is the default — `--delete` is required to remove anything.** Three
+rules keep it from taking the wrong thing:
+
+| Rule | Why |
+| --- | --- |
+| A folder is a capture only if it contains `run.json` | Anything else in the output root is somebody's, and is never touched or counted |
+| Age comes from the manifest, never the filesystem | A capture that cannot be dated is kept **and reported** — guessing an age is how you delete the wrong week |
+| `runs.jsonl` is never rewritten | Append-only history: the index records that a run happened, the folder is merely its artifact |
 
 Events cover `run.started`, `stage.started`/`finished`/`skipped`,
 `page.captured`, `page.skipped` (with the budget that stopped it),

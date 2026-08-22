@@ -20,6 +20,119 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ### Added
 
+- **`G4` Retention — captures stop living forever.** A capture of an
+  authenticated portal is a folder of screenshots of somebody's internal
+  screens. They land in Downloads and stay there, and `G3` is explicit that the
+  redaction guarantees cover text and not pixels — so the only thing between a
+  stale capture and an indefinite copy of customer data was somebody
+  remembering to delete it.
+
+  `outputs.retention_days` (default `0`, meaning off) plus a new command:
+
+  ```bash
+  python -m ui_discovery.prune                     # what would go
+  python -m ui_discovery.prune --days 30 --delete  # actually remove them
+  ```
+
+  **Listing is the default; `--delete` is required to remove anything.** That
+  is the inverse of what the ROADMAP asked for, and the departure is
+  deliberate: every other destructive decision here refuses by default and has
+  to be asked twice — the probe needs two independent gates to agree before it
+  clicks, and forms are never submitted at all. A command that irreversibly
+  deleted a directory tree because someone mistyped `--output` would be the one
+  place that pattern did not hold.
+
+  Three rules keep it from taking the wrong thing:
+
+  - **A folder is a capture only if it contains `run.json`.** Anything else in
+    the output root belongs to somebody and is never touched, or even counted.
+  - **Age comes from the manifest, never the filesystem.** A capture whose
+    manifest will not parse or carries no timestamp is kept *and reported* —
+    a capture nobody can date is one retention would otherwise let accumulate
+    in silence, which is the exact failure this item exists to fix.
+  - **`runs.jsonl` is left alone.** Append-only history (principle #4): the
+    index records that a run happened, the folder is merely its artifact.
+    Rewriting it to hide a pruned run would destroy the trend `O5` exists for.
+
+  `find_captures` and `prune_captures` are on the public library surface, so
+  a scheduled prune needs no CLI.
+
+- **`G3` The data-handling posture is on the record.** The engine drops typed
+  values, password fields, request bodies and sensitive query values. Every one
+  of those guarantees lived in a docstring and a `CONTRIBUTING.md` bullet — so
+  a reader had to take the engine's word for it, and a regression would have
+  been invisible in exactly the artifact it damaged.
+
+  `run.json` gains a `data_handling` block, and it keeps two different
+  strengths of promise apart on purpose:
+
+  - **`never_persisted`** — request and response headers, request and response
+    bodies, and the session itself. This data never enters the model, so there
+    is nothing to redact and nothing to leak.
+  - **`redactions`** — data the engine *sees* and deliberately drops on the way
+    out, each with a stable `rule` id, where it applies, and what it drops.
+    That is the weaker guarantee and the one worth enumerating, because it is
+    the one a change to the extractor could silently break.
+
+  Four rules are named: `network.query_values`, `element.typed_values`,
+  `element.value_attribute` and `aria.typed_values`.
+
+  **Every rule is reported by the module that enforces it** — `network.py`,
+  `browser.py` and `extraction.py` each describe their own — and `pipeline.py`
+  only orders and merges them. The moment the manifest starts describing a rule
+  itself is the moment it can disagree with the engine.
+
+  The input types whose value *is* kept are **read out of `extract.js`** rather
+  than mirrored in Python. Parsing a JS constant back is unusual and it is the
+  right call: a mirrored list is a second copy, and the copy that drifts is
+  always the one nobody runs. A rename raises with a message naming the
+  constant, rather than silently reporting an empty guarantee — which would be
+  the worst outcome available, a manifest claiming nothing is redacted while
+  the extractor still redacts.
+
+  **Known limitation, stated because it matters.** The acceptance grep covers
+  text artifacts. A screenshot renders a typed value as pixels, so no grep can
+  speak for it — a capture of an authenticated portal is still full of readable
+  customer data in its images. `G5` and `G6` are what close that, and this item
+  is the thing that makes the gap visible rather than assumed.
+
+- **`G2` The safety envelope is on the record.** The engine has always refused
+  destructive controls. *Which* controls, and on whose say-so, was inferable
+  only from the engine version — so "the probe never clicked Delete" was
+  folklore a reader had to take on trust, and a run deliberately made **more**
+  cautious by config produced a manifest indistinguishable from one that was
+  not.
+
+  `run.json` gains a `safety` block: the allow-list in full (four entries is a
+  fact, not noise), block and caution word counts, the `never_touch` rules,
+  `submit_forms`, and the probe profiles as resolved per module.
+
+  Three decisions worth knowing about:
+
+  - **The counts are what was in force, not what the operator typed.** A number
+    read back from the config would describe the additions; `blocks()` is a set
+    union, so the envelope reports those *plus* the defaults they joined — and
+    an addition the engine already covered correctly leaves the count alone.
+  - **The word lists are counted, not listed; the additions are named.** Forty
+    default block words in every manifest is noise a reader learns to skip, and
+    they are already pinned by `engine_version`. What a manifest cannot
+    otherwise tell you is what *this* operator added, which is the part that
+    varies. `never_touch` is named in full, because there the whole value is
+    knowing which control was ruled out — that is what explains a gap in
+    coverage.
+  - **`submit_forms` is always `false` and is recorded anyway.** A guarantee
+    that appears in the artifact is worth more than one that lives in a
+    docstring, and the day it is ever not `false` is the day a reader most
+    needs to see it.
+
+  Built in two steps, because the probe profiles do not exist until the crawl
+  has resolved them: the rules are recorded before the crawl starts, the
+  profiles folded in after. A run that dies mid-crawl still says what it would
+  have refused. And describing the rules can never become a way to fail — the
+  gates in `safety.py` are what actually refuse a control, so an envelope that
+  will not validate is dropped rather than allowed to take the capture down at
+  the last step.
+
 - **`G1` Authorization is enforced, not merely recorded.** `authorized`,
   `authorized_by` and `environment` sat in the scope schema for five releases
   being read by nothing. An operator wrote them down, believed the run was

@@ -21,6 +21,7 @@ from typing import Callable, Optional
 
 from .analysis import analyze_crawl
 from .auth import describe_session, load_storage_state, session_status
+from .browser import describe_redaction as describe_aria_redaction
 from .cliconfig import (
     add_config_argument,
     authorized_or_exit,
@@ -29,9 +30,13 @@ from .cliconfig import (
     load_or_exit,
     resolve_output_dir,
     resolve_output_root,
+    safety_policy,
 )
+from .config import Scope
 from .crawler import crawl_site
+from .extraction import describe_redaction as describe_element_redaction
 from .inventory import attach_metrics, write_inventory, write_module_artifacts
+from .network import describe_redaction as describe_network_redaction
 from .relations import build_relations
 from .reports import (
     write_analysis,
@@ -41,9 +46,43 @@ from .reports import (
     write_semantics,
 )
 from .run import RunContext, command_line, config_digest
+from .safety import describe_envelope
 from .util import slug_for
 
 STAGES = ("crawl", "analyze", "semantic", "docgen", "qagen")
+
+
+def data_handling_posture(scope: Scope) -> dict:
+    """G3: assemble what this capture will deliberately not keep.
+
+    Composed from the three modules that actually enforce it — `network` drops
+    headers, bodies and sensitive query values; `browser` strips typed text out
+    of the ARIA snapshot; `extraction` keeps only choice-shaped element values.
+    Each describes its own rules, so this function orders and merges and
+    invents nothing. The moment it starts describing a rule itself is the
+    moment the manifest can disagree with the engine.
+
+    `never_persisted` and `redactions` are kept apart deliberately: the first
+    never enters the model, the second is seen and dropped on the way out. The
+    second is the weaker promise and the one worth enumerating.
+    """
+    network = describe_network_redaction(tuple(scope.privacy.redact_network_keys))
+    aria = describe_aria_redaction()
+    element = describe_element_redaction()
+    return {
+        "never_persisted": [
+            *network["never_persisted"],
+            "the session itself — only whether one was used, its source, "
+            "and when it expires",
+        ],
+        "redactions": [
+            *network["redactions"],
+            *element["redactions"],
+            *aria["redactions"],
+        ],
+        "network_keys_extra": network["network_keys_extra"],
+        "value_recorded_for": element["value_recorded_for"],
+    }
 
 
 def _run_stage(name: str, fn: Callable, results: dict,
@@ -229,6 +268,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         auth_expires_in_hours=(
             round(status["seconds_remaining"] / 3600, 1)
             if status.get("seconds_remaining") else None),
+        # G2: the rules this run operates under, known before it starts. The
+        # probe profiles are resolved during the crawl and folded in below —
+        # recording the rest up front means a run that dies mid-crawl still
+        # says what it would have refused.
+        safety={**describe_envelope(safety_policy(scope)),
+                "submit_forms": scope.safety.submit_forms},
+        # G3: what this capture will deliberately not keep. Assembled from the
+        # modules that enforce each rule rather than restated here, so the
+        # manifest cannot claim a guarantee the engine does not make.
+        data_handling=data_handling_posture(scope),
     )
 
     # --- crawl (the one stage that must succeed) ---------------------------
@@ -251,6 +300,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     crawl.config.config_file = args.config
     crawl.run_id = run.run_id
     run.crawl_id = crawl.crawl_id
+    # G2: which probe profile applied where is only resolved by the crawl, so
+    # the envelope is completed rather than declared. `describe` merges, so the
+    # nested dict has to be rebuilt whole or the earlier keys would be dropped.
+    run.describe(safety={**run.safety_envelope(),
+                         "probe_profiles": crawl.config.probe_profiles})
     # Computed once and reused: the report, the relations artifact and docgen
     # must describe the same graph, not three independently-derived ones.
     relations = build_relations(crawl)

@@ -43,10 +43,22 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, Iterator, Optional, TypeVar
+
+from pydantic import ValidationError
 
 from . import SCHEMA_VERSION, __version__
-from .models import RunEvent, RunManifest, StageRecord
+from .models import (
+    DataHandling,
+    RunEvent,
+    RunManifest,
+    SafetyEnvelope,
+    StageRecord,
+)
+
+# The manifest sections a run *describes* rather than measures — `G2`'s safety
+# envelope and `G3`'s data-handling posture. Both are validated the same way.
+_Section = TypeVar("_Section", SafetyEnvelope, DataHandling)
 
 EVENTS_FILE = "events.jsonl"
 MANIFEST_FILE = "run.json"
@@ -152,6 +164,17 @@ class RunContext:
 
     def record_stats(self, **stats: Any) -> None:
         self._stats.update(stats)
+
+    def safety_envelope(self) -> dict[str, Any]:
+        """G2: the envelope recorded so far.
+
+        `describe` merges at the top level only, so a caller adding one key to
+        a nested dict has to hand back the whole thing. Returning a copy means
+        it cannot be mutated in place by accident — which would change the
+        manifest without going through `describe`, and so without any of the
+        None-filtering it does.
+        """
+        return dict(self._meta.get("safety") or {})
 
     # --- events ------------------------------------------------------------
 
@@ -305,6 +328,29 @@ class RunContext:
             "probe_share_of_crawl_pct": pct(probe_ms, crawl_ms) if probe_ms else None,
         }
 
+    def _described(self, key: str, model: type[_Section]) -> Optional[_Section]:
+        """A manifest section the run described, validated.
+
+        Covers `G2`'s safety envelope and `G3`'s data-handling posture, which
+        are the same shape of thing: a *description* of what the engine did,
+        assembled by the modules that did it.
+
+        Tolerant on purpose, and for a reason that applies to both. The gates
+        in `safety.py` are what actually refuse a control; the redactions in
+        `network`, `browser` and `extraction` are what actually drop the data.
+        These sections only describe them — so one that will not validate is
+        dropped rather than allowed to take a capture down at the last step,
+        and a missing section reads as `null` rather than as a guarantee that
+        was never applied.
+        """
+        payload = self._meta.get(key)
+        if not payload:
+            return None
+        try:
+            return model.model_validate(payload)
+        except ValidationError:
+            return None
+
     def manifest(self, outcome: Optional[str] = None) -> RunManifest:
         if outcome is None:
             outcome = "failed" if self._meta.get("fatal") else (
@@ -328,6 +374,8 @@ class RunContext:
             authorized=self._meta.get("authorized"),
             authorized_by=self._meta.get("authorized_by"),
             environment=self._meta.get("environment"),
+            safety=self._described("safety", SafetyEnvelope),
+            data_handling=self._described("data_handling", DataHandling),
             auth_used=bool(self._meta.get("auth_used")),
             auth_source=self._meta.get("auth_source"),
             auth_expires_in_hours=self._meta.get("auth_expires_in_hours"),

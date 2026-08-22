@@ -5,7 +5,7 @@ The single source of truth for **what exists, what's in flight, and what's next*
 `CHANGELOG.md` (version history) and `ROADMAP.md` (detailed specs + acceptance
 criteria). Keep this file updated as work lands (see *Maintenance* at the end).
 
-**Current product version: `0.18.1`** · Schema `0.1.0` · **643 tests** — 640 passing, 3 skipped
+**Current product version: `0.18.1`** · Schema `0.1.0` · **703 tests** — 700 passing, 3 skipped
 
 ## Legend
 
@@ -109,9 +109,9 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | ID | Feature | Scope | Pri | Status |
 |----|---------|-------|-----|--------|
 | G1 | Authorization enforced | `authorized` / `environment` stop being inert metadata — a `prod` config without `authorized: true` + `authorized_by` exits 3 before anything opens | P0 | ✅ |
-| G2 | Safety envelope recorded | allow-list, block words, `never_touch`, probe profiles | P1 | 📋 |
-| G3 | Data-handling posture | what was deliberately not persisted, and why | P1 | 📋 |
-| G4 | Retention | `outputs.retention_days` + a `prune` command | P2 | 📋 |
+| G2 | Safety envelope recorded | allow-list in full, word counts *in force* + this config's additions, `never_touch`, `submit_forms`, resolved probe profiles | P1 | ✅ |
+| G3 | Data-handling posture | `never_persisted` vs `redactions`, each rule named by the module that enforces it; value types read from `extract.js`, not mirrored | P1 | ✅ |
+| G4 | Retention | `outputs.retention_days` (default off) + `prune`; lists by default, `--delete` to act; only folders with `run.json`, aged from the manifest | P2 | ✅ |
 | G5 | Redact the people out of the model | deterministic PII patterns over text, names, ARIA snapshot, CSV — at capture time | P0 | 📋 |
 | G6 | Redact the people out of the screenshots | mask element boxes using geometry already recorded; crops and revealed states too | P0 | 📋 |
 | G7 | Egress ledger | every host contacted during a run, in the manifest; off-scope hosts flagged | P1 | 📋 |

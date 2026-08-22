@@ -194,3 +194,27 @@ def decide(el: dict, policy: SafetyPolicy = DEFAULT_POLICY) -> Interaction:
 def should_execute(interaction: Interaction) -> bool:
     """The gate the probe checks before clicking."""
     return interaction.skipped_reason is None
+
+
+def describe_envelope(policy: SafetyPolicy = DEFAULT_POLICY) -> dict:
+    """G2: the rules this policy puts in force, as plain data for a manifest.
+
+    Lives here rather than in `run.py` because the numbers have to come from
+    the gates themselves. A manifest that counted the word lists by reading a
+    config would report what the operator *asked for*; this reports what is
+    actually in force, which is the config plus the defaults it was added to —
+    and those are the two that a reader would otherwise have to reconcile by
+    hand.
+
+    Sorted throughout: a manifest is diffed against the previous one far more
+    often than it is read start to finish, and set iteration order would make
+    every run look changed.
+    """
+    return {
+        "allow_list": sorted(ALLOW_LIST),
+        "block_words": len(policy.blocks()),
+        "caution_words": len(policy.cautions()),
+        "block_words_extra": sorted(w.lower() for w in policy.block_words_extra),
+        "caution_words_extra": sorted(w.lower() for w in policy.caution_words_extra),
+        "never_touch": list(policy.never_touch),
+    }
