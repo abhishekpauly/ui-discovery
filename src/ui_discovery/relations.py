@@ -423,4 +423,8 @@ def build_relations(crawl: Crawl) -> Relations:
         entry_points=entry_points,
         orphans=orphans,
         screens=screens,
+        # H7: carried through rather than re-derived. The crawler is the only
+        # place that saw the raw hrefs; deriving "external" a second time here
+        # would be a second same-site rule to keep in step with the first.
+        external=list(crawl.external_links),
     )

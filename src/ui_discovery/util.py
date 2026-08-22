@@ -297,6 +297,49 @@ def resolve_labelled_links(
     return list(by_url.values())
 
 
+def resolve_external_links(
+    base_url: str,
+    links: list[dict],
+    root: str,
+    *,
+    subdomains: str = SAME_HOST,
+    subdomain_hosts: tuple[str, ...] = (),
+) -> list[dict]:
+    """H7 — the labelled links that point *off* the product.
+
+    An outbound link was dropped without trace, so a capture could not
+    distinguish "this product has no integrations" from "we were not
+    authorized past this point". The authorization boundary should be visible
+    in the artifact rather than inferred from its absence.
+
+    Same resolution rules as `resolve_links`, and deliberately the same
+    same-site test, inverted — so a link is external here *exactly* when it is
+    not navigable there, and the two can never both claim it.
+    """
+    out: dict[str, dict] = {}
+    for link in links:
+        href = (link.get("href") or "").strip()
+        if not href:
+            continue
+        low = href.lower()
+        if low.startswith(("mailto:", "tel:", "javascript:")) or low.startswith("#"):
+            continue
+        absolute = urljoin(base_url, href)
+        if urlparse(absolute).scheme not in ("http", "https"):
+            continue
+        if same_site(absolute, root, subdomains, subdomain_hosts):
+            continue
+        if absolute in out:
+            continue
+        out[absolute] = {
+            "url": absolute,
+            "label": (link.get("label") or "").strip(),
+            "region": link.get("region") or "",
+            "control": link.get("control") or "link",
+        }
+    return list(out.values())
+
+
 def bfs_depths(root: str, edges: dict[str, list[str]]) -> dict[str, int]:
     """Depth of each node from `root` over the discovered edge set."""
     depths = {root: 0}

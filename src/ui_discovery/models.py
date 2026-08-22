@@ -298,6 +298,10 @@ class Crawl(BaseModel):
     # is `stats.discovered_not_captured` — the integer and the list are the
     # same fact, so they cannot disagree.
     failures: list[CrawlFailure] = Field(default_factory=list)
+    # H7: labelled links that leave the product. Never enqueued, always
+    # recorded — "no integrations" and "we stopped at the boundary" are
+    # different findings and used to look identical.
+    external_links: list[NavEdge] = Field(default_factory=list)
 
 
 # --- Relationships: how screens and elements connect -------------------------
@@ -322,6 +326,9 @@ class NavEdge(BaseModel):
     label: str = ""
     region: Optional[str] = None   # the landmark the control sits in
     control: str = "link"          # link | button | deep-nav
+    # H7: this edge leaves the product. Recorded, never followed — the
+    # authorization boundary is a fact about the capture, not an absence.
+    external: bool = False
 
 
 class ElementLink(BaseModel):
@@ -404,6 +411,8 @@ class Relations(BaseModel):
     entry_points: list[str] = Field(default_factory=list)
     orphans: list[str] = Field(default_factory=list)
     screens: list[ScreenRelations] = Field(default_factory=list)
+    # H7: where this product hands off to someone else.
+    external: list[NavEdge] = Field(default_factory=list)
 
 
 # --- O1-O3: what happened when we looked ------------------------------------

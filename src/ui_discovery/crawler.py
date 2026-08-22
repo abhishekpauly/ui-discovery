@@ -50,6 +50,7 @@ from .models import (
     CrawlConfig,
     CrawlFailure,
     CrawlStats,
+    NavEdge,
     NetworkRequest,
     PageNode,
 )
@@ -70,6 +71,7 @@ from .util import (
     module_for_path,
     normalize_url,
     path_of,
+    resolve_external_links,
     resolve_labelled_links,
     slug_for,
     url_in_scope,
@@ -779,6 +781,8 @@ async def crawl_site(
     # rollup at the end can annotate the `missed` set rather than keep a
     # second tally that could drift from it.
     failure_reasons: dict[str, dict] = {}
+    # H7: labelled links that leave the product. Collected, never enqueued.
+    external_edges: list[NavEdge] = []
     # Per page: clickable elements the app never marked up as links.
     unmarked_total: dict[str, int] = {}
     # O4: where the crawl's time went. A dict rather than a `nonlocal` int for
@@ -1064,6 +1068,18 @@ async def crawl_site(
             subdomains=subdomains,
             subdomain_hosts=subdomain_hosts,
         )
+        # H7: the same link list, filtered the other way. An outbound link
+        # used to be dropped without trace, so a report could not tell "this
+        # product has no integrations" from "we were not authorized past this
+        # point".
+        for outbound in resolve_external_links(
+                model.final_url or url, links, root,
+                subdomains=subdomains, subdomain_hosts=subdomain_hosts):
+            external_edges.append(NavEdge(
+                source=url, target=outbound["url"], label=outbound["label"],
+                region=outbound["region"] or None,
+                control=outbound["control"], external=True))
+
         out_links = [link["url"] for link in labelled]
         edges[url] = out_links
         edge_labels[url] = labelled
@@ -1307,4 +1323,7 @@ async def crawl_site(
         navigation=navigation,
         pages=ordered,
         failures=failures,
+        external_links=sorted(
+            {(e.source, e.target): e for e in external_edges}.values(),
+            key=lambda e: (e.source, e.target)),
     )
