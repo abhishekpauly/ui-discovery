@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Egress fixture</title>
+<link rel="stylesheet" href="local.css">
+</head>
+<body>
+  <main>
+    <h1>A page that reaches off-site</h1>
+    <p>The stylesheet above is same-host. The image below is not.</p>
+
+    <!-- A third-party asset, entirely statically: port 1 on loopback refuses
+         instantly, so the request fails without DNS, without leaving the
+         machine, and without the suite needing a second server or the real
+         internet. A host the engine *tried* to reach is exactly what the
+         ledger is for, so recording a failed request is the point rather than
+         a compromise — it is also the only coverage the `requestfailed`
+         listener gets. -->
+    <img src="http://127.0.0.1:1/pixel.png" alt="a third-party asset"
+         width="40" height="40">
+
+    <a href="second.html">Second page</a>
+  </main>
+</body>
+</html>

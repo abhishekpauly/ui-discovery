@@ -550,10 +550,95 @@ Each rule is reported by the module that enforces it, and `value_recorded_for`
 is read out of `extract.js` rather than restated — so the manifest cannot
 describe a guarantee the engine does not actually make.
 
-> **This covers text, not pixels.** A screenshot renders a typed value as an
-> image, so a capture of an authenticated portal still contains readable
-> customer data in its screenshots. Masking those is `G5`/`G6` on the roadmap;
-> until then, treat capture folders as sensitive — and put a retention on them.
+> **This covers text; `G6` below covers the pixels.** A screenshot renders a
+> value as an image, which no grep can speak for. Turn
+> `privacy.redact_screenshots` on with `redact_content` and the two stay
+> together.
+
+### Keeping people out of the capture
+
+Element text, accessible names, options, table cells and the ARIA snapshot
+carry whatever the page displayed — on a logged-in portal, that is customer
+data. Turn redaction on per target:
+
+```yaml
+privacy:
+  redact_content: true            # off by default
+  redact_entities: [EMAIL, CARD]  # omit for all but PERSON
+  redact_style: tag               # tag <EMAIL> | mask **** | remove
+  person_names: [Ada Lovelace]    # a pattern cannot find a name
+  redact_screenshots: true        # G6 — unset follows redact_content
+```
+
+| Entity | How it is decided |
+| --- | --- |
+| `EMAIL` | pattern |
+| `PHONE` | pattern, then a validator that rejects dates, references and adjacent counts |
+| `CARD` | pattern **plus Luhn** — without it every 16-digit order number becomes a card |
+| `IBAN` | pattern **plus mod-97** |
+| `NATIONAL_ID` | US-SSN-shaped only. A pattern loose enough for every country would redact date ranges instead |
+| `PERSON` | only names you supply — matching is exact and word-bounded |
+
+Detection is deterministic, never a model — the same rule as `safety.py`, and
+the same reason: a redaction you cannot reproduce is one you cannot audit. The
+price is recall. **This finds shapes, not meaning**, so a name in prose is not
+found unless you list it, and 7-digit local numbers are out of range.
+
+Redaction runs at capture time, so no unredacted copy reaches disk, and
+`run.json`'s `data_handling.content_redaction` records which way it was set —
+including when it was off.
+
+### Keeping people out of the screenshots
+
+A capture of an authenticated portal is mostly *pictures* of that portal, and a
+picture of a customer list is a customer list. `redact_screenshots` covers every
+element the text pass redacted — in the full-page shot, in component crops, and
+in revealed states such as an opened dialog. It is unset by default and follows
+`redact_content`, because two independent switches is exactly how a clean model
+ends up beside an unmasked picture.
+
+The mask is painted **into the page** before the shutter fires, so no unmasked
+image is ever written and a crop carries the mask without any coordinate
+translation. The boxes come from the elements the text pass redacted — nothing
+reads an image, and nothing classifies anything.
+
+**It is blunter than the text pass.** The engine captures controls and
+containers, not bare paragraphs, so the unit a mask hangs on is the `<form>`,
+`<table>` or `<dialog>` whose text carried the value: a table with one address
+in it is covered whole. Ancestors are pruned — a table inside a form is masked
+and the controls beside it stay readable — but expect a masked capture to be
+less useful to read than an unmasked one. That is the trade, and
+`run.json`'s `data_handling.screenshot_redaction` records which way it was set.
+
+Two things it does not cover, stated rather than discovered: a `position: fixed`
+element is masked where it sits in the layout, not where a full-page screenshot
+renders it; and content in a cross-origin frame never enters the model, so it is
+not masked either.
+
+### Where a run sent traffic
+
+The engine talks to nothing but the target. `run.json` now proves it rather
+than asserting it:
+
+```json
+"egress": {
+  "target_host": "portal.example.com",
+  "hosts": [
+    {"host": "portal.example.com", "requests": 214, "first_path": "/", "in_scope": true},
+    {"host": "cdn.vendor.net", "requests": 3, "first_path": "/a.js", "in_scope": false}
+  ],
+  "total_requests": 217,
+  "off_scope": ["cdn.vendor.net"]
+}
+```
+
+Foreign hosts are flagged and listed separately, and an `egress.off_scope`
+warning event fires when there are any. The section is on **every** manifest,
+including when it is empty — a ledger that appeared only on the interesting
+runs would say nothing about the rest.
+
+Scope is exact host match, matching the engine's `same-host` crawl policy, so
+`cdn.portal.example.com` is reported off-scope. Widening that is `H6`.
 
 ### Retention — captures should not live forever
 

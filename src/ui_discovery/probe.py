@@ -22,10 +22,12 @@ from .cliconfig import (
     describe,
     load_or_exit,
     pick,
+    redaction_policy,
     resolve_output_dir,
     safety_policy,
 )
 from .interactions import probe_page
+from .redact import Redactor, redact_probe
 from .reports import write_probe
 from .util import slug_for
 
@@ -76,7 +78,13 @@ def main(argv: list[str] | None = None) -> int:
             headless=not args.headed,
             auth_state=auth_state,
             policy=safety_policy(scope),
+            # G5/G6: this CLI read a scope config's `privacy` block and then
+            # ignored it, exactly as `extract` did — so a probe record kept
+            # every accessible name the page displayed.
+            redaction=redaction_policy(scope),
+            mask_screenshots=scope.privacy.mask_screenshots(),
         )
+        redact_probe(probe, Redactor(redaction_policy(scope)))
     except Exception as exc:
         print(f"[ERROR] Probe failed: {exc}", file=sys.stderr)
         return 1

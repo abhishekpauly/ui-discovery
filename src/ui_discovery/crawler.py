@@ -44,7 +44,11 @@ from .interactions import (
     attach_network_async,
     probe_open_page_async,
 )
+from .mask import apply_mask_async, clear_mask_async
 from .models import Crawl, CrawlConfig, CrawlStats, NetworkRequest, PageNode
+from .network import build_ledger, redact_url
+from .redact import DISABLED as DISABLED_REDACTION
+from .redact import RedactionPolicy, Redactor, redact_probe
 from .safety import (
     DEFAULT_POLICY,
     SafetyPolicy,
@@ -561,6 +565,13 @@ class CrawlOptions:
     # Safety & privacy
     policy: SafetyPolicy = DEFAULT_POLICY
     redact_keys: tuple[str, ...] = ()
+    # G5: what to strip out of displayed page content. Disabled by default, so
+    # a zero-config crawl records exactly what it always has.
+    redaction: RedactionPolicy = DISABLED_REDACTION
+    # G6: cover the redacted elements in the pictures too. Carried separately
+    # from `redaction` because an operator can turn it off deliberately; the
+    # default pairing is resolved in `config.Privacy.mask_screenshots`.
+    mask_screenshots: bool = False
     # Extensibility (R3)
     adapters: tuple[Adapter, ...] = ()
     # Coverage
@@ -742,6 +753,11 @@ async def crawl_site(
     # from a pre-navigation hook so page-load traffic is captured, then read
     # by the handler once that page has been extracted.
     net_sinks: dict[int, list[NetworkRequest]] = {}
+    # G7: every request URL the run made, kept flat and separately from the
+    # per-page sinks. Those are popped by the probe and are empty when probing
+    # is off — an egress ledger that only existed on probed runs would be
+    # answering a different question than the one it claims to.
+    egress_urls: list[str] = []
     # Per page: clickable elements the app never marked up as links.
     unmarked_total: dict[str, int] = {}
     # O4: where the crawl's time went. A dict rather than a `nonlocal` int for
@@ -818,12 +834,33 @@ async def crawl_site(
     # H2: start observing network traffic before the page navigates, so the
     # probe's record includes page-load requests, not just those triggered by
     # the interactions we execute.
-    if probe or any(rule.enabled for _, rule in probe_rules):
-        @crawler.pre_navigation_hook
-        async def _attach_probe_network(context) -> None:  # noqa: ANN001
+    #
+    # G7 rides along, but unconditionally: the probe's sink is the richer
+    # record and only exists when probing is on, while "which hosts did this
+    # run talk to?" has to be answerable for every run or the answer means
+    # nothing. Its listener keeps URLs only — already `redact_url`-processed,
+    # so it can carry no secret the probe's record would not.
+    probing = probe or any(rule.enabled for _, rule in probe_rules)
+
+    @crawler.pre_navigation_hook
+    async def _attach_network_observation(context) -> None:  # noqa: ANN001
+        page = context.page
+        if probing:
             sink: list[NetworkRequest] = []
-            net_sinks[id(context.page)] = sink
-            attach_network_async(context.page, sink, redact_keys)
+            net_sinks[id(page)] = sink
+            attach_network_async(page, sink, redact_keys)
+
+        def note(url: str) -> None:
+            try:
+                egress_urls.append(redact_url(url, redact_keys))
+            except Exception:
+                pass
+
+        page.on("response", lambda response: note(response.url))
+        # A blocked or refused request never produces a response, and a host
+        # the engine tried and failed to reach is exactly what this ledger is
+        # for — recording only successes would hide the interesting case.
+        page.on("requestfailed", lambda request: note(request.url))
 
     if active_adapters:
         @crawler.pre_navigation_hook
@@ -869,27 +906,55 @@ async def crawl_site(
 
         profile = profile_for(url)
 
+        # G5: a redactor per page, so the count it accumulates is this page's.
+        # Sharing one across a crawl would make every page report the running
+        # total.
+        redactor = Redactor(opts.redaction)
+        model = assemble_page(
+            requested_url=url,
+            raw=raw,
+            readiness=readiness,
+            aria_tree=aria,
+            screenshot_path=None,
+            frames=frames,
+            redactor=redactor,
+        )
+
+        # G6: the model is built *before* the shutter, not after, and that
+        # ordering is the whole mechanism — redaction is what discovers which
+        # elements carry a person, so a screenshot taken first could only be
+        # masked by taking it twice.
         shot: str | None = None
         component_shots: dict[str, str] = {}
         if screenshots:
+            masked = {}
+            if opts.mask_screenshots and redactor.mask_targets:
+                masked = await apply_mask_async(page, redactor.mask_targets)
+                if masked.get("unresolved"):
+                    context.log.warning(
+                        f"G6: {masked['unresolved']} redacted element(s) could "
+                        f"not be masked on {url} — their boxes are visible")
             shot = str(shots_dir / f"{slug_for(url)}.png")
             try:
                 await page.screenshot(path=shot, full_page=True)
             except Exception:
                 shot = None
             if profile.component_screenshots:
+                # The overlay is still in the page, so every crop inherits it
+                # and no coordinate translation is needed.
                 component_shots = await _capture_components(
                     page, raw, shots_dir, url, profile.component_selectors,
                     context.log)
-
-        model = assemble_page(
-            requested_url=url,
-            raw=raw,
-            readiness=readiness,
-            aria_tree=aria,
-            screenshot_path=shot,
-            frames=frames,
-        )
+            if masked:
+                # Cleared before anything reads the DOM again: the probe
+                # re-extracts after every interaction and would otherwise pick
+                # the mask layer up as page content.
+                await clear_mask_async(page)
+                if masked.get("masked"):
+                    context.log.info(
+                        f"G6: masked {masked['masked']} element(s) in "
+                        f"screenshots of {url}")
+        model.screenshot_path = shot
 
         for element in model.elements:
             if element.dom_path in component_shots:
@@ -1002,7 +1067,18 @@ async def crawl_site(
                     states_dir=str(shots_dir / "states") if screenshots else None,
                     capture_states=profile.state_capture,
                     profile=profile,
+                    # G6: a revealed state is photographed inside the probe,
+                    # so the mask has to travel with it — there is no later
+                    # point at which that picture is still maskable.
+                    redaction=opts.redaction,
+                    mask_screenshots=opts.mask_screenshots,
                 )
+                # G5: the probe builds its own record and never passes through
+                # `assemble_page`, so redacting the page model alone left
+                # `probe.title`, every `interaction.target` and every revealed
+                # state carrying whatever the page displayed. Redacted here,
+                # before the node is written or counted.
+                redact_probe(node.probe, Redactor(opts.redaction))
                 p = node.probe.stats
                 context.log.info(
                     f"Probed {url}: {p.get('executed', 0)} executed, "
@@ -1072,6 +1148,18 @@ async def crawl_site(
         event("budget.exhausted", level="warning",
               discovered_not_captured=len(missed), max_pages=max_pages,
               examples=sorted(missed)[:10])
+
+    # G7: the ledger goes on the manifest rather than on the crawl, because it
+    # is a fact about the *run* — the same reason `O3` owns authorization and
+    # the safety envelope. Reported even when it is unremarkable; a section
+    # that appeared only on the interesting runs would say nothing about the
+    # rest.
+    ledger = build_ledger(egress_urls, start_url)
+    if run is not None:
+        run.describe(egress=ledger)
+    if ledger["off_scope"]:
+        event("egress.off_scope", level="warning",
+              hosts=ledger["off_scope"], target_host=ledger["target_host"])
 
     return Crawl(
         schema_version=SCHEMA_VERSION,

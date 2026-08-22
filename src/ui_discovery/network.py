@@ -9,6 +9,7 @@ sensitive-looking keys are redacted too.
 from __future__ import annotations
 
 import re
+from typing import Iterable
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 _SENSITIVE_KEYS = re.compile(
@@ -68,6 +69,56 @@ def describe_redaction(extra_keys: tuple[str, ...] = ()) -> dict:
             },
         ],
         "network_keys_extra": sorted(k.lower() for k in extra_keys),
+    }
+
+
+def host_of(url: str) -> str:
+    """The `host:port` a URL addresses, lowercased. Empty when unparseable."""
+    try:
+        return (urlparse(url).netloc or "").lower()
+    except Exception:
+        return ""
+
+
+def build_ledger(urls: Iterable[str], target: str) -> dict:
+    """G7: roll observed request URLs up into a per-host ledger.
+
+    A rollup, not new instrumentation: `F3.4` already records every request the
+    browser made, and this counts them by host. Pure, so it can be tested
+    without a browser and reused by anything that has a list of URLs.
+
+    Scope is decided by exact host match, which is what `same-host` — the
+    engine's only subdomain policy today — actually means. `H6` is the item
+    that widens it; until then a ledger claiming `cdn.target.com` is in scope
+    would be claiming something the crawler does not believe.
+
+    URLs arriving here have already been through `redact_url`, so nothing this
+    returns can carry a secret that the recorded requests did not already.
+    """
+    target_host = host_of(target)
+    seen: dict[str, dict] = {}
+    total = 0
+    for url in urls:
+        host = host_of(url)
+        if not host:
+            continue
+        total += 1
+        entry = seen.get(host)
+        if entry is None:
+            try:
+                path = urlparse(url).path or "/"
+            except Exception:
+                path = "/"
+            seen[host] = {"host": host, "requests": 1, "first_path": path,
+                          "in_scope": host == target_host}
+        else:
+            entry["requests"] += 1
+    hosts = sorted(seen.values(), key=lambda h: (not h["in_scope"], h["host"]))
+    return {
+        "target_host": target_host,
+        "hosts": hosts,
+        "total_requests": total,
+        "off_scope": [h["host"] for h in hosts if not h["in_scope"]],
     }
 
 

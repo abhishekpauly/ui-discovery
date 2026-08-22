@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Customer 0114 — alice@acme.example</title></head>
+<body>
+  <main>
+    <h1>Account for alice@acme.example</h1>
+
+    <!-- Every shape G5 must find, in the places a real portal puts them. -->
+    <table>
+      <caption>Contacts</caption>
+      <thead><tr><th>Name</th><th>Email</th><th>Phone</th></tr></thead>
+      <tbody>
+        <tr><td>Ada Lovelace</td><td>alice@acme.example</td><td>+44 20 7946 0958</td></tr>
+        <tr><td>Grace Hopper</td><td>grace@acme.example</td><td>(555) 123-4567</td></tr>
+      </tbody>
+    </table>
+
+    <p id="card">Card on file: 4111 1111 1111 1111</p>
+    <p id="iban">Settlement IBAN GB82 WEST 1234 5698 7654 32</p>
+    <p id="ssn">Taxpayer ref 123-45-6789</p>
+
+    <button aria-label="Email alice@acme.example">Contact</button>
+    <img src="x.png" alt="Portrait of Ada Lovelace" />
+    <input type="text" placeholder="e.g. grace@acme.example" />
+
+    <label for="owner">Owner</label>
+    <select id="owner">
+      <option value="ada@acme.example">Ada Lovelace</option>
+      <option value="grace@acme.example" selected>Grace Hopper</option>
+    </select>
+
+    <!-- Everything below must SURVIVE untouched. A capture that redacted its
+         own identifiers would pass a secrets grep and be worthless. -->
+    <section id="keep">
+      <h2>Order 1234567890123456</h2>
+      <p>Opened 2026-08-22, updated 08.22.2026</p>
+      <p>Showing 1-25 of 340 · Ports 8080 9090 · Ref 12-345-678</p>
+      <p>Host 192.168.1.1 · Build 2024.11.3 · Total 1 234.56</p>
+      <button>Save</button>
+      <button>Delete customer</button>
+      <a href="/orders">Orders (12)</a>
+    </section>
+  </main>
+</body>
+</html>

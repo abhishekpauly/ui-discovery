@@ -50,6 +50,7 @@ from pydantic import ValidationError
 from . import SCHEMA_VERSION, __version__
 from .models import (
     DataHandling,
+    EgressLedger,
     RunEvent,
     RunManifest,
     SafetyEnvelope,
@@ -57,8 +58,9 @@ from .models import (
 )
 
 # The manifest sections a run *describes* rather than measures — `G2`'s safety
-# envelope and `G3`'s data-handling posture. Both are validated the same way.
-_Section = TypeVar("_Section", SafetyEnvelope, DataHandling)
+# envelope, `G3`'s data-handling posture and `G7`'s egress ledger. All three
+# are validated the same way.
+_Section = TypeVar("_Section", SafetyEnvelope, DataHandling, EgressLedger)
 
 EVENTS_FILE = "events.jsonl"
 MANIFEST_FILE = "run.json"
@@ -376,6 +378,11 @@ class RunContext:
             environment=self._meta.get("environment"),
             safety=self._described("safety", SafetyEnvelope),
             data_handling=self._described("data_handling", DataHandling),
+            # G7: unlike the two above, never `None`. "This run contacted only
+            # the target" is a claim worth making explicitly, and an absent
+            # section cannot make it — so a run that never reached the crawl
+            # reports an empty ledger rather than no ledger.
+            egress=(self._described("egress", EgressLedger) or EgressLedger()),
             auth_used=bool(self._meta.get("auth_used")),
             auth_source=self._meta.get("auth_source"),
             auth_expires_in_hours=self._meta.get("auth_expires_in_hours"),

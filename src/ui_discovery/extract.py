@@ -20,6 +20,7 @@ from .cliconfig import (
     add_config_argument,
     describe,
     load_or_exit,
+    redaction_policy,
     resolve_output_dir,
 )
 from .extraction import extract_page
@@ -78,6 +79,12 @@ def main(argv: list[str] | None = None) -> int:
             timeout_ms=args.timeout,
             headless=not args.headed,
             auth_state=auth_state,
+            # G5/G6: this CLI accepted a scope config with a `privacy` block
+            # and then ignored it, so `redact_content: true` produced an
+            # unredacted `page.json`. The library function always supported
+            # it; only the wrapper was missing.
+            redaction=redaction_policy(scope),
+            mask_screenshots=scope.privacy.mask_screenshots(),
         )
     except Exception as exc:  # surface a clean, actionable error
         print(f"[ERROR] Extraction failed: {exc}", file=sys.stderr)

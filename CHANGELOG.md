@@ -20,6 +20,166 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ### Added
 
+- **`G7` Every host a run talked to, on the record.** `CLAUDE.md` principle #11
+  says the engine talks to nothing but the target. That is a design claim, and
+  every other claim a capture makes is evidenced — the safety envelope, the
+  data-handling posture, the authorization. This one was not, so a reader had
+  to take it on trust and a regression that started fetching a third-party
+  asset would have been invisible in the artifact it damaged.
+
+  `run.json` gains an `egress` section: every host contacted, with a request
+  count and the first path that reached it, foreign hosts flagged and listed
+  separately so nobody has to filter to find them. An `egress.off_scope`
+  warning event fires when there are any.
+
+  Two decisions worth stating:
+
+  - **It is on every manifest, never `null`.** `safety` and `data_handling` are
+    nullable because a run that dies early genuinely cannot describe them.
+    "This run contacted only the target" is different — an absent section
+    cannot make that claim, so a run that never reached the crawl reports an
+    empty ledger instead.
+  - **It does not depend on the probe.** The per-request record `F3.4` builds
+    only exists when probing is on, and a ledger that inherited that condition
+    would be silently empty on exactly the cheap scheduled runs where it
+    matters. Observation is attached unconditionally and keeps URLs only —
+    already `redact_url`-processed, so it can carry no secret the probe's
+    record would not.
+
+  Scope is exact host match, because `same-host` is the engine's only subdomain
+  policy today; a ledger calling `cdn.target.com` in-scope would be claiming
+  something the crawler does not believe. `H6` is the item that widens it.
+
+- **`G6` The people come out of the captured screenshots.** `G5` cleaned the
+  model and left the harder half untouched: a capture of an authenticated
+  portal is mostly *pictures* of that portal, and a picture of a customer list
+  is a customer list. A clean `page.json` beside a `screenshots/` folder
+  showing every address has protected nobody, and `F6.5` component crops and
+  `F6.6` revealed states multiply the copies.
+
+  ```yaml
+  privacy:
+    redact_content: true       # G5
+    redact_screenshots: true   # G6 — unset follows redact_content
+  ```
+
+  The two default to moving together deliberately. Two independent switches is
+  precisely how a clean model ends up beside an unmasked picture; set
+  `redact_screenshots` explicitly to break the pairing, and the manifest says
+  which way it was set either way.
+
+  **Masked by identity, not by pixels.** The boxes come from the elements `G5`
+  already redacted, so the two passes cannot disagree about what counts as a
+  person. Nothing reads an image and nothing classifies anything — if the model
+  was clean, the picture is.
+
+  **Painted into the page, not onto the file.** The overlay is a DOM node added
+  before the shutter fires, so no unmasked image is ever written and a crop
+  carries the mask without any coordinate translation. Compositing afterwards
+  would have meant an unmasked PNG existing first, which is the thing the
+  feature exists to prevent.
+
+  Two traps the implementation had to avoid, both of which are asserted against
+  by sampling pixels rather than by checking arithmetic:
+
+  - **Viewport versus document coordinates.** `extract.js` records
+    `getBoundingClientRect`, which is viewport-relative; a full-page screenshot
+    is in document coordinates. They agree only while the page has not
+    scrolled. Positioning the overlay in the browser, against the layer's own
+    rect, sidesteps the arithmetic entirely.
+  - **Over-masking.** `Element.text` is `textContent`, so an address in a table
+    is also in the text of the form around it and of every ancestor above that.
+    Masking every match paints the page black — which would pass any "is the
+    secret gone?" check while destroying the capture. Any candidate containing
+    another candidate is dropped, so a table inside a form is covered and the
+    controls beside it are not.
+
+  Granularity is the honest limitation: the engine captures controls and
+  containers, not bare paragraphs, so the unit a mask hangs on is the `<form>`,
+  `<table>` or `<dialog>` whose text carried the value. A table with one
+  address in it is covered whole. That errs toward covering more, which is the
+  right direction here, but it is a real cost to a capture's readability.
+
+  Masking a revealed state is computed from that state's own DOM: a dialog is
+  `display:none` at page load, its box is zero-sized, and there is nothing to
+  paint until the click that opens it.
+
+- **`extract` and `probe` now honour the `privacy` block they were already
+  accepting.** Both CLIs read a scope config and then dropped its redaction
+  settings on the floor, so `redact_content: true` produced an unredacted
+  `page.json` and a probe record carrying every accessible name the page
+  displayed. `extraction.extract_page` had supported it since `G5`; only the
+  two wrappers were missing. Found while wiring `G6` through the same paths.
+
+- **`G5` The people come out of the captured model.** The engine has always
+  redacted what a person *typed*: password fields, free-text values, sensitive
+  query keys. It has never redacted what the page *displayed* — and on a
+  logged-in portal that is the larger half. Element text, accessible names,
+  select options, table cells and the ARIA snapshot carry real customer names,
+  emails and account references, and `elements.csv` carries them again in a
+  form built for spreadsheets. `G3` put the engine's privacy promises on the
+  record; this closes the hole they were quietly leaving open.
+
+  ```yaml
+  privacy:
+    redact_content: true          # off by default
+    redact_entities: [EMAIL, CARD]  # empty = all but PERSON
+    redact_style: tag             # tag <EMAIL> | mask **** | remove
+    person_names: [Ada Lovelace]  # a pattern cannot find a name
+  ```
+
+  Detectors are deterministic — the same rule as `safety.py`, for the same
+  reason: a redaction you cannot reproduce is one you cannot audit. EMAIL,
+  PHONE, CARD (Luhn-checked), IBAN (mod-97), NATIONAL_ID (US-SSN-shaped only,
+  and the docstring says so rather than implying generality), and PERSON, which
+  matches only names an operator supplied.
+
+  **Over-redaction was treated as a real failure, not a safe default.** An
+  engine that scrubbed every label would pass any secrets grep and produce a
+  useless capture. Dates (`2026-08-22`), references (`12-345-678`), adjacent
+  counts (`Ports 8080 9090`) and 16-digit order numbers all reached an early
+  draft of the detectors; the Luhn and mod-97 checks and a much stricter phone
+  validator are what stopped them, and the suite spends as much effort on what
+  must *survive* as on what must go.
+
+  Redaction runs in `assemble_page` — the one point both the crawler and the
+  extractor pass through — so `elements.csv`, `controls.csv`, the reports and
+  `docgen` all inherit it by rendering from the model rather than needing their
+  own pass. **`PageNode.probe` is the exception, and it was a real miss:**
+  `interactions.py` builds that record separately, so a fully-redacted page
+  shipped beside a probe carrying `probe.title`, every `interaction.target` and
+  every revealed state in the clear. Only the end-to-end grep caught it.
+  `redact.py` now owns "which fields can carry a person" for every model, so
+  the next one added cannot repeat it.
+
+  `G3`'s manifest posture gains `content_redaction`, **present whether or not
+  redaction ran** — a capture that stayed silent about this would be
+  indistinguishable from one where the pass never happened.
+
+  **Known limitation.** Shapes, not meaning. A name in prose is not found
+  unless supplied; 7-digit local numbers without an area code are deliberately
+  out of range. And this is still text: screenshots remain `G6`.
+
+
+---
+
+## [0.19.0] — A capture states the rules it ran under (G1-G4)
+
+Four items, one theme: the engine's guarantees stop being folklore. A capture
+could always say what it *found*; it could not say what rules it ran under,
+what it deliberately did not keep, or how long it would live.
+
+Two properties hold across all four. **Every section is described by the code
+that enforces it** — `G2`'s word counts come from `safety.py`'s gates, `G3`'s
+rules from the three modules that do the dropping, and the input types are
+parsed out of `extract.js` rather than mirrored — because a manifest that
+assembled its own idea of the rules would be a second source of truth, and the
+second one always goes stale. And **describing a guarantee never becomes a way
+to fail**: a section that will not validate is dropped rather than allowed to
+take a capture down at the last step.
+
+### Added
+
 - **`G4` Retention — captures stop living forever.** A capture of an
   authenticated portal is a folder of screenshots of somebody's internal
   screens. They land in Downloads and stay there, and `G3` is explicit that the
