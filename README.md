@@ -774,6 +774,28 @@ Three rules govern all of this:
   would be worse than no toggle. An unknown key is an error, not a no-op, so
   a typo'd `budgt:` fails loudly instead of being ignored.
 
+**A production capture does not start on nobody's authority.** When a config
+says `environment: prod` (or `production`), the run is refused unless it also
+carries `authorized: true` and an `authorized_by:` naming who approved it:
+
+```
+[ERROR] This config sets `environment: prod` but is missing `authorized: true`
+        and `authorized_by:` naming who approved it. A production capture opens
+        real screens, clicks real controls and photographs whatever is on them,
+        so it does not start on nobody's authority.
+```
+
+It exits `3` — distinct from `1`, so a pipeline can tell "you may not run this"
+from "the config would not parse" — and it exits *before* a URL is resolved, a
+session is read or a browser exists. Nothing is opened.
+
+The gate is deliberately narrow. `staging`, `sandbox`, `preprod` and a config
+with no `environment:` at all are untouched, and so is every zero-config run.
+A gate that fired on staging would be switched off within a week, and a gate
+that is off protects nothing. The engine cannot verify that anyone truly
+approved a capture; refusing to open production unattributed is the narrowest
+useful thing those fields can mean.
+
 **Config can only tighten safety, never loosen it.** `block_words_extra` and
 `never_touch` add restrictions; there is no way to remove a block word, and
 `submit_forms: true` is rejected outright. Auth-expiry signals are likewise

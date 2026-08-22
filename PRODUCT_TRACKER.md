@@ -5,7 +5,7 @@ The single source of truth for **what exists, what's in flight, and what's next*
 `CHANGELOG.md` (version history) and `ROADMAP.md` (detailed specs + acceptance
 criteria). Keep this file updated as work lands (see *Maintenance* at the end).
 
-**Current product version: `0.18.0`** · Schema `0.1.0` · **598 tests passing**
+**Current product version: `0.18.1`** · Schema `0.1.0` · **601 tests** — 594 passing, 7 skipped
 
 ## Legend
 
@@ -108,7 +108,7 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 ### Governance — state the rules a capture ran under · EPIC-GOV
 | ID | Feature | Scope | Pri | Status |
 |----|---------|-------|-----|--------|
-| G1 | Authorization enforced | `authorized` / `environment` stop being inert metadata | P0 | 📋 |
+| G1 | Authorization enforced | `authorized` / `environment` stop being inert metadata — a `prod` config without `authorized: true` + `authorized_by` exits 3 before anything opens | P0 | ✅ |
 | G2 | Safety envelope recorded | allow-list, block words, `never_touch`, probe profiles | P1 | 📋 |
 | G3 | Data-handling posture | what was deliberately not persisted, and why | P1 | 📋 |
 | G4 | Retention | `outputs.retention_days` + a `prune` command | P2 | 📋 |
@@ -242,6 +242,11 @@ When an item lands, in the **same change**:
 3. Bump `SCHEMA_VERSION` **only** if the JSON model shape changed in a
    breaking way; otherwise leave it.
 4. Keep `pytest -q` green and update the **Tests** cell (✔) with new coverage.
+5. Quote the **collected** total above, with the pass/skip split beside it.
+   Passing-count alone drifts for reasons that have nothing to do with the
+   tests: `test_release_hygiene.py` skips its drift check when no `src/`
+   commit has landed since the last version bump, so the same suite reports
+   594/7 immediately after a release and 595/6 a few commits later.
 
 Status meanings for QA flow: mark **🧪 Ready for QA** when code + automated tests
 are done but real-world validation is pending; move to **✅ Shipped** once it's

@@ -24,9 +24,12 @@ SRC = Path(__file__).resolve().parents[1] / "src" / "ui_discovery"
 # Where fields are *declared*; a mention here doesn't count as being used.
 DECLARATIONS = {"config.py"}
 # Recorded on the snapshot for provenance rather than driving behavior.
+# `authorized`, `authorized_by` and `environment` left this set in G1: they now
+# gate a production run rather than annotate it. This check is too crude to
+# prove that — a name that is merely mentioned passes — so the real proof lives
+# in `tests/test_g1_authorization.py`.
 DOCUMENTED_AS_METADATA = {
-    "target", "authorized", "authorized_by", "environment",
-    "known_endpoints", "name", "formats",
+    "target", "known_endpoints", "name", "formats",
 }
 # Fields whose entire job is to be *refused* — the validator in config.py is
 # the consumption. `submit_forms: true` exists so that writing it produces a

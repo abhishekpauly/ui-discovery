@@ -18,6 +18,35 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ## [Unreleased]
 
+### Added
+
+- **`G1` Authorization is enforced, not merely recorded.** `authorized`,
+  `authorized_by` and `environment` sat in the scope schema for five releases
+  being read by nothing. An operator wrote them down, believed the run was
+  accountable, and the engine never consulted them —
+  `tests/test_no_dead_config.py` had to special-case all three to stay green.
+
+  A config saying `environment: prod` (or `production`) is now refused unless
+  it also carries `authorized: true` and a non-empty `authorized_by`. The
+  refusal exits `3` — distinct from `1`, so a pipeline can tell "you may not
+  run this" from "the config would not parse" — and happens before a URL is
+  resolved, a session is read or a browser exists, so nothing is opened.
+  `pipeline` and `crawl` share one gate; the rule itself is
+  `Scope.authorization_refusal()`, pure and importable.
+
+  Deliberately narrow: `staging`, `sandbox`, `preprod`, an absent
+  `environment:` and every zero-config run are untouched. A gate that fired on
+  staging would be switched off within a week, and a gate that is off protects
+  nothing. The engine cannot verify that a person approved a capture; refusing
+  to open production unattributed is the narrowest useful thing these fields
+  can mean.
+
+  The three fields left `DOCUMENTED_AS_METADATA`. That guard is a regex and
+  its own docstring calls it "crude on purpose: a name that is merely
+  mentioned passes" — `cliconfig.describe()` already mentioned two of them —
+  so retiring the exemption proves nothing on its own and the real proof is in
+  `tests/test_g1_authorization.py`.
+
 ### Fixed
 
 - **The release workflow could not publish a retroactive tag.** Its smoke test
@@ -277,7 +306,8 @@ run counted twice would corrupt exactly the trend the index exists to show.
 
 ### Tests
 
-+22 (576 → 598), covering share arithmetic that accounts for the whole run,
++18 (583 → 601 collected; 595 passed and 6 skipped when this shipped),
+covering share arithmetic that accounts for the whole run,
 the measured probe cost against a real crawl, splicing that preserves the rest
 of the summary and replaces itself rather than accumulating, one line per run
 under repetition, and a failed run still reaching the index.

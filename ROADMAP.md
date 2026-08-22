@@ -554,7 +554,7 @@ runtime dependency — principle #11 stands.
 - **Files.** `run.py`, `pipeline.py`.
 - **Depends-on.** O3. **Deliberately not** SQLite — see `X6`.
 
-### G1 — Authorization is enforced, not just recorded  ·  Effort: S
+### G1 — Authorization is enforced, not just recorded  ·  ✅ SHIPPED
 - **Goal.** The scope config already carries `authorized`, `authorized_by` and
   `environment`, and `test_no_dead_config.py` classifies them as
   `DOCUMENTED_AS_METADATA` — nothing reads them. Make them mean something.
