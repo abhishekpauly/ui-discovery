@@ -29,6 +29,7 @@ from .cliconfig import (
     load_or_exit,
     resolve_output_dir,
     resolve_output_root,
+    safety_policy,
 )
 from .crawler import crawl_site
 from .inventory import attach_metrics, write_inventory, write_module_artifacts
@@ -41,6 +42,7 @@ from .reports import (
     write_semantics,
 )
 from .run import RunContext, command_line, config_digest
+from .safety import describe_envelope
 from .util import slug_for
 
 STAGES = ("crawl", "analyze", "semantic", "docgen", "qagen")
@@ -229,6 +231,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         auth_expires_in_hours=(
             round(status["seconds_remaining"] / 3600, 1)
             if status.get("seconds_remaining") else None),
+        # G2: the rules this run operates under, known before it starts. The
+        # probe profiles are resolved during the crawl and folded in below —
+        # recording the rest up front means a run that dies mid-crawl still
+        # says what it would have refused.
+        safety={**describe_envelope(safety_policy(scope)),
+                "submit_forms": scope.safety.submit_forms},
     )
 
     # --- crawl (the one stage that must succeed) ---------------------------
@@ -251,6 +259,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     crawl.config.config_file = args.config
     crawl.run_id = run.run_id
     run.crawl_id = crawl.crawl_id
+    # G2: which probe profile applied where is only resolved by the crawl, so
+    # the envelope is completed rather than declared. `describe` merges, so the
+    # nested dict has to be rebuilt whole or the earlier keys would be dropped.
+    run.describe(safety={**run.safety_envelope(),
+                         "probe_profiles": crawl.config.probe_profiles})
     # Computed once and reused: the report, the relations artifact and docgen
     # must describe the same graph, not three independently-derived ones.
     relations = build_relations(crawl)

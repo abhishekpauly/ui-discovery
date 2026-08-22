@@ -20,6 +20,43 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ### Added
 
+- **`G2` The safety envelope is on the record.** The engine has always refused
+  destructive controls. *Which* controls, and on whose say-so, was inferable
+  only from the engine version — so "the probe never clicked Delete" was
+  folklore a reader had to take on trust, and a run deliberately made **more**
+  cautious by config produced a manifest indistinguishable from one that was
+  not.
+
+  `run.json` gains a `safety` block: the allow-list in full (four entries is a
+  fact, not noise), block and caution word counts, the `never_touch` rules,
+  `submit_forms`, and the probe profiles as resolved per module.
+
+  Three decisions worth knowing about:
+
+  - **The counts are what was in force, not what the operator typed.** A number
+    read back from the config would describe the additions; `blocks()` is a set
+    union, so the envelope reports those *plus* the defaults they joined — and
+    an addition the engine already covered correctly leaves the count alone.
+  - **The word lists are counted, not listed; the additions are named.** Forty
+    default block words in every manifest is noise a reader learns to skip, and
+    they are already pinned by `engine_version`. What a manifest cannot
+    otherwise tell you is what *this* operator added, which is the part that
+    varies. `never_touch` is named in full, because there the whole value is
+    knowing which control was ruled out — that is what explains a gap in
+    coverage.
+  - **`submit_forms` is always `false` and is recorded anyway.** A guarantee
+    that appears in the artifact is worth more than one that lives in a
+    docstring, and the day it is ever not `false` is the day a reader most
+    needs to see it.
+
+  Built in two steps, because the probe profiles do not exist until the crawl
+  has resolved them: the rules are recorded before the crawl starts, the
+  profiles folded in after. A run that dies mid-crawl still says what it would
+  have refused. And describing the rules can never become a way to fail — the
+  gates in `safety.py` are what actually refuse a control, so an envelope that
+  will not validate is dropped rather than allowed to take the capture down at
+  the last step.
+
 - **`G1` Authorization is enforced, not merely recorded.** `authorized`,
   `authorized_by` and `environment` sat in the scope schema for five releases
   being read by nothing. An operator wrote them down, believed the run was
