@@ -13,83 +13,83 @@ goes stale.
 | how sprints are cut, merged and ordered | `BRANCHING.md` |
 | what an item is — goal, build, acceptance | `ROADMAP.md` |
 | what exists today, at what version | `PRODUCT_TRACKER.md` |
+| how a release is cut | `RELEASING.md` |
 | **where the branches are today** | this file |
 
 Regenerate the ledger with:
 
 ```bash
 git fetch --all --prune
+git branch -r --format='%(refname:short)'
 git rev-list --left-right --count origin/main...<branch>   # behind / ahead
-git branch -r --no-merged origin/main
 ```
 
 ---
 
 ## Branch ledger · 2026-08-22
 
-`main` is at `9668803`. It carries every governance item through `G4`, at
-version 0.19.0.
+`main` is at `33964f6`. **Sprint 8 is merged** (PR #72) and no sprint is live.
 
 | Branch | Tip | Ahead of `main` | State |
 | --- | --- | --- | --- |
-| `sprint/8-redaction` | `7341b89` | 9 | **Complete, unmerged.** `G5`–`G7` all ✅. Ready to PR to `main`. |
-| `sprint/2-field-validation` | `7323c4d` | 0 | Cut, empty, and 21 behind. `QA.1`–`QA.4` are manual runs, not commits. |
-| `sprint/4-deferred` | `7323c4d` | 0 | Cut, empty, and meant to stay that way — it exists so the deferral is visible. |
+| `release/0.20.0` | — | 1 | Version bump + changelog section for the sprint 8 release. |
+| `sprint/2-field-validation` | `7323c4d` | 0 | Cut empty from the pre-0.19.0 trunk, now 22 behind. Delete and re-cut when `QA.1`–`QA.4` actually start. |
+| `sprint/4-deferred` | `7323c4d` | 0 | Same, and meant to stay empty — it exists so the deferral is visible. |
 
-Merged and safe to delete: `sprint/1-governance` (PR #70),
-`feat/g2-safety-envelope`, `feat/g3-data-handling-posture`, `feat/g4-retention`,
-`feat/g5-redact-the-model` (PR #71), `docs/x7-backlog-expansion`,
-`docs/correct-recorded-test-counts`.
+Deleted after merging: `sprint/1-governance` (#70), `sprint/8-redaction` (#72),
+`feat/g2-safety-envelope`, `feat/g3-data-handling-posture`,
+`feat/g4-retention`, `feat/g5-redact-the-model` (#71),
+`docs/x7-backlog-expansion`.
 
-`sprint/2-field-validation` and `sprint/4-deferred` were cut from the pre-0.19.0
-trunk and have not been kept current. `BRANCHING.md` calls a sprint branch that
-has not seen `main` in a week a fork; both are empty, so the cheap fix is to
-delete and re-cut them when their work actually starts.
-
-## Sprint 8 — redaction · `EPIC-GOV`
-
-Status mirrors `PRODUCT_TRACKER.md`; that table is the source, this is the view.
+## Sprint 8 — redaction · `EPIC-GOV` · ✅ closed
 
 | Item | Pri | Status |
 | --- | --- | --- |
-| `G5` Redact the people out of the model | P0 | ✅ merged to `sprint/8-redaction` |
+| `G5` Redact the people out of the model | P0 | ✅ |
 | `G6` Redact the people out of the screenshots | P0 | ✅ |
 | `G7` Egress ledger | P1 | ✅ |
 
+`EPIC-GOV` is complete: `G1`–`G7` all shipped.
+
 ## Next actions, in order
 
-1. **Push `sprint/8-redaction` and open its PR to `main`** (merge commit, not a
-   squash — the merge commit *is* the sprint). Suite is green locally at 776
-   passed / 3 skipped.
-2. **Decide the version.** `G5`–`G7` sit in `[Unreleased]` and `pyproject`
-   still reads 0.19.0; `RELEASING.md` governs what the sprint merge is tagged.
-3. **Re-run `QA.2`** against a real authenticated portal. It is the reason this
-   sprint jumped the queue, and fixtures cannot validate redaction recall on
-   real customer data.
-4. Re-cut `sprint/5-discovery` from the new `main`, per `BRANCHING.md`'s
-   *Cut after* order. `sprint/2-field-validation` and `sprint/4-deferred` are
-   21 commits stale — delete and re-cut rather than merging `main` into empty
-   branches.
+1. **Merge `release/0.20.0`, then tag `v0.20.0`** — `RELEASING.md`. Pushing the
+   tag *is* the release; nothing else is manual.
+2. **Re-run `QA.2`** against a real authenticated portal. It is the reason this
+   sprint jumped the queue, and no fixture can validate redaction recall
+   against real customer data. `QA.3` and `QA.4` follow from the same run.
+3. **Cut `sprint/5-discovery`** from the new `main`, per `BRANCHING.md`'s
+   *Cut after* order (`M1`–`M4`, `H6`–`H8`).
 
-## Notes on how sprint 8 was run
+## Release history note
 
-- **It was cut from `sprint/1-governance`, not from `main`.** `BRANCHING.md` says
-  to cut it *after* sprint 1 merges; instead it branched off sprint 1 directly,
-  because `G5` needed `G3`'s manifest posture and that had not reached `main`
-  yet. Sprint 1 has since landed (PR #70) and `main` has been merged back in, so
-  the two histories have rejoined and the shortcut cost nothing. Recorded because
-  it was a decision, not an accident.
-- **`G5` merged as a merge commit, not a squash.** `BRANCHING.md` asks for a
-  squash at the work → sprint layer. PR #71 merged normally, so
-  `sprint/8-redaction` carries `G5` as three commits rather than one. `G6` and
-  `G7` are one commit each, as the rule intends.
-- **`G6` and `G7` shared one work branch** (`feat/g6-redact-screenshots`),
-  against the one-item-per-branch rule. They landed as two separate commits, so
-  the sprint history reads correctly and either item is still revertible alone —
-  but they could not have been reviewed separately, which is the cost the rule
+**`0.19.0` was never tagged, and cannot be retroactively.** Sprint 8 was cut
+from `sprint/1-governance` rather than from `main`, so the commit bumping to
+`0.19.0` reached `main` on sprint 8's merge (#72) rather than sprint 1's (#70).
+At the sprint 1 merge the tree still declared `0.18.1`, and `release.yml`
+refuses a tag whose version disagrees with `pyproject.toml` — so there is no
+commit that could carry a `v0.19.0` tag without also containing `G5`–`G7`.
+`v0.20.0` therefore contains `G1`–`G7`, and the `[0.19.0]` changelog section
+stands as the record of the first half. `v0.18.1` is the previous tag.
+
+## What sprint 8 did differently
+
+Kept because each was a decision, and the next sprint should make them
+deliberately or not at all.
+
+- **Cut from sprint 1, not from `main`.** `G5` needed `G3`'s manifest posture,
+  which had not reached `main`. It cost the `0.19.0` tag — see above. The rule
+  in `BRANCHING.md` exists for exactly this.
+- **`G5` merged as a merge commit, not a squash** (#71), against the
+  work → sprint rule. `G6` and `G7` are one commit each, as intended.
+- **`G6` and `G7` shared one work branch.** They landed as separate commits, so
+  the history reads correctly and either is revertible alone — but they could
+  not be reviewed separately, which is the cost the one-item-per-branch rule
   exists to prevent.
-- **Two `G5` holes were closed here rather than in their own item.** `extract`
-  and `probe` both read a scope config's `privacy` block and ignored it, so
-  `redact_content: true` produced an unredacted `page.json`. Found while wiring
-  `G6` through the same capture paths; fixing them separately would have meant
-  shipping `G6` on top of a known hole.
+- **Two `G5` holes were closed inside `G6`.** `extract` and `probe` both read a
+  scope config's `privacy` block and ignored it. Fixing them separately would
+  have meant shipping `G6` on top of a known hole.
+- **CodeQL blocked the first push.** An egress fixture read a URL from
+  `location.search` into `img.src`. The alert was correct. Note that CodeQL is
+  *not* in the `full-ok` required set, so it reported without gating — worth
+  changing if security alerts should block merges.
