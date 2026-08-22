@@ -615,6 +615,41 @@ element is masked where it sits in the layout, not where a full-page screenshot
 renders it; and content in a cross-origin frame never enters the model, so it is
 not masked either.
 
+### Choosing how much to capture
+
+Nine capability toggles is the right amount of control and the wrong amount of
+decision. `--profile` expresses the intent instead:
+
+```bash
+python -m ui_discovery.crawl <url> --profile fast     # have a look round
+python -m ui_discovery.crawl <url>                    # standard, today's defaults
+python -m ui_discovery.crawl <url> --profile deep     # the full documentation pass
+```
+
+| Profile | What it does | What you lose |
+| --- | --- | --- |
+| `fast` | No clicking, no screenshots, no accessibility tree, no deep-nav | Modals, menus, tab panels and API traffic — everything only a click reveals |
+| `standard` | Exactly today's behaviour | — |
+| `deep` | Everything on, interaction budget raised to 80 | Time |
+
+On `fixtures/site/` (8 trivial pages) `fast` runs in 9.5s against `standard`'s
+12.6s. That understates the gap on a real portal, where the probe's share of
+the crawl grows with the number of interactive elements per page — `run.json`'s
+`metrics.probe_share_of_crawl_pct` reports what it actually was.
+
+Two rules make the presets safe to adopt:
+
+- **Explicit config keys always win.** A preset only fills in what you did not
+  state, so `--profile fast` with `capabilities.screenshots: true` still takes
+  screenshots.
+- **The capture records the resolved toggles, not the preset name**, in
+  `run.json`'s `capture` section — so an old capture is readable without
+  knowing what `fast` meant in the version that produced it.
+
+You can also set it in the scope config as `outputs.profile`, and reach for the
+individual flags (`--no-probe`, `--no-screenshots`, `--no-deep-nav`, …) when a
+preset is close but not exact.
+
 ### Where a run sent traffic
 
 The engine talks to nothing but the target. `run.json` now proves it rather

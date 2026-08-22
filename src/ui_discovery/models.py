@@ -602,6 +602,12 @@ class RunManifest(BaseModel):
     # rather than claiming one it never applied.
     data_handling: Optional[DataHandling] = None
 
+    # X9: the capability set this run actually used, resolved. Named presets
+    # exist so an operator need not write nine booleans; recording the
+    # resolved values rather than the preset name is the other half of that
+    # bargain, so nobody has to know what `fast` meant in the version that ran.
+    capture: dict[str, Any] = Field(default_factory=dict)
+
     # G7: every host this run contacted. Not optional, unlike the two above —
     # "we contacted nothing outside the target" is a claim worth making
     # explicitly, and an absent section cannot make it.

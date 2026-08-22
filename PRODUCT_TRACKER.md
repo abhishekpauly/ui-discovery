@@ -229,7 +229,7 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | X6 | Storage backend seam | interface so SQLite/Postgres can slot in later (no DB now) — deferred by ROADMAP until data volume demands it | P3 | 🗄️ deferred |
 | X7 | Repo governance | branching model (`BRANCHING.md`), release process + `release` workflow (`RELEASING.md`), labels as data (`.github/labels.yml`), retroactive tags `v0.12.0`–`v0.18.0`, project board | P2 | 🚧 |
 | X8 | "Which command do I run?" | decision table over the nine commands, costed in wall-clock and pages | P2 | 📋 |
-| X9 | Capture profiles | `fast` / `standard` / `deep` presets over the toggles; `standard` is today's defaults | P2 | 📋 |
+| X9 | Capture profiles | `fast` / `standard` / `deep` presets over the toggles; `standard` is today's defaults | P2 | ✅ |
 
 ---
 

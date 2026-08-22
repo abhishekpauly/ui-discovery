@@ -20,7 +20,7 @@ from typing import Optional
 
 from .adapters import build as build_adapters
 from .auth import DEFAULT_LOGGED_OUT_SIGNALS, DEFAULT_LOGIN_URL_PATTERNS
-from .config import ProbeSettings, Scope, load_scope
+from .config import CAPTURE_PROFILES, ProbeSettings, Scope, load_scope
 from .crawler import CrawlOptions
 from .interactions import ProbeProfile
 from .redact import RedactionPolicy
@@ -29,6 +29,15 @@ from .safety import SafetyPolicy
 
 
 def add_config_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--profile", default=None, choices=sorted(CAPTURE_PROFILES),
+        help="X9: a named preset over the capability toggles. "
+             "`fast` is reconnaissance — no clicking, no screenshots, no "
+             "deep-nav, so no modals, menus or API traffic either. "
+             "`standard` (default) is today's behaviour. `deep` is the full "
+             "documentation pass with a larger interaction budget. Explicit "
+             "config keys always win over the preset.",
+    )
     parser.add_argument(
         "--config", default=None, metavar="FILE",
         help="Scope config (.yaml or .json) describing target, scope, "
@@ -52,10 +61,10 @@ def pick(flag_value, config_value, default):
 EXIT_UNAUTHORIZED = 3
 
 
-def load_or_exit(path: Optional[str]) -> Scope:
+def load_or_exit(path: Optional[str], profile: Optional[str] = None) -> Scope:
     """Load a scope config, reporting a clean error rather than a traceback."""
     try:
-        return load_scope(path)
+        return load_scope(path, profile)
     except (FileNotFoundError, ValueError) as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         raise SystemExit(1)

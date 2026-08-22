@@ -228,7 +228,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    scope = load_or_exit(args.config)
+    scope = load_or_exit(args.config, getattr(args, "profile", None))
     for line in describe(scope, args.config):
         print(line)
     # G1: before a URL is resolved, a session is read or a browser exists.
@@ -294,6 +294,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         # modules that enforce each rule rather than restated here, so the
         # manifest cannot claim a guarantee the engine does not make.
         data_handling=data_handling_posture(scope),
+        # X9: what this run actually captured with, resolved from the profile
+        # and any explicit keys — never the preset's name on its own.
+        capture=scope.resolved_capture(),
     )
 
     # --- crawl (the one stage that must succeed) ---------------------------
