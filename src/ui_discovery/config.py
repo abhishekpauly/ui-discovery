@@ -120,6 +120,23 @@ class Privacy(BaseModel):
     # Extra query-string keys whose values are redacted in recorded URLs.
     redact_network_keys: list[str] = Field(default_factory=list)
 
+    # G5: redact people out of *displayed* page content — element text,
+    # accessible names, options, headings, titles and the ARIA snapshot.
+    #
+    # Off by default, which is a deliberate choice rather than an oversight.
+    # Redaction costs recall on the capture's own content, so it is a decision
+    # an operator makes for a target they know. `G3`'s manifest posture records
+    # which way it was set, so a capture always says which it was.
+    redact_content: bool = False
+    # Which entity kinds to look for. Empty means the default set (everything
+    # except PERSON, which needs names to match against).
+    redact_entities: list[str] = Field(default_factory=list)
+    # tag (`<EMAIL>`) | mask (`****`) | remove
+    redact_style: str = "tag"
+    # Names the operator supplied. A pattern cannot find a person's name, so
+    # this is the seam where knowledge the engine cannot have gets in.
+    person_names: list[str] = Field(default_factory=list)
+
 
 # Captures are deliverables, not build output: you open them, attach them to
 # a ticket, hand them to someone. Downloads is where a person looks for a file

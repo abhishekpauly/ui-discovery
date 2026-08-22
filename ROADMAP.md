@@ -627,7 +627,7 @@ runtime dependency — principle #11 stands.
   `inventory.py` was untouched: nothing there needed to change.
 - **Depends-on.** O5.
 
-### G5 — Redact the people out of the model  ·  Effort: M  ·  **P0**
+### G5 — Redact the people out of the model  ·  ✅ SHIPPED  ·  **P0**
 - **Goal.** The engine's data-handling story has a hole in the middle of it.
   Typed values, password fields and sensitive query keys are all redacted —
   and *rendered page content is not*. On a logged-in CRM, `Element.text`,
@@ -649,8 +649,29 @@ runtime dependency — principle #11 stands.
   redaction is a config change that the manifest records, so a capture always
   says which posture it ran under. A grep for each seeded value across the
   whole output folder returns nothing.
-- **Files.** new `redact.py`, `extraction.py`, `config.py`, `models.py`,
-  `inventory.py`, `fixtures/pii/`, `tests/`.
+- **Shipped shape.** `privacy.redact_content` (off by default) with
+  `redact_entities`, `redact_style` and `person_names`. Detectors: EMAIL,
+  PHONE, CARD (Luhn), IBAN (mod-97), NATIONAL_ID (US-SSN-shaped only, stated),
+  PERSON (operator list only). Applied in `assemble_page` — the one point both
+  capture paths share — **and** to `PageNode.probe`, which builds separately
+  and does not pass through it. `G3`'s manifest posture gains
+  `content_redaction`, present whether redaction is on or off.
+- **Two things worth knowing.** Over-redaction is the failure that quietly
+  ruins a capture, so the phone detector rejects dates, references, adjacent
+  counts and 8-digit groups; the suite spends as much effort on what must
+  *survive* as on what must go. And `interactions.py` building its own record
+  was a real miss — only the end-to-end grep caught it, which is why
+  `redact.py` now owns "which fields can carry a person" for every model.
+- **Known limitation.** Shapes, not meaning. A name in prose is not found
+  unless supplied via `person_names`, and 7-digit local numbers written without
+  an area code are deliberately out of range. Screenshots remain `G6`.
+- **Files.** new `redact.py`, `extraction.py`, `crawler.py`, `cliconfig.py`,
+  `pipeline.py`, `config.py`, `models.py`, `fixtures/pii/`, `tests/`.
+  `inventory.py` was untouched: the CSVs render from the model, so redacting it
+  covers them.
+- **Acceptance met.** `tests/test_g5_content_redaction.py` (46), including a
+  real capture of `fixtures/pii/` that contains none of eight seeded values and
+  still contains all ten planted identifiers.
 - **Depends-on.** none. Pairs with `G3`; do it *before* `QA.2` runs again.
 
 ### G6 — Redact the people out of the screenshots  ·  Effort: M  ·  **P0**

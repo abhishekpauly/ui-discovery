@@ -28,6 +28,7 @@ from .cliconfig import (
     crawl_options,
     describe,
     load_or_exit,
+    redaction_policy,
     resolve_output_dir,
     resolve_output_root,
     safety_policy,
@@ -37,6 +38,7 @@ from .crawler import crawl_site
 from .extraction import describe_redaction as describe_element_redaction
 from .inventory import attach_metrics, write_inventory, write_module_artifacts
 from .network import describe_redaction as describe_network_redaction
+from .redact import describe_redaction as describe_content_redaction
 from .relations import build_relations
 from .reports import (
     write_analysis,
@@ -69,6 +71,10 @@ def data_handling_posture(scope: Scope) -> dict:
     network = describe_network_redaction(tuple(scope.privacy.redact_network_keys))
     aria = describe_aria_redaction()
     element = describe_element_redaction()
+    # G5 rides on G3's posture rather than inventing a second section: what the
+    # engine removes from *displayed* content is the same kind of promise as
+    # what it removes from a URL, and a reader should find them together.
+    content = describe_content_redaction(redaction_policy(scope))
     return {
         "never_persisted": [
             *network["never_persisted"],
@@ -79,9 +85,14 @@ def data_handling_posture(scope: Scope) -> dict:
             *network["redactions"],
             *element["redactions"],
             *aria["redactions"],
+            *content["redactions"],
         ],
         "network_keys_extra": network["network_keys_extra"],
         "value_recorded_for": element["value_recorded_for"],
+        # Present whether or not redaction is on. A capture has to say which
+        # posture it ran under, or a reader cannot tell a clean capture from an
+        # unredacted one.
+        "content_redaction": content["content_redaction"],
     }
 
 

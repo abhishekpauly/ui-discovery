@@ -45,6 +45,8 @@ from .interactions import (
     probe_open_page_async,
 )
 from .models import Crawl, CrawlConfig, CrawlStats, NetworkRequest, PageNode
+from .redact import DISABLED as DISABLED_REDACTION
+from .redact import RedactionPolicy, Redactor, redact_probe
 from .safety import (
     DEFAULT_POLICY,
     SafetyPolicy,
@@ -561,6 +563,9 @@ class CrawlOptions:
     # Safety & privacy
     policy: SafetyPolicy = DEFAULT_POLICY
     redact_keys: tuple[str, ...] = ()
+    # G5: what to strip out of displayed page content. Disabled by default, so
+    # a zero-config crawl records exactly what it always has.
+    redaction: RedactionPolicy = DISABLED_REDACTION
     # Extensibility (R3)
     adapters: tuple[Adapter, ...] = ()
     # Coverage
@@ -889,6 +894,10 @@ async def crawl_site(
             aria_tree=aria,
             screenshot_path=shot,
             frames=frames,
+            # G5: a redactor per page, so the count it accumulates is this
+            # page's. Sharing one across a crawl would make every page report
+            # the running total.
+            redactor=Redactor(opts.redaction),
         )
 
         for element in model.elements:
@@ -1003,6 +1012,12 @@ async def crawl_site(
                     capture_states=profile.state_capture,
                     profile=profile,
                 )
+                # G5: the probe builds its own record and never passes through
+                # `assemble_page`, so redacting the page model alone left
+                # `probe.title`, every `interaction.target` and every revealed
+                # state carrying whatever the page displayed. Redacted here,
+                # before the node is written or counted.
+                redact_probe(node.probe, Redactor(opts.redaction))
                 p = node.probe.stats
                 context.log.info(
                     f"Probed {url}: {p.get('executed', 0)} executed, "

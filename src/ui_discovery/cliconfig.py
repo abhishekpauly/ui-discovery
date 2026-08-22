@@ -23,6 +23,8 @@ from .auth import DEFAULT_LOGGED_OUT_SIGNALS, DEFAULT_LOGIN_URL_PATTERNS
 from .config import ProbeSettings, Scope, load_scope
 from .crawler import CrawlOptions
 from .interactions import ProbeProfile
+from .redact import RedactionPolicy
+from .redact import build_policy as build_redaction_policy
 from .safety import SafetyPolicy
 
 
@@ -93,6 +95,20 @@ def safety_policy(scope: Scope) -> SafetyPolicy:
         caution_words_extra=frozenset(scope.safety.caution_words_extra),
         never_touch=tuple(scope.safety.never_touch),
     )
+
+
+def redaction_policy(scope: Scope) -> RedactionPolicy:
+    """G5: the content-redaction policy a config asks for.
+
+    A bad entity name or replace style is reported the way every other config
+    error is — cleanly, before anything opens — rather than as a traceback from
+    inside the crawl.
+    """
+    try:
+        return build_redaction_policy(scope.privacy)
+    except ValueError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
 
 
 def auth_signals(scope: Scope) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -230,6 +246,7 @@ def crawl_options(scope: Scope, args) -> CrawlOptions:  # noqa: ANN001
         logged_out_signals=logged_out,
         policy=safety_policy(scope),
         redact_keys=tuple(scope.privacy.redact_network_keys),
+        redaction=redaction_policy(scope),
         adapters=tuple(adapters_for(scope)),
         max_requests_per_minute=pick(
             flag("max_requests_per_minute"),
