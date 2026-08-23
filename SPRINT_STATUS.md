@@ -26,70 +26,72 @@ git rev-list --left-right --count origin/main...<branch>   # behind / ahead
 
 ---
 
-## Branch ledger · 2026-08-22
+## Branch ledger · 2026-08-23
 
-`main` is at `33964f6`. **Sprint 8 is merged** (PR #72) and no sprint is live.
+`main` is at `554fb02`, tagged **v0.20.0** — every governance item, `G1`–`G7`.
 
-| Branch | Tip | Ahead of `main` | State |
-| --- | --- | --- | --- |
-| `release/0.20.0` | — | 1 | Version bump + changelog section for the sprint 8 release. |
-| `sprint/2-field-validation` | `7323c4d` | 0 | Cut empty from the pre-0.19.0 trunk, now 22 behind. Delete and re-cut when `QA.1`–`QA.4` actually start. |
-| `sprint/4-deferred` | `7323c4d` | 0 | Same, and meant to stay empty — it exists so the deferral is visible. |
+| Branch | Ahead of `main` | State |
+| --- | --- | --- |
+| `sprint/5-discovery` | 6 | **Complete as scoped, unmerged.** `H6`–`H9` + `X9`. See *Scope changed mid-sprint*. |
+| `sprint/2-field-validation` | 0 | Cut empty from the pre-0.19.0 trunk, now far behind. Delete and re-cut when `QA.1`–`QA.4` start. |
+| `sprint/4-deferred` | 0 | Same, and meant to stay empty — it exists so the deferral is visible. |
 
-Deleted after merging: `sprint/1-governance` (#70), `sprint/8-redaction` (#72),
-`feat/g2-safety-envelope`, `feat/g3-data-handling-posture`,
-`feat/g4-retention`, `feat/g5-redact-the-model` (#71),
-`docs/x7-backlog-expansion`.
-
-## Sprint 8 — redaction · `EPIC-GOV` · ✅ closed
+## Sprint 5 — discovery · `EPIC-MAP` (partial)
 
 | Item | Pri | Status |
 | --- | --- | --- |
-| `G5` Redact the people out of the model | P0 | ✅ |
-| `G6` Redact the people out of the screenshots | P0 | ✅ |
-| `G7` Egress ledger | P1 | ✅ |
-
-`EPIC-GOV` is complete: `G1`–`G7` all shipped.
+| `H6` Subdomain policy | P2 | ✅ |
+| `H7` External links recorded, never followed | P2 | ✅ |
+| `H8` Crawl failure ledger | P2 | ✅ |
+| `H9` Exclude the furniture | P2 | ✅ |
+| `X9` Capture profiles | P2 | ✅ |
+| `M1` Sitemap ingestion | P1 | 📋 deferred |
+| `M2` `map` command | P1 | 📋 deferred |
+| `M3` Scope dry-run | P2 | 📋 deferred |
+| `M4` Orphan & dead-end screens | P1 | 📋 deferred |
+| `H10` Capture an explicit URL list | P2 | 📋 deferred |
 
 ## Next actions, in order
 
-1. **Merge `release/0.20.0`, then tag `v0.20.0`** — `RELEASING.md`. Pushing the
-   tag *is* the release; nothing else is manual.
-2. **Re-run `QA.2`** against a real authenticated portal. It is the reason this
-   sprint jumped the queue, and no fixture can validate redaction recall
-   against real customer data. `QA.3` and `QA.4` follow from the same run.
-3. **Cut `sprint/5-discovery`** from the new `main`, per `BRANCHING.md`'s
-   *Cut after* order (`M1`–`M4`, `H6`–`H8`).
+1. **Merge `sprint/5-discovery`, then tag `v0.21.0`** — `RELEASING.md`.
+2. **Run against a real product.** That was the point of this sprint: `H6` is
+   the fix that decides whether a multi-subdomain portal captures at all, and
+   `H8` is what tells you whether the result is complete. Read
+   `run.json`'s `metrics.probe_share_of_crawl_pct` before tuning anything.
+3. **Cut `sprint/12-map`** for the deferred `M1`–`M4` + `H10`.
 
-## Release history note
+## Scope changed mid-sprint
 
-**`0.19.0` was never tagged, and cannot be retroactively.** Sprint 8 was cut
-from `sprint/1-governance` rather than from `main`, so the commit bumping to
-`0.19.0` reached `main` on sprint 8's merge (#72) rather than sprint 1's (#70).
-At the sprint 1 merge the tree still declared `0.18.1`, and `release.yml`
-refuses a tag whose version disagrees with `pyproject.toml` — so there is no
-commit that could carry a `v0.19.0` tag without also containing `G5`–`G7`.
-`v0.20.0` therefore contains `G1`–`G7`, and the `[0.19.0]` changelog section
-stands as the record of the first half. `v0.18.1` is the previous tag.
+This sprint was cut as `M1`–`M4` + `H6`–`H8`, with `X9`, `H9` and `H10` pulled
+forward from sprints 9 and 10 because they are small, they share
+`config.py`/`crawler.py` with the rest, and they are what a first real run
+actually needs.
 
-## What sprint 8 did differently
+It shipped as `H6`–`H9` + `X9`. The `M` series went out of scope rather than in
+half-landed: `M1` and `M2` want two new modules and a new CLI between them, and
+`M3` depends on `M2`, `M4` on `M1`, and `H10` on both `M2` and `H8`. That is a
+second sprint's worth of work, and a release of finished items beats a release
+with a half-written `discovery.py` in it.
+
+The five that shipped stand on their own — none of them depends on the `M`
+series — so nothing here is left in an intermediate state.
+
+## What earlier sprints did differently
 
 Kept because each was a decision, and the next sprint should make them
 deliberately or not at all.
 
-- **Cut from sprint 1, not from `main`.** `G5` needed `G3`'s manifest posture,
-  which had not reached `main`. It cost the `0.19.0` tag — see above. The rule
-  in `BRANCHING.md` exists for exactly this.
-- **`G5` merged as a merge commit, not a squash** (#71), against the
-  work → sprint rule. `G6` and `G7` are one commit each, as intended.
-- **`G6` and `G7` shared one work branch.** They landed as separate commits, so
-  the history reads correctly and either is revertible alone — but they could
-  not be reviewed separately, which is the cost the one-item-per-branch rule
-  exists to prevent.
-- **Two `G5` holes were closed inside `G6`.** `extract` and `probe` both read a
-  scope config's `privacy` block and ignored it. Fixing them separately would
-  have meant shipping `G6` on top of a known hole.
-- **CodeQL blocked the first push.** An egress fixture read a URL from
-  `location.search` into `img.src`. The alert was correct. Note that CodeQL is
-  *not* in the `full-ok` required set, so it reported without gating — worth
-  changing if security alerts should block merges.
+- **Sprint 8 was cut from sprint 1, not from `main`.** It cost the `v0.19.0`
+  tag: sprint 1's version bump reached `main` on sprint 8's merge, so no commit
+  ever declared `0.19.0` without also containing `G5`–`G7`. `v0.20.0` contains
+  `G1`–`G7`, and the changelog says so.
+- **`G6` and `G7` shared one work branch**, against the one-item-per-branch
+  rule. They landed as separate commits, so the history reads correctly, but
+  they could not be reviewed separately.
+- **CodeQL blocked a push once**, for a fixture that read a URL out of
+  `location.search`. The alert was correct. CodeQL is *not* in the `full-ok`
+  required set, so it reports without gating — worth changing if security
+  alerts should block merges.
+- **The `sprint/**` ruleset did not prevent branch deletion**, though
+  `BRANCHING.md` says it does. Worth reconciling the doc with the actual
+  ruleset.
