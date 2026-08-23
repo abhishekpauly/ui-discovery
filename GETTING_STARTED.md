@@ -110,6 +110,95 @@ to test.
 
 ---
 
+## 7. Your first run against your own product
+
+The steps above point at a demo site. Pointing at a product you actually own is
+a different exercise: the failures are quieter, and two of them will make a
+capture *look* complete while missing a third of the product. Do it in this
+order.
+
+### a. Write a scope config, don't use flags
+
+```powershell
+python -m ui_discovery.intake
+```
+
+It asks questions and writes a `scope.yaml`. Flags are fine for a demo; a real
+target wants a file you can re-run, diff and check into a ticket.
+
+### b. Set the subdomain policy before anything else
+
+If your product spans more than one host — `app.` and `admin.`, or a separate
+reports host — say so:
+
+```yaml
+scope:
+  subdomains: registrable-domain
+```
+
+**This is the one that fails silently.** The default compares hostnames exactly,
+so without it the crawl stops at the first subdomain boundary and the report
+looks like a complete picture of a smaller product. Nothing in the output will
+tell you.
+
+### c. Do a cheap pass first
+
+```powershell
+python -m ui_discovery.crawl <url> --config scope.yaml --profile fast --headless
+```
+
+`fast` skips clicking, screenshots and deep-nav. You are not documenting the
+product yet — you are finding out how big it is and whether your scope is right,
+and doing that with a full run costs you the whole run.
+
+### d. Read three things before running it again
+
+| Where | What it tells you |
+| --- | --- |
+| `summary.md` → **Not captured** | Whether the budget was too small, links are broken, or your `exclude` rules are eating things. Only `budget` is fixed by raising `--max-pages`. |
+| `summary.md` → **Leaves the product** | Whether the crawl is stopping where you meant it to. |
+| `run.json` → `metrics.probe_share_of_crawl_pct` | How much of the wall clock the clicking costs. This is the number to optimise against, rather than a guess. |
+
+If `Not captured` is full of `budget`, raise `--max-pages`. If it is full of
+`out-of-scope`, your `include`/`exclude` rules are wrong. If it is full of
+`error`, the product has broken links — which is a finding, not a problem with
+the tool.
+
+### e. Trim the furniture, then do the real run
+
+Real portals have a cookie banner, a chat widget and a support bubble on every
+screen. They inflate the element count and invent components that span every
+page:
+
+```yaml
+capture:
+  exclude_selectors: ["#cookie-banner", ".chat-widget"]
+```
+
+Then the full pass:
+
+```powershell
+python -m ui_discovery.pipeline <url> --config scope.yaml --auth-state session.json
+```
+
+### f. If the capture contains customer data
+
+Anything behind a login almost certainly does — in the model *and* in the
+screenshots:
+
+```yaml
+privacy:
+  redact_content: true        # names, emails, cards, IBANs out of the text
+  redact_screenshots: true    # and covered in the pictures (follows the above)
+outputs:
+  retention_days: 30          # captures should not live forever
+```
+
+Detection finds *shapes*, not meaning, so a person's name in a sentence is not
+found unless you list it under `privacy.person_names`.
+
+---
+
 ## Everyday reminder
 
 Each **new** terminal needs the environment activated again before you run

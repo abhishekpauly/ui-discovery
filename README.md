@@ -214,6 +214,87 @@ Both settings are applied to the page graph *and* Crawlee's request queue, so
 page counts agree, and both are recorded in `crawl.json`'s `config` block so a
 snapshot always says how its page identity was computed.
 
+### How much of a hostname counts as your product (H6)
+
+Real portals are rarely on one host. The engine compares hostnames exactly by
+default, so a product split across `app.example.com` and `admin.example.com`
+captures as **one target with half its modules missing** — and says nothing
+about it. A capture that stops at a subdomain boundary looks exactly like a
+product that ends there.
+
+```yaml
+scope:
+  subdomains: registrable-domain      # same-host (default) | registrable-domain | list
+  # ...or name the hosts explicitly:
+  # subdomains: list
+  # subdomain_hosts: [admin.example.com, reports.example.com]
+```
+
+| Policy | What counts as the same site |
+| --- | --- |
+| `same-host` | Exact host **and port**. Today's behaviour, and the default. |
+| `registrable-domain` | Same registrable domain, so `app.` and `admin.` unify. `example.co.uk` is handled correctly — `co.uk` is a public suffix, not a domain. Ports are ignored. |
+| `list` | Only the hosts you name. The start URL's own host is always included, so a list cannot lock the crawl out of where it started. |
+
+`registrable-domain` uses `tldextract`'s **bundled** suffix snapshot and never
+reaches the network. Where there is no public suffix at all — an IP address, a
+bare `localhost` — it compares the host itself, because treating "no domain" as
+a match would make every IP the same site as every other.
+
+**Set this before your first real run.** It is the one setting that decides
+whether a multi-host product captures at all, and the failure is silent.
+
+### What the crawl did not capture (H8)
+
+A capture that lists only what it found overstates its own coverage. *Is this
+product 40 screens, or 60 screens with 20 failures?* is now answerable from the
+artifacts:
+
+```
+## Not captured
+
+| Screen                        | Why                                      | Depth |
+| `https://app/reports/2024`    | **budget** — page budget (25) reached    | 3     |
+| `https://app/legacy/admin`    | **error** — TimeoutError: ...            | 2     |
+| `https://app/exports/x.csv`   | **out-of-scope** — excluded by the ...   | 2     |
+```
+
+Four reasons, and they matter because only some are fixed by raising
+`--max-pages`:
+
+| Reason | Means |
+| --- | --- |
+| `budget` | The page budget ran out before this URL. Raise `--max-pages`. |
+| `not-reached` | Discovered, but the crawl ended first. |
+| `error` | It was tried and failed — a timeout, a 404, a refused connection. Raising the budget will not help. |
+| `out-of-scope` | Your `include`/`exclude` rules declined it. A deliberate absence, not a gap. |
+
+The full list, with depth and HTTP status, is `crawl.json`'s `failures`. Its
+length is exactly `discovered_not_captured`, so the count and the list cannot
+disagree.
+
+### Where the product hands off to somebody else (H7)
+
+An outbound link used to be dropped without trace, which made *this product has
+no integrations* and *we were not authorized past this point* the same artifact.
+Links that leave the product are now recorded — with the label you would click,
+the region it sits in, and the control kind — and **never followed**:
+
+```
+## Leaves the product
+
+3 link(s) point off-site. They were recorded and never followed.
+
+| From              | Goes to                                  | Control | Region     |
+| `https://app/`    | [Vendor documentation](https://vendor/)  | link    | navigation |
+```
+
+They are in `crawl.json`'s `external_links` and in `relations.json`. Nothing is
+requested from those hosts — `run.json`'s egress ledger is the evidence.
+
+Whether a link counts as external is decided by the **same** rule as `H6`
+above, inverted: a subdomain your policy admits is internal, not an integration.
+
 ## Run — V2 (analyze a crawl)
 
 ```bash
