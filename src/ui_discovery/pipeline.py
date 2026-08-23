@@ -355,7 +355,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     # must describe the same graph, not three independently-derived ones.
     relations = build_relations(crawl)
     write_reports(crawl, str(out_dir), relations=relations)
-    write_inventory(crawl, str(out_dir))
+    # Same graph, not a second one derived independently — `M4`'s annotations
+    # in `urls.txt` must agree with the report that names the same screens.
+    write_inventory(crawl, str(out_dir), relations=relations)
     modules = write_module_artifacts(
         crawl, str(out_dir), [(m.name, m.start_url) for m in scope.modules])
     s = crawl.stats

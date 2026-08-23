@@ -397,6 +397,21 @@ class ScreenRelations(BaseModel):
     tables: list[TableGroup] = Field(default_factory=list)
     element_links: list[ElementLink] = Field(default_factory=list)
 
+    # M4 — two derived properties, and the reason they live here rather than
+    # on `Page`: they are facts about the *graph*, not about the screen. The
+    # same page is an orphan or not depending on what else was captured, so
+    # recording it on the page would make a page model that changes meaning
+    # with its neighbours.
+    #
+    # `orphan` — nothing in the product links here. It was reached because a
+    # sitemap declared it or `D4` clicked into it. A dead route, a feature
+    # shipped without an entry point, an admin page that outlived its menu
+    # item: things a product owner cannot enumerate from memory.
+    orphan: bool = False
+    # `dead_end` — captured, and contributing no outbound navigation of its
+    # own. Either a leaf or a trap, and the difference is worth a look.
+    dead_end: bool = False
+
 
 class MappedUrl(BaseModel):
     """M2 — one URL the engine knows about, and what it would do with it."""
@@ -450,6 +465,9 @@ class Relations(BaseModel):
     screens: list[ScreenRelations] = Field(default_factory=list)
     # H7: where this product hands off to someone else.
     external: list[NavEdge] = Field(default_factory=list)
+    # M4: screens with no outbound navigation. Named alongside `orphans`,
+    # which is the mirror case.
+    dead_ends: list[str] = Field(default_factory=list)
 
 
 # --- O1-O3: what happened when we looked ------------------------------------

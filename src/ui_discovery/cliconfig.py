@@ -124,8 +124,11 @@ def read_url_list(path: Optional[str]) -> list[str]:
         raise SystemExit(1) from exc
     urls = []
     for line in text.splitlines():
-        entry = line.strip()
-        if entry and not entry.startswith("#"):
+        # An inline `#` is stripped, not just a leading one: `M4` annotates
+        # the capture's own `urls.txt` with `# orphan, dead-end`, and that
+        # file has to remain something you can hand straight back.
+        entry = line.split("#", 1)[0].strip()
+        if entry:
             urls.append(entry)
     return urls
 

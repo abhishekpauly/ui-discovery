@@ -338,7 +338,8 @@ def _summary_markdown(inv: dict[str, Any]) -> str:
 
     lines += ["", "## Files in this folder", "",
               "| File | What it is |", "| --- | --- |",
-              "| `urls.txt` | Every captured screen, one URL per line |",
+              "| `urls.txt` | Every captured screen, one per line "
+              "(`# orphan` / `# dead-end` where they apply) |",
               "| `elements.csv` | Every UI element, one row per element |",
               "| `controls.csv` | Every clickable, its label, options and destination |",
               "| `relations.json` | How screens and elements connect |",
@@ -477,7 +478,32 @@ def attach_metrics(manifest: dict[str, Any], output_dir: str) -> Optional[str]:
         return None
 
 
-def write_inventory(crawl: Crawl, output_dir: str) -> dict[str, str]:
+def _annotated_urls(crawl: Crawl, inv: dict, relations=None) -> str:
+    """`urls.txt`, with `M4`'s findings as trailing comments.
+
+    A comment rather than a column, because `H10` consumes this file: it has
+    to stay something you can filter by hand and hand straight back, and
+    `read_url_list` strips an inline `#` for exactly that reason.
+    """
+    if relations is None:
+        from .relations import build_relations
+
+        relations = build_relations(crawl)
+    orphans = set(relations.orphans)
+    dead_ends = set(relations.dead_ends)
+
+    out = []
+    for screen in inv["screens"]:
+        url = screen["url"]
+        notes = [name for name, group in (("orphan", orphans),
+                                          ("dead-end", dead_ends))
+                 if url in group]
+        out.append(f"{url}  # {', '.join(notes)}" if notes else url)
+    return "\n".join(out) + "\n"
+
+
+def write_inventory(crawl: Crawl, output_dir: str,
+                    relations=None) -> dict[str, str]:
     """Write every run artifact into `output_dir`. Always writes all of them."""
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -494,7 +520,7 @@ def write_inventory(crawl: Crawl, output_dir: str) -> dict[str, str]:
     Path(paths["inventory"]).write_text(
         json.dumps(inv, indent=2, ensure_ascii=False), encoding="utf-8")
     Path(paths["urls"]).write_text(
-        "\n".join(s["url"] for s in inv["screens"]) + "\n", encoding="utf-8")
+        _annotated_urls(crawl, inv, relations), encoding="utf-8")
     Path(paths["elements"]).write_text(_elements_csv(crawl), encoding="utf-8")
     Path(paths["controls"]).write_text(_controls_csv(crawl), encoding="utf-8")
     Path(paths["endpoints"]).write_text(
