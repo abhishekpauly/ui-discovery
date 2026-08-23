@@ -32,6 +32,7 @@ from .browser import (
     has_rendered,
     redact_aria_snapshot,
 )
+from .discovery import read_sitemaps
 from .extraction import (
     JS,
     assemble_page,
@@ -548,6 +549,12 @@ class CrawlOptions:
     # not part of your product. Distinct from `never_touch`, which forbids
     # interacting with something the model still describes.
     exclude_selectors: tuple[str, ...] = ()
+    # M1: seed from the target's own robots.txt / sitemap.xml.
+    #   include — read it and add what it lists (default)
+    #   skip    — behave exactly as the crawler did before M1
+    #   only    — capture the sitemap's URLs and follow no links: the survey
+    sitemap: str = "include"
+    sitemap_timeout: float = 10.0
     # Capabilities (R2)
     # Off for the *library*, on for the *product*. `crawl_site(url)` is the
     # low-level API: a programmatic caller should have to ask before the engine
@@ -702,6 +709,7 @@ async def crawl_site(
     adapters = opts.adapters
     seeds, reveal_nav, deep_nav = opts.seeds, opts.reveal_nav, opts.deep_nav
     subdomains, subdomain_hosts = opts.subdomains, tuple(opts.subdomain_hosts)
+    sitemap_mode = opts.sitemap
     max_requests_per_minute = opts.max_requests_per_minute
     max_concurrency = opts.max_concurrency
     respect_robots_txt = opts.respect_robots_txt
@@ -1106,6 +1114,11 @@ async def crawl_site(
         # The page graph still records every link the page really has.
         queueable = []
         for candidate in out_links:
+            if sitemap_mode == "only":
+                # The fast survey: capture what the sitemap declared and
+                # follow nothing. The page graph still records every link the
+                # page really has — only the queue is narrowed.
+                continue
             if _in_scope(candidate):
                 queueable.append(candidate)
             else:
@@ -1192,9 +1205,41 @@ async def crawl_site(
 
     started = datetime.now(timezone.utc)
     t0 = time.monotonic()
+
+    # M1: the target's own declaration of its URLs, fed into the *existing*
+    # `seeds` option rather than a second seeding path — so from here on a
+    # sitemap URL and a hand-written seed are the same kind of thing.
+    sitemap_seeds: list[str] = []
+    if sitemap_mode != "skip":
+        found = read_sitemaps(
+            start_url, mode=sitemap_mode, include=include, exclude=exclude,
+            subdomains=subdomains, subdomain_hosts=subdomain_hosts,
+            timeout=opts.sitemap_timeout, dedupe_queries=dedupe_queries,
+            drop_params=drop_params)
+        sitemap_seeds = [u for u in found.urls if _normalize(u) != root]
+        # G7: these requests are made with urllib, not the browser, so the
+        # egress listener never sees them. A ledger that missed the engine's
+        # own traffic would be worth very little.
+        egress_urls.extend(found.fetched)
+        for dropped in found.dropped:
+            failure_reasons.setdefault(dropped["url"], {
+                "reason": dropped["reason"],
+                "detail": "listed in the sitemap, declined by the scope rules",
+            })
+        for warning in found.warnings:
+            event("sitemap.warning", level="warning", detail=warning)
+        if found.sources:
+            event("sitemap.read", sources=found.sources,
+                  urls=len(found.urls), dropped=len(found.dropped))
+            print(f"[INFO] Sitemap: {len(found.urls)} URL(s) from "
+                  f"{len(found.sources)} document(s), "
+                  f"{len(found.dropped)} out of scope")
+
     # Seeds join the start URL; Crawlee dedups, and out-of-scope seeds are
     # dropped by the same transform as any other request.
-    start_urls = [start_url] + [u for u in seeds if _normalize(u) != root]
+    start_urls = ([start_url]
+                  + [u for u in seeds if _normalize(u) != root]
+                  + sitemap_seeds)
     final_stats = await crawler.run(start_urls)
     runtime = time.monotonic() - t0
     finished = datetime.now(timezone.utc)
@@ -1215,7 +1260,14 @@ async def crawl_site(
         nodes.values(),
         key=lambda n: (n.depth if n.depth is not None else 10**9, n.url),
     )
-    discovered = set(nodes) | {dst for outs in edges.values() for dst in outs}
+    # A URL the sitemap listed and the scope rules declined was discovered as
+    # surely as a link was, so `H8` accounts for it. Without this, a config
+    # whose `exclude` was too broad would look like a product with fewer
+    # screens rather than a capture that turned some down.
+    discovered = (set(nodes)
+                  | {dst for outs in edges.values() for dst in outs}
+                  | {u for u, why in failure_reasons.items()
+                     if why.get("reason") in ("out-of-scope", "off-site")})
     logged_out = sum(
         1 for n in nodes.values() if n.page.auth and n.page.auth.looks_logged_out
     )

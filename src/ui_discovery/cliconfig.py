@@ -251,6 +251,9 @@ def crawl_options(scope: Scope, args) -> CrawlOptions:  # noqa: ANN001
         subdomains=scope.scope.subdomains,
         subdomain_hosts=tuple(scope.scope.subdomain_hosts),
         exclude_selectors=tuple(scope.capture.exclude_selectors),
+        # M1: read the target's own URL declaration.
+        sitemap=scope.discovery.sitemap,
+        sitemap_timeout=scope.discovery.sitemap_timeout,
         screenshots=pick(
             False if getattr(args, "no_screenshots", None) else None,
             scope.capabilities.screenshots, True),
