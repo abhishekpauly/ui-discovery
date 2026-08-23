@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Tabs, the way a component library builds them</title></head>
+<body>
+  <main>
+    <h1>Mounted/unmounted tab panels</h1>
+
+    <!-- The existing tab fixture (`index.html`) toggles `hidden` on two
+         panels that are both in the DOM from the start. Real component
+         libraries — Radix, Headless UI, MUI — commonly do neither of those
+         things:
+
+           * the inactive panel is **removed from the DOM** and the active one
+             mounted on switch, so a panel is not "revealed", it is *created*;
+           * generated ids contain characters that need CSS escaping, so the
+             `aria-controls` value and the `dom_path` are not the same string.
+
+         A real portal capture found 29 tab elements, clicked 19 of them,
+         detected a DOM change on 10 — and recorded zero tab-panel states.
+         This fixture is that shape, reduced. -->
+
+    <div role="tablist" aria-label="Agent configuration">
+      <button role="tab" id="radix-:r1:-trigger-basic" aria-selected="true"
+              aria-controls="radix-:r1:-content-basic">Basic Details</button>
+      <button role="tab" id="radix-:r1:-trigger-instructions" aria-selected="false"
+              aria-controls="radix-:r1:-content-instructions">Instructions</button>
+      <button role="tab" id="radix-:r1:-trigger-monitoring" aria-selected="false"
+              aria-controls="radix-:r1:-content-monitoring">Monitoring</button>
+    </div>
+
+    <div id="panels">
+      <div role="tabpanel" id="radix-:r1:-content-basic"
+           aria-labelledby="radix-:r1:-trigger-basic">
+        <h2>Basic details</h2>
+        <label for="agent-name">Agent name</label>
+        <input id="agent-name" type="text" value="Untitled Agent">
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // One panel in the DOM at a time — mounted on switch, not merely shown.
+    var PANELS = {
+      "basic": '<h2>Basic details</h2>' +
+               '<label for="agent-name">Agent name</label>' +
+               '<input id="agent-name" type="text" value="Untitled Agent">',
+      "instructions": '<h2>Instructions</h2>' +
+               '<label for="sys">System prompt</label>' +
+               '<textarea id="sys">You are a helpful assistant.</textarea>' +
+               '<button type="button" id="add-example">Add example</button>',
+      "monitoring": '<h2>Monitoring</h2>' +
+               '<table><thead><tr><th>Run</th><th>Status</th></tr></thead>' +
+               '<tbody><tr><td>1042</td><td>Succeeded</td></tr></tbody></table>'
+    };
+
+    document.querySelectorAll('[role=tab]').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        var key = tab.id.split('-content-').join('').split('trigger-')[1];
+        document.querySelectorAll('[role=tab]').forEach(function (t) {
+          t.setAttribute('aria-selected', String(t === tab));
+        });
+        var host = document.getElementById('panels');
+        host.innerHTML = '';
+        var panel = document.createElement('div');
+        panel.setAttribute('role', 'tabpanel');
+        panel.id = 'radix-:r1:-content-' + key;
+        panel.setAttribute('aria-labelledby', tab.id);
+        panel.innerHTML = PANELS[key];
+        host.appendChild(panel);
+      });
+    });
+  </script>
+</body>
+</html>
