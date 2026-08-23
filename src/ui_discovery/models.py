@@ -398,6 +398,43 @@ class ScreenRelations(BaseModel):
     element_links: list[ElementLink] = Field(default_factory=list)
 
 
+class MappedUrl(BaseModel):
+    """M2 — one URL the engine knows about, and what it would do with it."""
+
+    url: str
+    # seed | module | sitemap | link | deep-nav — where the URL came from.
+    # `link` and `deep-nav` only exist for a map folded from a prior crawl:
+    # they are what navigation discovered, and `map` never navigates.
+    source: str
+    in_scope: bool
+    # **Which rule decided.** The point of the whole model: a verdict without
+    # its reason cannot be acted on, because you cannot tell which line of the
+    # config to change.
+    decided_by: str
+    depth: Optional[int] = None
+
+
+class UrlMap(BaseModel):
+    """What a crawl would do, and why, without doing it.
+
+    Scoping a real portal is guesswork until the run finishes and the budget is
+    spent. This is the artifact that makes it a decision instead of a bet.
+    """
+
+    schema_version: str
+    engine_version: str
+    generated_at: str
+    start_url: str
+    # The glob applied, if any. Recorded so a narrowed map cannot be mistaken
+    # for a complete one.
+    search: Optional[str] = None
+    # Set when the map folded in a previous capture's discovered links.
+    from_crawl: Optional[str] = None
+    entries: list[MappedUrl] = Field(default_factory=list)
+    stats: dict[str, Any] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class Relations(BaseModel):
     schema_version: str
     engine_version: str

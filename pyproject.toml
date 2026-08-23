@@ -32,6 +32,7 @@ semantic = [
 [project.scripts]
 ui-discovery-extract = "ui_discovery.extract:main"
 ui-discovery-crawl = "ui_discovery.crawl:main"
+ui-discovery-map = "ui_discovery.map:main"
 ui-discovery-analyze = "ui_discovery.analyze:main"
 ui-discovery-diff = "ui_discovery.diff:main"
 ui-discovery-intake = "ui_discovery.intake:main"
