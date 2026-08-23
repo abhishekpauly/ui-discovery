@@ -177,3 +177,71 @@ def test_the_ledger_does_not_depend_on_the_probe(serve, tmp_path):
     _crawl(server.url("second.html"), tmp_path, run=run, probe=False,
            max_pages=1, max_depth=0)
     assert run.manifest().egress.total_requests > 0
+
+
+# --- the ledger and H6 must agree ------------------------------------------
+#
+# These arrived after a real run. `build_ledger` decided scope by exact host
+# match and carried a docstring saying `H6` was the item that would widen it;
+# when `H6` landed, this was not revisited. A config declaring
+# `subdomains: registrable-domain` still had its own API subdomain flagged as
+# off-scope — which is the specific way this section stops being read: not by
+# missing a host, but by crying wolf about one.
+
+
+def test_the_ledger_honours_the_registrable_domain_policy():
+    # `.com` on purpose: `.test` and `.example` are reserved and are not in
+    # the public-suffix list, so they exercise the fallback below rather than
+    # the behaviour under test.
+    ledger = build_ledger(
+        ["https://app.target.com/a", "https://api.target.com/b",
+         "https://www.analytics.example.com/collect"],
+        "https://app.target.com/", "registrable-domain")
+    assert ledger["off_scope"] == ["www.analytics.example.com"]
+    in_scope = {h["host"] for h in ledger["hosts"] if h["in_scope"]}
+    assert in_scope == {"app.target.com", "api.target.com"}
+
+
+def test_registrable_domain_does_not_unify_a_non_public_tld():
+    """A real trap, and worth pinning rather than discovering on a staging
+    run: `registrable-domain` needs a *public suffix*. An internal TLD —
+    `.internal`, `.local`, `.test` — has none, so the policy falls back to
+    comparing hosts and two subdomains stay separate. `subdomains: list` is
+    the answer for those environments.
+    """
+    ledger = build_ledger(
+        ["https://app.corp.internal/a", "https://api.corp.internal/b"],
+        "https://app.corp.internal/", "registrable-domain")
+    assert ledger["off_scope"] == ["api.corp.internal"]
+
+
+def test_the_ledger_honours_an_explicit_host_list():
+    ledger = build_ledger(
+        ["https://app.corp.internal/a", "https://api.corp.internal/b",
+         "https://other.corp.internal/c"],
+        "https://app.corp.internal/", "list", ("api.corp.internal",))
+    assert ledger["off_scope"] == ["other.corp.internal"]
+
+
+def test_same_host_remains_the_default_and_is_unchanged():
+    """The narrow reading stays the default: widening is a decision a config
+    makes, never one the ledger makes on its behalf."""
+    ledger = build_ledger(
+        ["https://app.target.com/a", "https://api.target.com/b"],
+        "https://app.target.com/")
+    assert ledger["off_scope"] == ["api.target.com"]
+
+
+def test_the_ledger_and_the_crawler_cannot_disagree():
+    """Asserted against `same_site` itself rather than against a copy of its
+    rules — one implementation, checked from both ends."""
+    from ui_discovery.util import same_site
+
+    target = "https://app.target.com/"
+    urls = ["https://api.target.com/b", "https://elsewhere.example.com/c"]
+    for policy in ("same-host", "registrable-domain"):
+        ledger = build_ledger(urls, target, policy)
+        for host in ledger["hosts"]:
+            url = next(u for u in urls if host_of(u) == host["host"])
+            assert host["in_scope"] is same_site(url, target, policy), (
+                policy, host["host"])

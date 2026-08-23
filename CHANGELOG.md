@@ -16,6 +16,41 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **`G7`'s egress ledger now honours `H6`'s subdomain policy.** It decided
+  scope by exact host match and carried a docstring saying `H6` was the item
+  that would widen it. `H6` landed in 0.21.0 and this was never revisited, so a
+  config declaring `subdomains: registrable-domain` still had its own API
+  subdomain reported as off-scope.
+
+  Found on the first real run: a portal's ledger listed 37 off-scope hosts, of
+  which three were the product's own (`api-builder-qa`, `qa-cluster-workbench`,
+  `qore-assets`). That is the specific way this section stops being read — not
+  by missing a host, but by crying wolf about one until nobody checks the list.
+  Correctly: 34 third-party hosts, 4 in scope.
+
+  `same-host` remains the default, so widening stays a decision a config makes
+  rather than one the ledger makes on its behalf. A regression test asserts the
+  ledger against `same_site` itself rather than against a copy of its rules.
+
+- **A trap worth knowing, now pinned by a test.** `registrable-domain` needs a
+  *public suffix*. An internal TLD — `.internal`, `.local`, `.test` — has none,
+  so the policy falls back to comparing hosts and two subdomains of one
+  internal domain stay separate. `subdomains: list` is the answer for those
+  environments. This surfaced as a wrong test fixture before it could surface
+  as a wrong capture.
+
+### Tests
+
++5 (944 → 949 collected; 946 passed and 3 skipped). One previously-skipped
+test now runs: the version-drift guard skips while a version is untagged, and
+`v0.22.0` is tagged.
+
+---
+
 ## [0.22.0] — Know the URL surface before crawling it (M1-M4, H10)
 
 The engine found URLs one way: by walking what it had already rendered. That is
