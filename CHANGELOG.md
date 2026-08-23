@@ -36,6 +36,18 @@ The "V0…V5" phase names used in planning map to product versions as noted.
   rather than one the ledger makes on its behalf. A regression test asserts the
   ledger against `same_site` itself rather than against a copy of its rules.
 
+- **`M3`'s dry run under-reported a `urls:` config.** `build_map` predates
+  `H10` and never learned about the explicit URL list, so `--dry-run` on a
+  config built around `urls:` reported **one** URL while the crawl would
+  capture **seven**. A preview that under-reports the run it is previewing is
+  the one failure that artifact cannot afford. The map now treats the list as a
+  source (`url-list`), judges each entry by the same gates, and — matching the
+  crawler — skips the sitemap read when a list is present.
+
+  The second instance today of one defect class: a feature built before a later
+  one and never wired to it. Both were found by running the engine against a
+  real portal rather than by reading the code.
+
 - **A trap worth knowing, now pinned by a test.** `registrable-domain` needs a
   *public suffix*. An internal TLD — `.internal`, `.local`, `.test` — has none,
   so the policy falls back to comparing hosts and two subdomains of one
