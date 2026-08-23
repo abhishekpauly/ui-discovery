@@ -7,6 +7,8 @@ from collections import deque
 from pathlib import Path
 from urllib.parse import parse_qsl, urldefrag, urlencode, urljoin, urlparse
 
+from .idpattern import ID_SEGMENT
+
 # Query params that carry no page-identity meaning (tracking/session noise).
 # Stripped only when `dedupe_queries=True` — off by default so existing page
 # identity is unchanged unless a caller opts in.
@@ -29,6 +31,56 @@ def slug_for(url: str) -> str:
         base = f"{host}_{path}" if path else host
     slug = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("_")
     return (slug or "page")[:120]
+
+
+# H12 — what makes two URLs the *same screen* rather than the same page.
+#
+# A builder, CRM or admin portal renders one screen template once per record:
+# `/agent-builder/<uuid>` is the same UI for every saved agent. A real capture
+# found eleven of its first twenty-five screens were that one screen with a
+# different id, and the only tool for it was a path-glob `exclude` — which is
+# all-or-nothing, and on that portal removed the screen entirely along with its
+# duplicates.
+#
+# Deliberately the *same* notion of "looks like an identifier" that
+# `network.endpoint_pattern` has used since V3 to collapse thirty calls to
+# `/users/<uuid>` into one endpoint. Importing it rather than restating it is
+# the point: two ideas of what an id looks like would drift, and the drift
+# would be silent.
+ROUTE_ID = ":id"
+
+
+def route_template(url: str) -> str:
+    """The URL with identifier-shaped **values** replaced by `:id`.
+
+    Both halves matter, and a real portal proved why:
+
+    * path segments — `/agent-builder/<uuid>` → `/agent-builder/:id`, so twenty
+      agents are one screen;
+    * query *values* — `?accountId=<uuid>&configTab=BasicDetails` →
+      `?accountId=:id&configTab=BasicDetails`, so two agents' *BasicDetails*
+      tabs are one screen while one agent's seven tabs stay seven.
+
+    Collapse only the path and two records' tabs never merge. Collapse the
+    whole query and one record's seven tabs merge into one. Both were observed
+    before this landed.
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return url
+    path = "/".join(ROUTE_ID if ID_SEGMENT.match(seg) else seg
+                    for seg in parsed.path.split("/"))
+    query = ""
+    if parsed.query:
+        query = urlencode(
+            sorted((k, ROUTE_ID if ID_SEGMENT.match(v) else v)
+                   for k, v in parse_qsl(parsed.query, keep_blank_values=True)),
+            # A template is read by people — in the failure ledger, in the map's
+            # `decided_by`. `accountId=:id` is the point of the feature;
+            # `accountId=%3Aid` is a riddle.
+            safe=":")
+    return f"{parsed.netloc}{path}" + (f"?{query}" if query else "")
 
 
 def normalize_url(

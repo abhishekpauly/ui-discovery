@@ -39,7 +39,13 @@ from .cliconfig import add_config_argument, load_or_exit, resolve_output_dir
 from .config import Scope
 from .discovery import read_sitemaps
 from .models import Crawl, MappedUrl, UrlMap
-from .util import normalize_url, path_matches, same_site, slug_for
+from .util import (
+    normalize_url,
+    path_matches,
+    route_template,
+    same_site,
+    slug_for,
+)
 
 # The order sources are reported in: what the config states, then what the
 # product declares, then what navigation found. Stable, so two runs of the
@@ -153,6 +159,21 @@ def build_map(
         in_scope, rule = decide(url, scope, root)
         entries.append(MappedUrl(url=url, source=source, in_scope=in_scope,
                                  decided_by=rule, depth=depth))
+
+    # H12: the instance cap runs before the budget, in the order a crawl
+    # applies them — a collapsed duplicate must not consume a budget slot, or
+    # the map would under-report what fits.
+    if scope.identity.collapse_instances:
+        cap = max(1, scope.identity.max_instances_per_route)
+        counts: dict[str, int] = {}
+        for entry in sorted(entries, key=_ordering):
+            if not entry.in_scope:
+                continue
+            template = route_template(entry.url)
+            counts[template] = counts.get(template, 0) + 1
+            if counts[template] > cap:
+                entry.in_scope = False
+                entry.decided_by = f"instances:{template}"
 
     # The budget is applied *after* scope, to the in-scope set, in the order a
     # crawl would reach them — so "you will run out before Reports" is a thing

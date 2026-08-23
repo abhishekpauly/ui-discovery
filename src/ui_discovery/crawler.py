@@ -74,6 +74,7 @@ from .util import (
     path_of,
     resolve_external_links,
     resolve_labelled_links,
+    route_template,
     same_site,
     slug_for,
     url_in_scope,
@@ -559,6 +560,9 @@ class CrawlOptions:
     # H10: capture exactly these URLs. Scope rules still decide; a list is
     # convenience, never an authorization bypass.
     url_list: tuple[str, ...] = ()
+    # H12: capture one screen per template rather than one per record.
+    collapse_instances: bool = False
+    max_instances_per_route: int = 1
     # Capabilities (R2)
     # Off for the *library*, on for the *product*. `crawl_site(url)` is the
     # low-level API: a programmatic caller should have to ask before the engine
@@ -715,6 +719,12 @@ async def crawl_site(
     subdomains, subdomain_hosts = opts.subdomains, tuple(opts.subdomain_hosts)
     sitemap_mode = opts.sitemap
     url_list = tuple(opts.url_list)
+    collapse_instances = opts.collapse_instances
+    max_per_route = max(1, opts.max_instances_per_route)
+    # H12: how many captures each route template has claimed. Counted at the
+    # queue, beside the page budget, because both answer "is this worth a
+    # slot?" and a second place to decide that is a second place to disagree.
+    route_counts: dict[str, int] = {}
     # One switch for both ways of saying "capture what I named and stop":
     # H10's explicit list and M1's `only` survey. Two independent flags for
     # one behaviour is how they end up disagreeing.
@@ -1128,15 +1138,30 @@ async def crawl_site(
                 # records every link the page really has - only the queue is
                 # narrowed.
                 continue
-            if _in_scope(candidate):
-                queueable.append(candidate)
-            else:
+            if not _in_scope(candidate):
                 # H8: a link the scope rules declined is a deliberate absence,
                 # not a gap. Recorded so a reader can tell the two apart.
                 failure_reasons.setdefault(candidate, {
                     "reason": "out-of-scope",
                     "detail": "excluded by the scope rules for this config",
                 })
+                continue
+            if collapse_instances:
+                template = route_template(candidate)
+                if route_counts.get(template, 0) >= max_per_route:
+                    # H12: a *skip*, not an exclusion. "You already have this
+                    # screen" and "you asked not to have this screen" read
+                    # very differently to someone reading the ledger.
+                    failure_reasons.setdefault(candidate, {
+                        "reason": "duplicate-instance",
+                        "detail": (f"another rendering of {template} is "
+                                   f"already captured "
+                                   f"(identity.max_instances_per_route="
+                                   f"{max_per_route})"),
+                    })
+                    continue
+                route_counts[template] = route_counts.get(template, 0) + 1
+            queueable.append(candidate)
         if queueable:
             # Explicit unique_key, because Crawlee's default strips the
             # fragment — which would collapse every `#/route` of a

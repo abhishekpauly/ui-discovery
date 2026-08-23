@@ -18,6 +18,48 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ## [Unreleased]
 
+### Added
+
+- **`H12` One screen per record is one screen.** A builder, CRM or admin portal
+  renders one screen template once per record: `/agent-builder/<uuid>` is the
+  same UI for every saved agent. A real capture found eleven of its first
+  twenty-five screens were that one screen with a different id.
+
+  The only tool for it was a path-glob `exclude`, which is all-or-nothing — and
+  on that portal the choice was made once and silently cost the whole *Manage
+  Agent* area, including seven config tabs that were never duplicates of
+  anything. The duplication was merely wasteful; the cure killing the patient
+  is what made this worth building.
+
+  ```yaml
+  identity:
+    collapse_instances: true        # off by default
+    max_instances_per_route: 1
+  ```
+
+  `util.route_template` replaces identifier-shaped **values** with `:id`, in
+  path segments *and query values*. Both halves are load-bearing, and both were
+  observed failing first: collapse only the path and two records' *BasicDetails*
+  tabs never merge; collapse the whole query and one record's seven tabs merge
+  into one. `?accountId=<uuid>&configTab=BasicDetails` becomes
+  `?accountId=:id&configTab=BasicDetails`.
+
+  Over-collapsing is the worse failure, so the rule is deliberately narrow:
+  `/settings/general` and `/settings/billing` are two screens, and a rule loose
+  enough to merge them would report a product as smaller than it is.
+
+  A capped URL is a **skip, not an exclusion** — it lands in `H8`'s ledger as
+  `duplicate-instance`, naming the template. "You already have this screen"
+  reads very differently from "you asked not to have this screen". `M2`'s map
+  reports the template as the deciding rule, so `--dry-run` shows the collapse
+  before the budget is spent.
+
+- **New `idpattern` module.** One rule for what an identifier looks like,
+  shared by `network.endpoint_pattern` (since V3) and `H12`. A second regex in
+  the other module was the obvious alternative and the wrong one: two ideas of
+  what an id looks like drift, and the drift is silent — which is exactly how
+  `G7`'s ledger came to disagree with `H6`'s subdomain policy.
+
 ### Fixed
 
 - **`G7`'s egress ledger now honours `H6`'s subdomain policy.** It decided

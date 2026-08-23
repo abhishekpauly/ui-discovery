@@ -77,6 +77,25 @@ class Identity(BaseModel):
     hash_routes: bool = False
     drop_params: list[str] = Field(default_factory=list)
 
+    # H12: a builder, CRM or admin portal renders one screen template once per
+    # record. Off by default, so no existing capture moves; the alternative to
+    # turning it on is a path-glob `exclude`, which is all-or-nothing and on a
+    # real portal removed the screen along with its nineteen duplicates.
+    collapse_instances: bool = False
+    # How many renderings of one template to capture. One documents the
+    # screen; more is occasionally worth it when records differ structurally
+    # (an agent with tools configured versus one without).
+    max_instances_per_route: int = 1
+
+    @field_validator("max_instances_per_route")
+    @classmethod
+    def _at_least_one(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError(
+                "identity.max_instances_per_route must be at least 1 — use "
+                "`scope.exclude` to capture none of a template.")
+        return value
+
 
 class Politeness(BaseModel):
     """X5 — how hard to push a target.
