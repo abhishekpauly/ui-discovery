@@ -1347,7 +1347,8 @@ async def crawl_site(
     # the safety envelope. Reported even when it is unremarkable; a section
     # that appeared only on the interesting runs would say nothing about the
     # rest.
-    ledger = build_ledger(egress_urls, start_url)
+    ledger = build_ledger(egress_urls, start_url,
+                          subdomains, subdomain_hosts)
     if run is not None:
         run.describe(egress=ledger)
     if ledger["off_scope"]:

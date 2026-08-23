@@ -12,6 +12,8 @@ import re
 from typing import Iterable
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from .util import SAME_HOST, same_site
+
 _SENSITIVE_KEYS = re.compile(
     r"(token|api[_-]?key|apikey|secret|password|passwd|pwd|auth|"
     r"authorization|session|sig|signature|access[_-]?token|"
@@ -80,22 +82,26 @@ def host_of(url: str) -> str:
         return ""
 
 
-def build_ledger(urls: Iterable[str], target: str) -> dict:
+def build_ledger(urls: Iterable[str], target: str,
+                 subdomains: str = SAME_HOST,
+                 subdomain_hosts: tuple[str, ...] = ()) -> dict:
     """G7: roll observed request URLs up into a per-host ledger.
 
     A rollup, not new instrumentation: `F3.4` already records every request the
     browser made, and this counts them by host. Pure, so it can be tested
     without a browser and reused by anything that has a list of URLs.
 
-    Scope is decided by exact host match, which is what `same-host` — the
-    engine's only subdomain policy today — actually means. `H6` is the item
-    that widens it; until then a ledger claiming `cdn.target.com` is in scope
-    would be claiming something the crawler does not believe.
+    **Scope is decided by `H6`'s policy, not by an exact host match.** It used
+    to be the latter, with a docstring noting that `H6` was the item which
+    would widen it — and when `H6` landed, this was not revisited. The result
+    was a ledger that flagged a product's own API subdomain as off-scope on a
+    config that had explicitly declared it in scope, which is the specific way
+    this section becomes untrustworthy: not by missing a host, but by crying
+    wolf about one until nobody reads the list.
 
     URLs arriving here have already been through `redact_url`, so nothing this
     returns can carry a secret that the recorded requests did not already.
     """
-    target_host = host_of(target)
     seen: dict[str, dict] = {}
     total = 0
     for url in urls:
@@ -110,12 +116,13 @@ def build_ledger(urls: Iterable[str], target: str) -> dict:
             except Exception:
                 path = "/"
             seen[host] = {"host": host, "requests": 1, "first_path": path,
-                          "in_scope": host == target_host}
+                          "in_scope": same_site(url, target, subdomains,
+                                                subdomain_hosts)}
         else:
             entry["requests"] += 1
     hosts = sorted(seen.values(), key=lambda h: (not h["in_scope"], h["host"]))
     return {
-        "target_host": target_host,
+        "target_host": host_of(target),
         "hosts": hosts,
         "total_requests": total,
         "off_scope": [h["host"] for h in hosts if not h["in_scope"]],
