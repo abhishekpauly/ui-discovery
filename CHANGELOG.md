@@ -43,6 +43,12 @@ The "V0…V5" phase names used in planning map to product versions as noted.
   environments. This surfaced as a wrong test fixture before it could surface
   as a wrong capture.
 
+### Tests
+
++5 (944 → 949 collected; 946 passed and 3 skipped). One previously-skipped
+test now runs: the version-drift guard skips while a version is untagged, and
+`v0.22.0` is tagged.
+
 ---
 
 ## [0.22.0] — Know the URL surface before crawling it (M1-M4, H10)
