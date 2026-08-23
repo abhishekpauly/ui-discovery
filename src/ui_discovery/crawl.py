@@ -142,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    scope = load_or_exit(args.config)
+    scope = load_or_exit(args.config, getattr(args, "profile", None))
     for line in describe(scope, args.config):
         print(line)
     # G1: before a URL is resolved, a session is read or a browser exists.

@@ -16,6 +16,132 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ---
 
+## [0.21.0] — A capture that says what it missed (H6-H9, X9)
+
+Five items aimed at one thing: running the engine against a real product rather
+than a fixture. Two of them fix a capture that was quietly overstating itself,
+two cut what a real portal costs to capture, and one is the correctness fix
+that matters most.
+
+The theme is the same as `EPIC-GOV`'s, one level out. A capture could always say
+what it found. It could not say what it *missed*, what it declined to model, or
+where the product handed off to somebody else — and every one of those silences
+read, to a reader, as a fact about the product.
+
+### Added
+
+- **`H6` A product split across subdomains is one product.** `util.same_site`
+  compared `netloc` exactly, so a portal on `app.example.com` and
+  `admin.example.com` captured either as two unrelated targets or — far more
+  often — as one target with half its modules missing.
+
+  **Silently** is what made this a defect rather than a limitation. A capture
+  that stops at a subdomain boundary looks exactly like a product that ends
+  there. Someone reads the report, sees no admin module, and concludes the
+  product has none.
+
+  ```yaml
+  scope:
+    subdomains: registrable-domain     # same-host (default) | registrable-domain | list
+    subdomain_hosts: [admin.example.com]
+  ```
+
+  `registrable-domain` uses `tldextract`'s **bundled** suffix snapshot with
+  `suffix_list_urls=()`, so it never reaches the network — principle #11 says
+  the engine talks to nothing but the target, and a scope decision that phoned
+  a public-suffix service would be the one place it did not hold. Where there
+  is no public suffix (an IP, a bare `localhost`) it compares the host itself,
+  because comparing empty strings would make every IP the same site as every
+  other.
+
+  Also stops Crawlee applying its own same-hostname filter on top of ours,
+  which silently dropped a second host the config had deliberately admitted.
+
+- **`H7` The authorization boundary is an edge, not a silence.** An outbound
+  link was dropped without trace, so *this product has no integrations* and
+  *we were not authorized past this point* were the same artifact. Each is now
+  recorded with its label, the region it sits in and the control kind — and
+  never enqueued. A "Leaves the product" table appears in the report.
+
+  The same-site test is `H6`'s, inverted, so a link is external exactly when it
+  is not navigable and the two can never both claim it.
+
+- **`H8` A capture says what it did not get, and why.** `discovered_not_captured`
+  was a list of URLs with no reasons, and `summary.md` attributed every one of
+  them to the page budget — so a broken link and an exhausted budget read
+  identically, and only one of them is fixed by the advice the banner gave.
+
+  `Crawl.failures` annotates that same set rather than counting in parallel:
+  `budget`, `error`, `out-of-scope`, `not-reached`, each with a depth. Adds the
+  `failed_request_handler` the crawler did not have — a request that errored or
+  timed out never reaches the default handler, so its only previous trace was
+  an increment of `stats.pages_failed`.
+
+- **`H9` Someone else's chat widget is not your product.** Cookie banners, chat
+  widgets and support bubbles are on every screen of a real portal. The engine
+  modelled all of them, inflating element counts and inventing components that
+  span every page.
+
+  ```yaml
+  capture:
+    exclude_selectors: ["#cookie-banner", ".chat-widget"]
+  ```
+
+  A new `capture` section rather than a `Safety` key, because the two answer
+  different questions: `never_touch` forbids *interacting* with something the
+  model still describes; this forbids *modelling* at all.
+
+  A landmark is never excluded — a selector matching `main` or `nav` is refused
+  with a reason, because a selector broad enough to catch the page's own
+  structure is a mistake, and quietly returning an empty capture is the worst
+  available response to one. Counted per page and per selector, so a selector
+  that matched nothing looks like a typo rather than an absent widget.
+
+- **`X9` Say what kind of capture you want, not nine booleans.**
+
+  ```bash
+  python -m ui_discovery.crawl <url> --profile fast     # reconnaissance
+  python -m ui_discovery.crawl <url> --profile deep     # the documentation pass
+  ```
+
+  `standard` is exactly today's defaults and its preset is literally empty, so
+  a config that ignores this cannot be affected by it. Explicit keys always win,
+  read from `model_fields_set` rather than by comparing values — someone who
+  wrote `probe: false` meant it, and would still mean it if the preset later
+  changed.
+
+  The manifest records the **resolved toggles**, not the preset name, so an old
+  capture stays readable without knowing what `fast` meant in the version that
+  made it. `config_sha256` is taken over the resolved scope, so saying `fast`
+  and writing out what `fast` means are provably the same configuration.
+
+  On `fixtures/site/` (8 trivial pages) `fast` runs 9.5s against `standard`'s
+  12.6s. The gap grows with interactive elements per page; `O4` already reports
+  the probe's real share.
+
+### Tests
+
++71 (779 → 850 collected; 846 passed and 4 skipped when this shipped).
+`test_h6_subdomains.py` (19), `test_x9_capture_profiles.py` (16),
+`test_h9_exclude_furniture.py` (11), `test_h7_external_links.py` (11),
+`test_h8_failure_ledger.py` (9).
+
+`registrable-domain` is covered by direct tests rather than through a crawl,
+and that is a stated limit rather than an omission: proving it end to end needs
+two hostnames that actually resolve, and the suite must not depend on DNS. The
+crawl-level tests use `list` and the loopback aliases `127.0.0.1` and
+`localhost` — genuinely two hostnames served by one process.
+
+### Deliberately not done
+
+`M1`–`M4` (sitemap ingestion, the `map` command, `--dry-run`, orphan and
+dead-end screens) and `H10` (`--from urls.txt`) were scoped into this sprint and
+are **not** in it. They are the discovery half of `EPIC-MAP` and want two new
+modules and a new CLI between them; splitting them out keeps this release to
+work that is finished and tested rather than half-landed.
+
+---
+
 ## [0.20.0] — The people come out of the capture (G5-G7)
 
 Three items, one theme: a capture of an authenticated portal stops being a copy

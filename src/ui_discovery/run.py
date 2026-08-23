@@ -378,6 +378,7 @@ class RunContext:
             environment=self._meta.get("environment"),
             safety=self._described("safety", SafetyEnvelope),
             data_handling=self._described("data_handling", DataHandling),
+            capture=dict(self._meta.get("capture") or {}),
             # G7: unlike the two above, never `None`. "This run contacted only
             # the target" is a claim worth making explicitly, and an absent
             # section cannot make it — so a run that never reached the crawl

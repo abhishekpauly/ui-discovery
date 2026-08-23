@@ -193,6 +193,11 @@ class Page(BaseModel):
 
     screenshot_path: Optional[str] = None
 
+    # H9: what `capture.exclude_selectors` kept out of this page's model, and
+    # any selector refused for matching a landmark. Empty when nothing was
+    # excluded, which is the default.
+    excluded: dict[str, Any] = Field(default_factory=dict)
+
 
 # --- V1: crawl-level models -------------------------------------------------
 
@@ -221,6 +226,23 @@ class CrawlConfig(BaseModel):
     # unopened — otherwise "no Audit tab here" is indistinguishable from "we
     # skipped it".
     probe_profiles: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class CrawlFailure(BaseModel):
+    """H8 — one URL the crawl discovered and did not capture, with why.
+
+    `Crawl.stats.discovered_not_captured` was a single integer and the URLs
+    behind it were gone, so "is this product 40 screens, or 60 screens with 20
+    failures?" could not be answered from the artifacts at all. A capture that
+    reports only what it found overstates its own coverage.
+    """
+
+    url: str
+    # budget | error | out-of-scope | not-reached
+    reason: str
+    detail: str = ""
+    depth: Optional[int] = None
+    http_status: Optional[int] = None
 
 
 class CrawlStats(BaseModel):
@@ -272,6 +294,14 @@ class Crawl(BaseModel):
     stats: CrawlStats
     navigation: list[dict[str, str]] = Field(default_factory=list)  # {"from","to"}
     pages: list[PageNode] = Field(default_factory=list)
+    # H8: every URL discovered and not captured, with the reason. Its length
+    # is `stats.discovered_not_captured` — the integer and the list are the
+    # same fact, so they cannot disagree.
+    failures: list[CrawlFailure] = Field(default_factory=list)
+    # H7: labelled links that leave the product. Never enqueued, always
+    # recorded — "no integrations" and "we stopped at the boundary" are
+    # different findings and used to look identical.
+    external_links: list[NavEdge] = Field(default_factory=list)
 
 
 # --- Relationships: how screens and elements connect -------------------------
@@ -296,6 +326,9 @@ class NavEdge(BaseModel):
     label: str = ""
     region: Optional[str] = None   # the landmark the control sits in
     control: str = "link"          # link | button | deep-nav
+    # H7: this edge leaves the product. Recorded, never followed — the
+    # authorization boundary is a fact about the capture, not an absence.
+    external: bool = False
 
 
 class ElementLink(BaseModel):
@@ -378,6 +411,8 @@ class Relations(BaseModel):
     entry_points: list[str] = Field(default_factory=list)
     orphans: list[str] = Field(default_factory=list)
     screens: list[ScreenRelations] = Field(default_factory=list)
+    # H7: where this product hands off to someone else.
+    external: list[NavEdge] = Field(default_factory=list)
 
 
 # --- O1-O3: what happened when we looked ------------------------------------
@@ -601,6 +636,12 @@ class RunManifest(BaseModel):
     # reason as `safety` — a manifest that cannot describe the posture says so
     # rather than claiming one it never applied.
     data_handling: Optional[DataHandling] = None
+
+    # X9: the capability set this run actually used, resolved. Named presets
+    # exist so an operator need not write nine booleans; recording the
+    # resolved values rather than the preset name is the other half of that
+    # bargain, so nobody has to know what `fast` meant in the version that ran.
+    capture: dict[str, Any] = Field(default_factory=dict)
 
     # G7: every host this run contacted. Not optional, unlike the two above —
     # "we contacted nothing outside the target" is a claim worth making

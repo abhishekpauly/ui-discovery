@@ -214,6 +214,87 @@ Both settings are applied to the page graph *and* Crawlee's request queue, so
 page counts agree, and both are recorded in `crawl.json`'s `config` block so a
 snapshot always says how its page identity was computed.
 
+### How much of a hostname counts as your product (H6)
+
+Real portals are rarely on one host. The engine compares hostnames exactly by
+default, so a product split across `app.example.com` and `admin.example.com`
+captures as **one target with half its modules missing** — and says nothing
+about it. A capture that stops at a subdomain boundary looks exactly like a
+product that ends there.
+
+```yaml
+scope:
+  subdomains: registrable-domain      # same-host (default) | registrable-domain | list
+  # ...or name the hosts explicitly:
+  # subdomains: list
+  # subdomain_hosts: [admin.example.com, reports.example.com]
+```
+
+| Policy | What counts as the same site |
+| --- | --- |
+| `same-host` | Exact host **and port**. Today's behaviour, and the default. |
+| `registrable-domain` | Same registrable domain, so `app.` and `admin.` unify. `example.co.uk` is handled correctly — `co.uk` is a public suffix, not a domain. Ports are ignored. |
+| `list` | Only the hosts you name. The start URL's own host is always included, so a list cannot lock the crawl out of where it started. |
+
+`registrable-domain` uses `tldextract`'s **bundled** suffix snapshot and never
+reaches the network. Where there is no public suffix at all — an IP address, a
+bare `localhost` — it compares the host itself, because treating "no domain" as
+a match would make every IP the same site as every other.
+
+**Set this before your first real run.** It is the one setting that decides
+whether a multi-host product captures at all, and the failure is silent.
+
+### What the crawl did not capture (H8)
+
+A capture that lists only what it found overstates its own coverage. *Is this
+product 40 screens, or 60 screens with 20 failures?* is now answerable from the
+artifacts:
+
+```
+## Not captured
+
+| Screen                        | Why                                      | Depth |
+| `https://app/reports/2024`    | **budget** — page budget (25) reached    | 3     |
+| `https://app/legacy/admin`    | **error** — TimeoutError: ...            | 2     |
+| `https://app/exports/x.csv`   | **out-of-scope** — excluded by the ...   | 2     |
+```
+
+Four reasons, and they matter because only some are fixed by raising
+`--max-pages`:
+
+| Reason | Means |
+| --- | --- |
+| `budget` | The page budget ran out before this URL. Raise `--max-pages`. |
+| `not-reached` | Discovered, but the crawl ended first. |
+| `error` | It was tried and failed — a timeout, a 404, a refused connection. Raising the budget will not help. |
+| `out-of-scope` | Your `include`/`exclude` rules declined it. A deliberate absence, not a gap. |
+
+The full list, with depth and HTTP status, is `crawl.json`'s `failures`. Its
+length is exactly `discovered_not_captured`, so the count and the list cannot
+disagree.
+
+### Where the product hands off to somebody else (H7)
+
+An outbound link used to be dropped without trace, which made *this product has
+no integrations* and *we were not authorized past this point* the same artifact.
+Links that leave the product are now recorded — with the label you would click,
+the region it sits in, and the control kind — and **never followed**:
+
+```
+## Leaves the product
+
+3 link(s) point off-site. They were recorded and never followed.
+
+| From              | Goes to                                  | Control | Region     |
+| `https://app/`    | [Vendor documentation](https://vendor/)  | link    | navigation |
+```
+
+They are in `crawl.json`'s `external_links` and in `relations.json`. Nothing is
+requested from those hosts — `run.json`'s egress ledger is the evidence.
+
+Whether a link counts as external is decided by the **same** rule as `H6`
+above, inverted: a subdomain your policy admits is internal, not an integration.
+
 ## Run — V2 (analyze a crawl)
 
 ```bash
@@ -614,6 +695,68 @@ Two things it does not cover, stated rather than discovered: a `position: fixed`
 element is masked where it sits in the layout, not where a full-page screenshot
 renders it; and content in a cross-origin frame never enters the model, so it is
 not masked either.
+
+### Keeping the furniture out of the model
+
+Cookie banners, chat widgets and support bubbles are on every screen of a real
+portal. The engine models them all: they inflate element counts, invent
+components that span every page, and put a vendor's UI in the middle of a
+document about *your* product.
+
+```yaml
+capture:
+  exclude_selectors: ["#cookie-banner", ".chat-widget", "[data-vendor]"]
+```
+
+Those DOM subtrees are excluded from extraction entirely. This is a different
+thing from `safety.never_touch`, which forbids *interacting* with something the
+model still describes — the right answer for a Delete button. This forbids
+*modelling*, which is the right answer for someone else's widget.
+
+Two guardrails:
+
+- **A landmark is never excluded.** A selector matching `main` or `nav` is
+  refused with a reason, because a selector broad enough to catch the page's
+  own structure is a mistake rather than an instruction.
+- **Exclusions are counted, per page and per selector**, and appear in
+  `summary.md` under *Excluded from the model*. A selector that matched nothing
+  says so, so a typo looks like a typo rather than like a widget that was not
+  there.
+
+### Choosing how much to capture
+
+Nine capability toggles is the right amount of control and the wrong amount of
+decision. `--profile` expresses the intent instead:
+
+```bash
+python -m ui_discovery.crawl <url> --profile fast     # have a look round
+python -m ui_discovery.crawl <url>                    # standard, today's defaults
+python -m ui_discovery.crawl <url> --profile deep     # the full documentation pass
+```
+
+| Profile | What it does | What you lose |
+| --- | --- | --- |
+| `fast` | No clicking, no screenshots, no accessibility tree, no deep-nav | Modals, menus, tab panels and API traffic — everything only a click reveals |
+| `standard` | Exactly today's behaviour | — |
+| `deep` | Everything on, interaction budget raised to 80 | Time |
+
+On `fixtures/site/` (8 trivial pages) `fast` runs in 9.5s against `standard`'s
+12.6s. That understates the gap on a real portal, where the probe's share of
+the crawl grows with the number of interactive elements per page — `run.json`'s
+`metrics.probe_share_of_crawl_pct` reports what it actually was.
+
+Two rules make the presets safe to adopt:
+
+- **Explicit config keys always win.** A preset only fills in what you did not
+  state, so `--profile fast` with `capabilities.screenshots: true` still takes
+  screenshots.
+- **The capture records the resolved toggles, not the preset name**, in
+  `run.json`'s `capture` section — so an old capture is readable without
+  knowing what `fast` meant in the version that produced it.
+
+You can also set it in the scope config as `outputs.profile`, and reach for the
+individual flags (`--no-probe`, `--no-screenshots`, `--no-deep-nav`, …) when a
+preset is close but not exact.
 
 ### Where a run sent traffic
 

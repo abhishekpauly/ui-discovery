@@ -71,9 +71,96 @@ def normalize_url(
     return result
 
 
-def same_site(url: str, root: str) -> bool:
-    """True if `url` is on the same host as `root`."""
-    return urlparse(url).netloc == urlparse(root).netloc
+# H6 — how much of a hostname counts as "the same site".
+#
+# The engine compared `netloc` exactly, which is right for one host and wrong
+# for most real products: split across `app.example.com` and
+# `admin.example.com`, a portal captured either as two unrelated targets or,
+# far more often, as one target with half its modules silently out of scope.
+# Silently is the problem — a capture that quietly stops at a subdomain
+# boundary looks exactly like a product that ends there.
+SAME_HOST = "same-host"
+REGISTRABLE_DOMAIN = "registrable-domain"
+HOST_LIST = "list"
+SUBDOMAIN_POLICIES = (SAME_HOST, REGISTRABLE_DOMAIN, HOST_LIST)
+
+_TLD_EXTRACT = None
+
+
+def _registrable(host: str) -> str:
+    """The registrable domain of `host` (`app.example.co.uk` → `example.co.uk`).
+
+    Empty when there is no public suffix to speak of — an IP address, or a
+    bare `localhost`. Callers treat that as "compare the host itself".
+
+    Uses `tldextract`'s **bundled** suffix snapshot with `suffix_list_urls=()`,
+    so this never reaches the network: principle #11 says the engine talks to
+    nothing but the target, and a scope decision that phoned a public-suffix
+    service would be the one place it did not hold.
+    """
+    global _TLD_EXTRACT
+    if not host:
+        return ""
+    if _TLD_EXTRACT is None:
+        try:
+            import tempfile
+
+            from tldextract import TLDExtract
+
+            _TLD_EXTRACT = TLDExtract(suffix_list_urls=(),
+                                      cache_dir=tempfile.mkdtemp())
+        except Exception:
+            _TLD_EXTRACT = False
+    if _TLD_EXTRACT is False:
+        return ""
+    try:
+        parsed = _TLD_EXTRACT(host)
+    except Exception:
+        return ""
+    # `registered_domain` is deprecated in tldextract 5.3 and the new name
+    # means exactly the same thing. Check for the new one by presence rather
+    # than by truthiness — an IP yields an empty string from it, and falling
+    # through to the old name would emit a DeprecationWarning per URL.
+    if hasattr(parsed, "top_domain_under_public_suffix"):
+        return parsed.top_domain_under_public_suffix or ""
+    return getattr(parsed, "registered_domain", "") or ""
+
+
+def same_site(url: str, root: str, policy: str = SAME_HOST,
+              hosts: tuple[str, ...] = ()) -> bool:
+    """True if `url` belongs to the same site as `root`, under `policy`.
+
+    - `same-host` (default) — `netloc` equality, port included. Today's
+      behaviour, unchanged for anyone who sets nothing.
+    - `registrable-domain` — same registrable domain, so subdomains unify.
+      Ports are ignored here on purpose: a product served on two ports of one
+      host is one product, and the port is not part of a domain.
+    - `list` — an explicit set of hostnames, for the common case of two known
+      hosts. The root's own host is always in scope; a list cannot lock the
+      crawl out of where it started.
+
+    An unrecognised policy falls back to `same-host` rather than raising. This
+    is a scope *gate*, and the safe direction for a gate that cannot read its
+    own configuration is the narrowest one — `config.py` is where a bad value
+    is rejected loudly, before anything opens.
+    """
+    target, base = urlparse(url), urlparse(root)
+    if policy == REGISTRABLE_DOMAIN:
+        target_host = (target.hostname or "").lower()
+        base_host = (base.hostname or "").lower()
+        target_domain = _registrable(target_host)
+        base_domain = _registrable(base_host)
+        # No public suffix (an IP, or `localhost`) means there is no domain to
+        # compare, so the host itself is the unit.
+        if not target_domain or not base_domain:
+            return target_host == base_host
+        return target_domain == base_domain
+    if policy == HOST_LIST:
+        target_host = (target.hostname or "").lower()
+        allowed = {h.strip().lower() for h in hosts if h and h.strip()}
+        allowed.add((base.hostname or "").lower())
+        return target_host in allowed
+    return target.netloc == base.netloc
 
 
 def path_matches(url: str, pattern: str) -> bool:
@@ -122,6 +209,8 @@ def resolve_links(
     dedupe_queries: bool = False,
     drop_params: frozenset[str] | None = None,
     hash_routes: bool = False,
+    subdomains: str = SAME_HOST,
+    subdomain_hosts: tuple[str, ...] = (),
 ) -> list[str]:
     """Resolve a page's raw hrefs to absolute, same-site, normalized URLs
     (deduped, order-preserving). file:// and non-http(s) schemes are dropped.
@@ -148,7 +237,7 @@ def resolve_links(
         scheme = urlparse(absolute).scheme
         if scheme not in ("http", "https", "file"):
             continue
-        if not same_site(absolute, root):
+        if not same_site(absolute, root, subdomains, subdomain_hosts):
             continue
         if absolute in seen:
             continue
@@ -165,6 +254,8 @@ def resolve_labelled_links(
     dedupe_queries: bool = False,
     drop_params: frozenset[str] | None = None,
     hash_routes: bool = False,
+    subdomains: str = SAME_HOST,
+    subdomain_hosts: tuple[str, ...] = (),
 ) -> list[dict]:
     """`resolve_links`, but carrying each link's label through the resolution.
 
@@ -189,6 +280,8 @@ def resolve_labelled_links(
             dedupe_queries=dedupe_queries,
             drop_params=drop_params,
             hash_routes=hash_routes,
+            subdomains=subdomains,
+            subdomain_hosts=subdomain_hosts,
         )
         if not resolved:
             continue
@@ -202,6 +295,49 @@ def resolve_labelled_links(
             "control": link.get("control") or "link",
         }
     return list(by_url.values())
+
+
+def resolve_external_links(
+    base_url: str,
+    links: list[dict],
+    root: str,
+    *,
+    subdomains: str = SAME_HOST,
+    subdomain_hosts: tuple[str, ...] = (),
+) -> list[dict]:
+    """H7 — the labelled links that point *off* the product.
+
+    An outbound link was dropped without trace, so a capture could not
+    distinguish "this product has no integrations" from "we were not
+    authorized past this point". The authorization boundary should be visible
+    in the artifact rather than inferred from its absence.
+
+    Same resolution rules as `resolve_links`, and deliberately the same
+    same-site test, inverted — so a link is external here *exactly* when it is
+    not navigable there, and the two can never both claim it.
+    """
+    out: dict[str, dict] = {}
+    for link in links:
+        href = (link.get("href") or "").strip()
+        if not href:
+            continue
+        low = href.lower()
+        if low.startswith(("mailto:", "tel:", "javascript:")) or low.startswith("#"):
+            continue
+        absolute = urljoin(base_url, href)
+        if urlparse(absolute).scheme not in ("http", "https"):
+            continue
+        if same_site(absolute, root, subdomains, subdomain_hosts):
+            continue
+        if absolute in out:
+            continue
+        out[absolute] = {
+            "url": absolute,
+            "label": (link.get("label") or "").strip(),
+            "region": link.get("region") or "",
+            "control": link.get("control") or "link",
+        }
+    return list(out.values())
 
 
 def bfs_depths(root: str, edges: dict[str, list[str]]) -> dict[str, int]:

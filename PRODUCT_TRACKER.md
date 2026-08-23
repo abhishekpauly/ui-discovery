@@ -175,10 +175,10 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | H3 | Shadow DOM & iframe traversal | extract inside open shadow roots + same-origin frames | P1 | ✅ 0.12.0 |
 | H4 | Session-expiry detection | warn/abort when a saved session is stale, not silently crawl login | P1 | ✅ 0.12.0 |
 | H5 | Config file + capability adapters | per-site YAML: budgets, URL patterns, auth signals | P2 | ✅ 0.12.0 |
-| H6 | Subdomain policy | `same-host` (today) / `registrable-domain` / explicit list | P2 | 📋 |
-| H7 | External links recorded, never followed | the authorization boundary as a visible edge, not a silence | P2 | 📋 |
-| H8 | Crawl failure ledger | what was *not* captured, with reasons — a rollup of `discovered_not_captured` + `page.skipped` | P2 | 📋 |
-| H9 | Exclude the furniture | `capture.exclude_selectors` — cookie banners and chat widgets out of the model, counted not silent | P2 | 📋 |
+| H6 | Subdomain policy | `same-host` (today) / `registrable-domain` / explicit list | P2 | ✅ |
+| H7 | External links recorded, never followed | the authorization boundary as a visible edge, not a silence | P2 | ✅ |
+| H8 | Crawl failure ledger | what was *not* captured, with reasons — a rollup of `discovered_not_captured` + `page.skipped` | P2 | ✅ |
+| H9 | Exclude the furniture | `capture.exclude_selectors` — cookie banners and chat widgets out of the model, counted not silent | P2 | ✅ |
 | H10 | Capture an explicit URL list | `--from urls.txt` / `urls:` — scope rules still apply; a list is not an authorization | P2 | 📋 |
 | H11 | TLS verification as a recorded decision | reach internal staging, and say in the manifest that you did | P3 | 📋 |
 
@@ -229,7 +229,7 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | X6 | Storage backend seam | interface so SQLite/Postgres can slot in later (no DB now) — deferred by ROADMAP until data volume demands it | P3 | 🗄️ deferred |
 | X7 | Repo governance | branching model (`BRANCHING.md`), release process + `release` workflow (`RELEASING.md`), labels as data (`.github/labels.yml`), retroactive tags `v0.12.0`–`v0.18.0`, project board | P2 | 🚧 |
 | X8 | "Which command do I run?" | decision table over the nine commands, costed in wall-clock and pages | P2 | 📋 |
-| X9 | Capture profiles | `fast` / `standard` / `deep` presets over the toggles; `standard` is today's defaults | P2 | 📋 |
+| X9 | Capture profiles | `fast` / `standard` / `deep` presets over the toggles; `standard` is today's defaults | P2 | ✅ |
 
 ---
 

@@ -50,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    scope = load_or_exit(args.config)
+    scope = load_or_exit(args.config, getattr(args, "profile", None))
     for line in describe(scope, args.config):
         print(line)
     try:
@@ -85,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
             # it; only the wrapper was missing.
             redaction=redaction_policy(scope),
             mask_screenshots=scope.privacy.mask_screenshots(),
+            exclude_selectors=tuple(scope.capture.exclude_selectors),
         )
     except Exception as exc:  # surface a clean, actionable error
         print(f"[ERROR] Extraction failed: {exc}", file=sys.stderr)

@@ -26,7 +26,7 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ScopeRules(BaseModel):
@@ -35,6 +35,25 @@ class ScopeRules(BaseModel):
     # Glob-style patterns matched against the URL path (see util.path_matches).
     include: list[str] = Field(default_factory=list)  # empty = everything
     exclude: list[str] = Field(default_factory=list)
+
+    # H6: how much of a hostname counts as the same site. Default is today's
+    # behaviour, so nothing moves for a config that does not mention it.
+    #   same-host           — exact netloc, port included
+    #   registrable-domain  — subdomains unify (app./admin. of one domain)
+    #   list                — the explicit hosts below, plus the start URL's own
+    subdomains: str = "same-host"
+    subdomain_hosts: list[str] = Field(default_factory=list)
+
+    @field_validator("subdomains")
+    @classmethod
+    def _known_policy(cls, value: str) -> str:
+        from .util import SUBDOMAIN_POLICIES
+
+        if value not in SUBDOMAIN_POLICIES:
+            raise ValueError(
+                f"scope.subdomains: {value!r} is not one of "
+                f"{', '.join(SUBDOMAIN_POLICIES)}.")
+        return value
 
 
 class AuthSettings(BaseModel):
@@ -92,6 +111,23 @@ class Capabilities(BaseModel):
     # Click elements the app never marked up as links, to find routes
     # nothing else can reach. See CrawlOptions.deep_nav.
     deep_nav: bool = True
+
+
+class Capture(BaseModel):
+    """H9 — what the engine models, as opposed to what it interacts with.
+
+    Deliberately separate from `Safety`: `safety.never_touch` forbids
+    *interacting* with something the model still describes, which is the right
+    answer for a Delete button. This forbids *modelling* at all, which is the
+    right answer for a vendor's chat widget — it is not part of your product
+    and does not belong in a document about it.
+    """
+
+    # CSS selectors whose subtrees are excluded from extraction entirely.
+    # A selector matching a landmark is refused rather than honoured: `main`
+    # and `nav` are the page's own structure, and a selector broad enough to
+    # catch one is a mistake rather than an instruction.
+    exclude_selectors: list[str] = Field(default_factory=list)
 
 
 class Safety(BaseModel):
@@ -156,6 +192,39 @@ class Privacy(BaseModel):
 DOWNLOADS = str(Path.home() / "Downloads")
 
 
+# X9 — named presets over the toggles that already exist.
+#
+# `Capabilities` has five switches, `ProbeSettings` several more and `Budget`
+# a few numbers. That is the right amount of *control* and the wrong amount of
+# *decision*: an operator wants to express an intent — "have a look round",
+# "the full documentation pass" — not nine booleans, and the honest default in
+# the absence of that is to run everything and wait.
+#
+# Each preset is a plain mapping over fields that already exist. Nothing here
+# can reach a setting the config could not set by hand, and `standard` is
+# exactly today's defaults, so a config that ignores this is unaffected.
+CAPTURE_PROFILES: dict[str, dict[str, dict]] = {
+    # Reconnaissance: what screens exist and what is on them. No clicking, so
+    # no modals, menus, tab panels or API traffic — the cost of being fast,
+    # stated rather than buried.
+    "fast": {
+        "capabilities": {"screenshots": False, "accessibility_tree": False,
+                         "probe": False, "deep_nav": False},
+        "probe": {"state_capture": False, "component_screenshots": False},
+    },
+    # Today's behaviour, named so it can be chosen deliberately.
+    "standard": {},
+    # The full documentation pass: everything on, and a bigger interaction
+    # budget because the point is coverage rather than wall-clock.
+    "deep": {
+        "capabilities": {"screenshots": True, "accessibility_tree": True,
+                         "probe": True, "deep_nav": True},
+        "probe": {"state_capture": True, "component_screenshots": True},
+        "budget": {"max_interactions": 80},
+    },
+}
+
+
 class Outputs(BaseModel):
     # Empty means "the Downloads folder" — resolved at use, not import, so a
     # config written on one machine still works on another.
@@ -169,6 +238,18 @@ class Outputs(BaseModel):
     # deliverable, and an engine that started deleting them because a config
     # gained a key would be worse than one that never deletes at all.
     retention_days: int = 0
+    # X9: a named preset over the capability toggles. `standard` is exactly
+    # today's defaults. Explicit keys always win — see `Scope._apply_profile`.
+    profile: str = "standard"
+
+    @field_validator("profile")
+    @classmethod
+    def _known_profile(cls, value: str) -> str:
+        if value not in CAPTURE_PROFILES:
+            raise ValueError(
+                f"outputs.profile: {value!r} is not one of "
+                f"{', '.join(CAPTURE_PROFILES)}.")
+        return value
 
 
 class AdapterSpec(BaseModel):
@@ -272,6 +353,7 @@ class Scope(BaseModel):
     budget: Budget = Field(default_factory=Budget)
     identity: Identity = Field(default_factory=Identity)
     capabilities: Capabilities = Field(default_factory=Capabilities)
+    capture: Capture = Field(default_factory=Capture)
     # Defaults for every module. A module's own `probe:` overrides these
     # field by field; anything unset here falls back to `capabilities.probe`
     # and `budget.max_interactions`, so existing configs keep working.
@@ -283,6 +365,54 @@ class Scope(BaseModel):
     adapters: list[AdapterSpec] = Field(default_factory=list)
 
     model_config = {"extra": "forbid"}  # a typo'd key is an error, not a no-op
+
+    @model_validator(mode="after")
+    def _apply_profile(self) -> "Scope":
+        """X9: fold the named preset into the toggles, without ever
+        overriding something the config stated.
+
+        `model_fields_set` is what makes "explicit keys always win" real
+        rather than aspirational: it distinguishes a value that happens to
+        equal the default from one the operator actually wrote. A preset that
+        silently reverted a hand-set `screenshots: true` would be a config
+        file arguing with its author.
+
+        Applied here rather than at each CLI, so the *resolved* scope is what
+        gets hashed into `run.json`'s `config_sha256` — two runs that differ
+        only in how they spelled the same settings are provably the same
+        configuration, and the manifest records what was done rather than the
+        name of a preset a reader would have to look up.
+        """
+        preset = CAPTURE_PROFILES.get(self.outputs.profile) or {}
+        for section, values in preset.items():
+            target = getattr(self, section)
+            for key, value in values.items():
+                if key in target.model_fields_set:
+                    continue  # the operator said so; the preset does not argue
+                setattr(target, key, value)
+        return self
+
+    def resolved_capture(self) -> dict:
+        """The capability set this config actually runs with, for the record.
+
+        `X9` exists so an operator can say `fast` instead of nine booleans;
+        this is the other half of that bargain — the capture still states
+        precisely what it did, so nobody has to know what `fast` meant in the
+        version that ran.
+        """
+        return {
+            "profile": self.outputs.profile,
+            "screenshots": self.capabilities.screenshots,
+            "accessibility_tree": self.capabilities.accessibility_tree,
+            "probe": self.capabilities.probe,
+            "deep_nav": self.capabilities.deep_nav,
+            "network": self.capabilities.network,
+            "state_capture": self.probe.state_capture,
+            "component_screenshots": self.probe.component_screenshots,
+            "max_pages": self.budget.max_pages,
+            "max_depth": self.budget.max_depth,
+            "max_interactions": self.budget.max_interactions,
+        }
 
     # --- resolution ---------------------------------------------------------
 
@@ -355,10 +485,19 @@ def _read(path: Path) -> dict[str, Any]:
     return json.loads(text or "{}")
 
 
-def load_scope(path: Optional[str]) -> Scope:
-    """Load a scope config, or return all-defaults when no path is given."""
+def load_scope(path: Optional[str], profile: Optional[str] = None) -> Scope:
+    """Load a scope config, or return all-defaults when no path is given.
+
+    `profile` is `X9`'s CLI override, and it is injected into the *raw* data
+    before validation rather than set on the finished model. That matters:
+    the preset only fills fields the config did not state, and it reads
+    "did not state" from `model_fields_set`. Round-tripping a built model
+    through `model_dump()` marks every field as set, which would silently
+    turn the preset into a no-op.
+    """
     if not path:
-        return Scope()
+        return Scope.model_validate(
+            {"outputs": {"profile": profile}} if profile else {})
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
@@ -372,6 +511,10 @@ def load_scope(path: Optional[str]) -> Scope:
     if not isinstance(data, dict):
         raise ValueError(f"Config file must contain a mapping at the top "
                          f"level: {path}")
+    if profile:
+        outputs = dict(data.get("outputs") or {})
+        outputs["profile"] = profile
+        data = {**data, "outputs": outputs}
     return Scope.model_validate(data)
 
 
