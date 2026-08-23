@@ -281,15 +281,16 @@ def test_skip_reproduces_the_crawl_as_it_was(sitemap_site, tmp_path):
     """The escape hatch has to be exact, or nobody can use it to isolate a
     regression."""
     crawl = _crawl(sitemap_site.url("index.html"), tmp_path, sitemap="skip")
-    assert _names(crawl) == ["deep.html", "index.html", "linked.html"]
+    assert _names(crawl) == ["deadend.html", "deep.html", "index.html",
+                             "linked.html"]
 
 
 def test_include_captures_screens_nothing_links_to(sitemap_site, tmp_path):
     """The point of the item. `orphan.html` and the quarterly report are
     reachable by URL and linked from nowhere in the product."""
     crawl = _crawl(sitemap_site.url("index.html"), tmp_path, sitemap="include")
-    assert _names(crawl) == ["deep.html", "index.html", "linked.html",
-                             "orphan.html", "quarterly.html"]
+    assert _names(crawl) == ["deadend.html", "deep.html", "index.html",
+                             "linked.html", "orphan.html", "quarterly.html"]
 
 
 def test_only_captures_the_sitemap_and_follows_nothing(sitemap_site, tmp_path):

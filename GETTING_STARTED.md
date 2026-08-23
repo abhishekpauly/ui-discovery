@@ -141,7 +141,18 @@ so without it the crawl stops at the first subdomain boundary and the report
 looks like a complete picture of a smaller product. Nothing in the output will
 tell you.
 
-### c. Do a cheap pass first
+### c. See what the crawl would do, before it does it
+
+```powershell
+python -m ui_discovery.crawl <url> --config scope.yaml --dry-run
+```
+
+A second, no browser. It writes `map.json` and `urls.txt` and tells you how
+many screens are in scope, which rule excluded the rest, and — by name — any
+module your budget cannot reach. Fix the config here rather than after a
+forty-minute run.
+
+### d. Then a cheap real pass
 
 ```powershell
 python -m ui_discovery.crawl <url> --config scope.yaml --profile fast --headless
@@ -151,20 +162,21 @@ python -m ui_discovery.crawl <url> --config scope.yaml --profile fast --headless
 product yet — you are finding out how big it is and whether your scope is right,
 and doing that with a full run costs you the whole run.
 
-### d. Read three things before running it again
+### e. Read three things before running it again
 
 | Where | What it tells you |
 | --- | --- |
 | `summary.md` → **Not captured** | Whether the budget was too small, links are broken, or your `exclude` rules are eating things. Only `budget` is fixed by raising `--max-pages`. |
 | `summary.md` → **Leaves the product** | Whether the crawl is stopping where you meant it to. |
 | `run.json` → `metrics.probe_share_of_crawl_pct` | How much of the wall clock the clicking costs. This is the number to optimise against, rather than a guess. |
+| `report.md` → **Reachable, but not from anywhere** | Screens that work by URL and that nothing links to — dead routes and features shipped without an entry point. |
 
 If `Not captured` is full of `budget`, raise `--max-pages`. If it is full of
 `out-of-scope`, your `include`/`exclude` rules are wrong. If it is full of
 `error`, the product has broken links — which is a finding, not a problem with
 the tool.
 
-### e. Trim the furniture, then do the real run
+### f. Trim the furniture, then do the real run
 
 Real portals have a cookie banner, a chat widget and a support bubble on every
 screen. They inflate the element count and invent components that span every
@@ -181,7 +193,7 @@ Then the full pass:
 python -m ui_discovery.pipeline <url> --config scope.yaml --auth-state session.json
 ```
 
-### f. If the capture contains customer data
+### g. If the capture contains customer data
 
 Anything behind a login almost certainly does — in the model *and* in the
 screenshots:
