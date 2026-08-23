@@ -16,6 +16,164 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ---
 
+## [0.22.0] — Know the URL surface before crawling it (M1-M4, H10)
+
+The engine found URLs one way: by walking what it had already rendered. That is
+thorough, slow, and structurally blind — a module the landing page never links
+to could not be found at all, and "this product has no reporting module" and
+"nothing on the home page links to reporting" produced the same capture.
+
+It also meant scoping was a bet. You pointed the engine at a target, waited
+forty minutes, and found out that `exclude` was one pattern too broad or that
+the budget stopped three modules short. `S1` made scope a decision; the decision
+could still only be checked by paying for it.
+
+This release closes both. The engine now reads what a product says about
+itself, tells you what a crawl would do before it does it, lets you name the
+screens you want, and — because it finally has both halves — reports the
+difference between the URL surface and the navigation graph.
+
+### Added
+
+- **`M1` The product's own declaration of its URLs.** New `discovery.py` reads
+  `robots.txt`'s `Sitemap:` directives, falls back to `/sitemap.xml`, follows
+  one level of `<sitemapindex>`, and handles `.gz` by extension, header **or**
+  magic number, because servers mislabel all three ways.
+
+  ```yaml
+  discovery:
+    sitemap: include     # include (default) | skip | only
+  ```
+
+  `skip` reproduces the crawl exactly as it was; `only` captures what the
+  sitemap declared and follows nothing, which is the fast survey.
+
+  **A sitemap is a suggestion, never an authorization.** Everything it lists
+  goes through `H6`'s same-site policy and then `include`/`exclude` — the
+  fixture lists a partner's domain precisely so that is asserted rather than
+  assumed.
+
+  **Nothing raises.** Malformed XML, a 404, a sitemap on another host, an index
+  nested past one level: each is a warning and an empty list. Refusing to start
+  a capture because an optional file was broken would be the worse failure by a
+  wide margin.
+
+  Two integrations rather than new tallies. These requests go out over
+  `urllib`, not the browser, so they are folded into `G7`'s egress ledger —
+  which would otherwise miss the engine's own traffic. And a URL the sitemap
+  listed that scope declined reaches `H8`'s ledger, so a too-broad `exclude`
+  reads as a decision rather than as a smaller product.
+
+- **`M2` A map of what a crawl would do, and why.**
+
+  ```bash
+  python -m ui_discovery.map https://portal.example.com --config scope.yaml
+  ```
+
+  Writes `map.json` and `urls.txt`. Every entry carries its source, its
+  verdict, and **the rule that decided it** — `exclude:/reports/**`,
+  `include:no-pattern-matched`, `subdomain-policy:same-host`,
+  `budget:max_pages=25`. That last field is the point: "out of scope" cannot be
+  acted on, because it does not say which line of the config to change.
+
+  It **never opens a browser**, asserted on the absence of a launch rather than
+  on elapsed time — a timing assertion keeps passing on a fast machine long
+  after the property has gone. The gates run in the crawler's own order, so a
+  map cannot predict a crawl that does not happen, and the budget applies after
+  scope so an excluded URL never consumes a slot.
+
+  `link` and `deep-nav` sources can only come from navigation, which this
+  command does not do, so they appear only under `--from-crawl`: fold in what
+  the last capture found and re-judge it against the config you are about to
+  use, without paying for the crawl twice.
+
+  `--search` is a plain glob that narrows what is listed and never changes a
+  verdict. No ranking, no scoring — a ranked list nobody can reproduce is worse
+  than an unranked one. Two maps of one config are byte-identical, asserted.
+
+- **`M3` The same answer, from the command you were going to run anyway.**
+  `--dry-run` on `crawl` and `pipeline` resolves the config, builds the map,
+  reports the budget verdict and exits having navigated nothing. A separate
+  command is one someone has to remember exists, and the person about to spend
+  forty minutes is typing `crawl`.
+
+  Declared modules the config cannot reach are named **by name**, with the rule
+  that blocks each: a verdict of "3 of 12" does not tell an operator that
+  Reports is the module they are about to lose, and module names are the only
+  part of a scope config written in their language rather than the engine's.
+
+  A dry run writes `map.json` and `urls.txt` and nothing else. A `crawl.json`
+  from a run that never happened would be worse than no output at all.
+
+- **`M4` Screens that work by URL and that nothing links to.** With `M1`
+  supplying a URL surface and the crawl supplying a navigation graph, the
+  difference between them is a finding the artifacts could not previously
+  state: dead routes, features shipped without an entry point, admin pages that
+  outlived their menu item.
+
+  The mirror case comes with it. `dead_end` is a screen contributing no
+  outbound navigation — either a leaf or a trap. `H7`'s external edges
+  deliberately do not count toward it: a way onward that leaves the product is
+  not a way onward *through* it, which makes a page whose only link is to a
+  vendor the sharpest version of the finding.
+
+  Both are **derived**, so they live on the analysis rather than on `Page`. The
+  same screen is an orphan or not depending on what else was captured, and
+  recording it on the page model would produce a page whose meaning changes
+  with its neighbours.
+
+  Surfaced in the report and as a trailing comment in `urls.txt`.
+
+- **`H10` Capture exactly these screens.** `--from urls.txt` on `crawl` and
+  `pipeline`, plus a `urls:` list in the scope config; the two are additive
+  because they answer the same question from different places.
+
+  **A list is convenience, never an authorization.** Every entry goes through
+  the same scope gate a discovered link does — otherwise `--from` would be a
+  way to talk the engine past its own config by pasting a URL into a text file,
+  and it would be the most natural way to do it, because the file looks like
+  input rather than like permission. A refused entry lands in `H8`'s ledger
+  with its reason: refused *and silent* would be worse than allowed, because
+  the operator would believe they had captured a screen they had not.
+
+  One bad line does not cost the others — a forty-URL file with a typo captures
+  thirty-nine screens and reports the fortieth.
+
+### Changed
+
+- **`urls.txt` is annotated, and stays consumable.** `M4` marks orphans and
+  dead ends as trailing `#` comments rather than as a column, because `H10`
+  consumes this file: it has to remain something you can filter by hand and
+  hand straight back. `read_url_list` strips an inline `#` for exactly that
+  reason, asserted by round-tripping an annotated capture through `--from`.
+- **Following is one switch.** `H10`'s explicit list and `M1`'s `only` survey
+  both mean "capture what I named and stop". Two independent flags for one
+  behaviour is how they end up disagreeing.
+- **A URL list skips the sitemap fetch.** Asking the target a question you have
+  already answered is waste, and it would put requests in `G7`'s ledger the run
+  had no reason to make.
+
+### Tests
+
++94 (850 → 944 collected; 940 passed and 4 skipped when this shipped).
+`test_m1_sitemap.py` (29), `test_m2_map.py` (22),
+`test_m4_orphans.py` (15), `test_h10_url_list.py` (14),
+`test_m3_dry_run.py` (10).
+
+The test that matters most is a negative one: **a fully linked fixture reports
+neither an orphan nor a dead end.** A finding that fires on healthy input
+cannot be trusted when it fires on real input.
+
+### Known limitation
+
+`M1` fetches `robots.txt` and sitemaps with `urllib`, not through the browser,
+so it does not carry a saved session. A sitemap behind authentication returns
+its login page or a 401, which is recorded as a warning and an empty list — the
+crawl proceeds by following links exactly as it did before. Reading an
+authenticated sitemap is not yet supported.
+
+---
+
 ## [0.21.0] — A capture that says what it missed (H6-H9, X9)
 
 Five items aimed at one thing: running the engine against a real product rather

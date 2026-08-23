@@ -517,6 +517,30 @@ def build_markdown(crawl: Crawl, relations: Relations | None = None) -> str:
                      f"(API: {totals['api_requests']})")
         lines.append("")
 
+    # M4: the difference between the URL surface and the navigation graph.
+    if relations and (relations.orphans or relations.dead_ends):
+        lines.append("## Reachable, but not from anywhere")
+        lines.append("")
+        if relations.orphans:
+            lines.append(f"**{len(relations.orphans)} orphan screen(s)** — they "
+                         f"work if you type the URL, and nothing in the product "
+                         f"links to them. Dead routes, features shipped without "
+                         f"an entry point, admin pages that outlived their menu "
+                         f"item.")
+            lines.append("")
+            for url in relations.orphans[:50]:
+                lines.append(f"- `{url}`")
+            lines.append("")
+        if relations.dead_ends:
+            lines.append(f"**{len(relations.dead_ends)} dead end(s)** — captured, "
+                         f"with no outbound navigation of their own. Either a "
+                         f"leaf or a trap; links that leave the product do not "
+                         f"count.")
+            lines.append("")
+            for url in relations.dead_ends[:50]:
+                lines.append(f"- `{url}`")
+            lines.append("")
+
     # H7: where this product hands off to somebody else. A short table, and
     # only when there is something to say — but its absence then means "no
     # outbound links", which is itself a finding a reader could not previously

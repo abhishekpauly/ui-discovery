@@ -214,6 +214,100 @@ Both settings are applied to the page graph *and* Crawlee's request queue, so
 page counts agree, and both are recorded in `crawl.json`'s `config` block so a
 snapshot always says how its page identity was computed.
 
+## Knowing the URL surface before you crawl it
+
+Scoping a real portal used to be a bet: point the engine at it, wait forty
+minutes, discover the budget stopped three modules short.
+
+### `map` — what would you crawl, and why? (M2)
+
+```bash
+python -m ui_discovery.map https://portal.example.com --config scope.yaml
+```
+
+Writes `map.json` and `urls.txt` in about a second. **It never opens a
+browser.** Every URL carries the rule that decided its fate:
+
+```
+[INFO] Mapped 214 URL(s): 180 in scope, 34 not.
+[INFO]   from seed: 1
+[INFO]   from sitemap: 213
+[WARN] Module 'Reports' is not reachable with this config (budget:max_pages=150)
+[INFO] Excluded by:
+[INFO]   exclude:/exports/**: 30
+[INFO]   budget:max_pages=150: 4
+```
+
+`exclude:/exports/**` tells you which line to edit. "Out of scope" would not.
+
+`--search '/admin/*'` narrows what is listed and never changes a verdict.
+`--from-crawl <dir>` folds in what a previous capture discovered and re-judges
+it against the config you are about to use.
+
+### `--dry-run` — the same answer from the command you were going to run (M3)
+
+```bash
+python -m ui_discovery.crawl <url> --config scope.yaml --dry-run
+python -m ui_discovery.pipeline <url> --config scope.yaml --dry-run
+```
+
+Resolves the config, builds the map, reports the budget verdict, navigates
+nothing. Modules your config cannot reach are named — a verdict of "3 of 12"
+does not tell you that *Reports* is the module you are about to lose.
+
+### Reading the product's own sitemap (M1)
+
+```yaml
+discovery:
+  sitemap: include        # include (default) | skip | only
+```
+
+Reads `robots.txt`'s `Sitemap:` directives, falls back to `/sitemap.xml`,
+follows one level of index, handles `.gz`. This is how the engine finds a
+module the landing page never links to — link-following structurally cannot.
+
+`only` captures what the sitemap declares and follows nothing: the fast survey.
+`skip` behaves exactly as the crawler did before.
+
+**A sitemap is a suggestion, never an authorization.** Everything it lists goes
+through the same scope gate a link does. A malformed sitemap, a 404, or one
+naming another host is a warning and an empty list — never a failed capture.
+
+> **It does not carry your session.** Sitemaps are fetched outside the browser,
+> so a sitemap behind a login returns its login page or a 401. That is recorded
+> as a warning and the crawl proceeds by following links.
+
+### `--from` — capture exactly these screens (H10)
+
+```bash
+python -m ui_discovery.map <url> --config scope.yaml   # writes urls.txt
+#  ...delete the screens you don't want...
+python -m ui_discovery.crawl <url> --config scope.yaml --from urls.txt
+```
+
+Captures the named screens and follows no links. Blank lines and `#` comments
+are skipped, so crossing a screen out works. **Scope rules still apply** — a
+list is convenience, never an authorization, and a refused entry appears in the
+failure ledger rather than vanishing.
+
+### Screens nothing links to (M4)
+
+```
+## Reachable, but not from anywhere
+
+**2 orphan screen(s)** - they work if you type the URL, and nothing in the
+product links to them.
+
+- `https://portal.example.com/admin/legacy-export`
+```
+
+Dead routes, features shipped without an entry point, admin pages that outlived
+their menu item. The mirror case is a **dead end** — a screen with no outbound
+navigation, where links that leave the product deliberately do not count.
+
+Both appear in the report and as `# orphan` / `# dead-end` comments in
+`urls.txt`, which stays consumable by `--from`.
+
 ### How much of a hostname counts as your product (H6)
 
 Real portals are rarely on one host. The engine compares hostnames exactly by

@@ -402,6 +402,16 @@ def build_relations(crawl: Crawl) -> Relations:
         if not inbound.get(n.url) and n.url not in entry_points
     ]
 
+    # M4: a screen that contributes no outbound navigation. External links
+    # are deliberately not counted — `H7` records those, and a page whose only
+    # way onward leaves the product is exactly the dead end worth naming.
+    dead_ends = [n.url for n in crawl.pages if not outbound.get(n.url)]
+
+    orphan_set, dead_end_set = set(orphans), set(dead_ends)
+    for screen in screens:
+        screen.orphan = screen.url in orphan_set
+        screen.dead_end = screen.url in dead_end_set
+
     stats = {
         "screens": len(screens),
         "navigation_edges": len(edges),
@@ -411,6 +421,7 @@ def build_relations(crawl: Crawl) -> Relations:
         "form_fields": sum(len(f.fields) for s in screens for f in s.forms),
         "tables": sum(len(s.tables) for s in screens),
         "orphan_screens": len(orphans),
+        "dead_end_screens": len(dead_ends),
     }
 
     return Relations(
@@ -422,6 +433,7 @@ def build_relations(crawl: Crawl) -> Relations:
         stats=stats,
         entry_points=entry_points,
         orphans=orphans,
+        dead_ends=dead_ends,
         screens=screens,
         # H7: carried through rather than re-derived. The crawler is the only
         # place that saw the raw hrefs; deriving "external" a second time here

@@ -32,6 +32,7 @@ from .browser import (
     has_rendered,
     redact_aria_snapshot,
 )
+from .discovery import read_sitemaps
 from .extraction import (
     JS,
     assemble_page,
@@ -73,6 +74,7 @@ from .util import (
     path_of,
     resolve_external_links,
     resolve_labelled_links,
+    same_site,
     slug_for,
     url_in_scope,
 )
@@ -548,6 +550,15 @@ class CrawlOptions:
     # not part of your product. Distinct from `never_touch`, which forbids
     # interacting with something the model still describes.
     exclude_selectors: tuple[str, ...] = ()
+    # M1: seed from the target's own robots.txt / sitemap.xml.
+    #   include — read it and add what it lists (default)
+    #   skip    — behave exactly as the crawler did before M1
+    #   only    — capture the sitemap's URLs and follow no links: the survey
+    sitemap: str = "include"
+    sitemap_timeout: float = 10.0
+    # H10: capture exactly these URLs. Scope rules still decide; a list is
+    # convenience, never an authorization bypass.
+    url_list: tuple[str, ...] = ()
     # Capabilities (R2)
     # Off for the *library*, on for the *product*. `crawl_site(url)` is the
     # low-level API: a programmatic caller should have to ask before the engine
@@ -702,6 +713,12 @@ async def crawl_site(
     adapters = opts.adapters
     seeds, reveal_nav, deep_nav = opts.seeds, opts.reveal_nav, opts.deep_nav
     subdomains, subdomain_hosts = opts.subdomains, tuple(opts.subdomain_hosts)
+    sitemap_mode = opts.sitemap
+    url_list = tuple(opts.url_list)
+    # One switch for both ways of saying "capture what I named and stop":
+    # H10's explicit list and M1's `only` survey. Two independent flags for
+    # one behaviour is how they end up disagreeing.
+    follow_links = not url_list and sitemap_mode != "only"
     max_requests_per_minute = opts.max_requests_per_minute
     max_concurrency = opts.max_concurrency
     respect_robots_txt = opts.respect_robots_txt
@@ -1106,6 +1123,11 @@ async def crawl_site(
         # The page graph still records every link the page really has.
         queueable = []
         for candidate in out_links:
+            if not follow_links:
+                # Capture what was named and stop. The page graph still
+                # records every link the page really has - only the queue is
+                # narrowed.
+                continue
             if _in_scope(candidate):
                 queueable.append(candidate)
             else:
@@ -1192,9 +1214,75 @@ async def crawl_site(
 
     started = datetime.now(timezone.utc)
     t0 = time.monotonic()
-    # Seeds join the start URL; Crawlee dedups, and out-of-scope seeds are
-    # dropped by the same transform as any other request.
-    start_urls = [start_url] + [u for u in seeds if _normalize(u) != root]
+
+    # M1: the target's own declaration of its URLs, fed into the *existing*
+    # `seeds` option rather than a second seeding path — so from here on a
+    # sitemap URL and a hand-written seed are the same kind of thing.
+    sitemap_seeds: list[str] = []
+    # H10: an explicit list is an answer to the same question the sitemap
+    # answers, so asking the target as well is pure waste — and it would put
+    # requests in the egress ledger that this run had no reason to make.
+    if sitemap_mode != "skip" and not url_list:
+        found = read_sitemaps(
+            start_url, mode=sitemap_mode, include=include, exclude=exclude,
+            subdomains=subdomains, subdomain_hosts=subdomain_hosts,
+            timeout=opts.sitemap_timeout, dedupe_queries=dedupe_queries,
+            drop_params=drop_params)
+        sitemap_seeds = [u for u in found.urls if _normalize(u) != root]
+        # G7: these requests are made with urllib, not the browser, so the
+        # egress listener never sees them. A ledger that missed the engine's
+        # own traffic would be worth very little.
+        egress_urls.extend(found.fetched)
+        for dropped in found.dropped:
+            failure_reasons.setdefault(dropped["url"], {
+                "reason": dropped["reason"],
+                "detail": "listed in the sitemap, declined by the scope rules",
+            })
+        for warning in found.warnings:
+            event("sitemap.warning", level="warning", detail=warning)
+        if found.sources:
+            event("sitemap.read", sources=found.sources,
+                  urls=len(found.urls), dropped=len(found.dropped))
+            print(f"[INFO] Sitemap: {len(found.urls)} URL(s) from "
+                  f"{len(found.sources)} document(s), "
+                  f"{len(found.dropped)} out of scope")
+
+    if url_list:
+        # H10: capture exactly what was named. Each entry still goes through
+        # the scope gate — a list is convenience, never an authorization
+        # bypass — and a rejected entry is reported rather than aborting the
+        # run, because one bad line in a forty-URL file should not cost the
+        # other thirty-nine.
+        start_urls = []
+        for raw in url_list:
+            candidate = (raw or "").strip()
+            if not candidate:
+                continue
+            try:
+                normalized = _normalize(candidate)
+            except Exception:
+                failure_reasons[candidate] = {
+                    "reason": "error",
+                    "detail": "not a URL the engine could parse"}
+                continue
+            if not same_site(normalized, start_url, subdomains, subdomain_hosts):
+                failure_reasons[normalized] = {
+                    "reason": "off-site",
+                    "detail": "named in the URL list, outside the target"}
+            elif not _in_scope(normalized):
+                failure_reasons[normalized] = {
+                    "reason": "out-of-scope",
+                    "detail": "named in the URL list, declined by scope rules"}
+            elif normalized not in start_urls:
+                start_urls.append(normalized)
+        print(f"[INFO] URL list: capturing {len(start_urls)} named screen(s), "
+              f"following no links")
+    else:
+        # Seeds join the start URL; Crawlee dedups, and out-of-scope seeds are
+        # dropped by the same transform as any other request.
+        start_urls = ([start_url]
+                      + [u for u in seeds if _normalize(u) != root]
+                      + sitemap_seeds)
     final_stats = await crawler.run(start_urls)
     runtime = time.monotonic() - t0
     finished = datetime.now(timezone.utc)
@@ -1215,7 +1303,14 @@ async def crawl_site(
         nodes.values(),
         key=lambda n: (n.depth if n.depth is not None else 10**9, n.url),
     )
-    discovered = set(nodes) | {dst for outs in edges.values() for dst in outs}
+    # A URL the sitemap listed and the scope rules declined was discovered as
+    # surely as a link was, so `H8` accounts for it. Without this, a config
+    # whose `exclude` was too broad would look like a product with fewer
+    # screens rather than a capture that turned some down.
+    discovered = (set(nodes)
+                  | {dst for outs in edges.values() for dst in outs}
+                  | {u for u, why in failure_reasons.items()
+                     if why.get("reason") in ("out-of-scope", "off-site")})
     logged_out = sum(
         1 for n in nodes.values() if n.page.auth and n.page.auth.looks_logged_out
     )

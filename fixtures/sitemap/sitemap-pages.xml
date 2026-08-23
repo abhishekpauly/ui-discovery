@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>/index.html</loc><lastmod>2026-08-01</lastmod></url>
+  <url><loc>/linked.html</loc></url>
+  <!-- The point of the whole item: nothing in the product links here. -->
+  <url><loc>/orphan.html</loc></url>
+  <!-- Declined by the config's exclude rules, not by the sitemap. -->
+  <url><loc>/private/secret.html</loc></url>
+  <!-- A sitemap is a suggestion, never an authorization. -->
+  <url><loc>https://partner.invalid/theirs.html</loc></url>
+</urlset>

@@ -226,6 +226,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         "--fail-on-auth-expiry", action="store_true",
         help="Exit non-zero if the saved session turns out to be rejected.",
     )
+    parser.add_argument(
+        "--from", dest="from_file", default=None, metavar="FILE",
+        help="H10: capture exactly the URLs in FILE, one per line, following "
+             "no links. Consumes the urls.txt that `map` writes. Scope rules "
+             "still apply - a list is convenience, never an authorization.",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", default=False,
+        help="M3: resolve the config, build the map and report the budget verdict, then exit having navigated nothing. No browser is opened. Writes map.json + urls.txt so the answer can be read, diffed and fed back in.",
+    )
     args = parser.parse_args(argv)
 
     scope = load_or_exit(args.config, getattr(args, "profile", None))
@@ -257,6 +267,23 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("[ERROR] Config sets auth.required: true but no session was "
               "supplied.", file=sys.stderr)
         return 1
+
+    # M3: the same answer, from the command you were going to run anyway.
+    # After config resolution and authorization, before anything opens -- a
+    # preview that skipped the gates would be predicting a different run.
+    if getattr(args, "dry_run", False):
+        from .map import build_map, render_map, write_map
+
+        url_map = build_map(start_url, scope,
+                            max_pages=args.max_pages)
+        paths = write_map(
+            url_map,
+            resolve_output_dir(scope, args.output, slug_for(start_url)))
+        print(render_map(url_map))
+        print("[INFO] Dry run - nothing was navigated, no browser opened.")
+        print(f"[INFO] Wrote {paths['json']}")
+        print(f"[INFO] Wrote {paths['urls']}")
+        return 0
 
     out_dir = resolve_output_dir(scope, args.output, slug_for(start_url))
     skip = set(args.skip)
@@ -328,7 +355,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     # must describe the same graph, not three independently-derived ones.
     relations = build_relations(crawl)
     write_reports(crawl, str(out_dir), relations=relations)
-    write_inventory(crawl, str(out_dir))
+    # Same graph, not a second one derived independently — `M4`'s annotations
+    # in `urls.txt` must agree with the report that names the same screens.
+    write_inventory(crawl, str(out_dir), relations=relations)
     modules = write_module_artifacts(
         crawl, str(out_dir), [(m.name, m.start_url) for m in scope.modules])
     s = crawl.stats

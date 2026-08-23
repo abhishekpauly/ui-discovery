@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from pathlib import Path
 from typing import Optional
 
 from .adapters import build as build_adapters
@@ -104,6 +105,32 @@ def safety_policy(scope: Scope) -> SafetyPolicy:
         caution_words_extra=frozenset(scope.safety.caution_words_extra),
         never_touch=tuple(scope.safety.never_touch),
     )
+
+
+def read_url_list(path: Optional[str]) -> list[str]:
+    """H10: the URLs in a file, one per line.
+
+    Blank lines and `#` comments are skipped so a map's `urls.txt` can be
+    edited by hand — crossing a screen out with a `#` is what someone will
+    actually do, and failing on it would send them back to a text editor to
+    delete lines instead.
+    """
+    if not path:
+        return []
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"[ERROR] Could not read URL list {path}: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    urls = []
+    for line in text.splitlines():
+        # An inline `#` is stripped, not just a leading one: `M4` annotates
+        # the capture's own `urls.txt` with `# orphan, dead-end`, and that
+        # file has to remain something you can hand straight back.
+        entry = line.split("#", 1)[0].strip()
+        if entry:
+            urls.append(entry)
+    return urls
 
 
 def redaction_policy(scope: Scope) -> RedactionPolicy:
@@ -251,6 +278,13 @@ def crawl_options(scope: Scope, args) -> CrawlOptions:  # noqa: ANN001
         subdomains=scope.scope.subdomains,
         subdomain_hosts=tuple(scope.scope.subdomain_hosts),
         exclude_selectors=tuple(scope.capture.exclude_selectors),
+        # M1: read the target's own URL declaration.
+        sitemap=scope.discovery.sitemap,
+        sitemap_timeout=scope.discovery.sitemap_timeout,
+        # H10: the config's list, extended by --from. Additive, because the
+        # two are answers to the same question from different places.
+        url_list=tuple(scope.urls) + tuple(read_url_list(
+            getattr(args, "from_file", None))),
         screenshots=pick(
             False if getattr(args, "no_screenshots", None) else None,
             scope.capabilities.screenshots, True),

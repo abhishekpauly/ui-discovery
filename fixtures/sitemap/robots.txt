@@ -1,0 +1,6 @@
+User-agent: *
+Disallow: /private/
+
+# Relative on purpose: the spec says this should be absolute, and enough real
+# products write it this way that the reader has to resolve it.
+Sitemap: /sitemap.xml

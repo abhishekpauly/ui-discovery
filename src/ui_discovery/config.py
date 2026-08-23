@@ -113,6 +113,29 @@ class Capabilities(BaseModel):
     deep_nav: bool = True
 
 
+class Discovery(BaseModel):
+    """M1 — where the crawl gets its URLs from, besides following links."""
+
+    # include — read robots.txt / sitemap.xml and seed from them (default)
+    # skip    — reproduce the crawl exactly as it was before M1 existed
+    # only    — crawl the sitemap and follow nothing; the fast survey
+    sitemap: str = "include"
+    # Seconds to wait on each sitemap request. A product that does not answer
+    # promptly is not worth stalling a capture over.
+    sitemap_timeout: float = 10.0
+
+    @field_validator("sitemap")
+    @classmethod
+    def _known_mode(cls, value: str) -> str:
+        from .discovery import SITEMAP_MODES
+
+        if value not in SITEMAP_MODES:
+            raise ValueError(
+                f"discovery.sitemap: {value!r} is not one of "
+                f"{', '.join(SITEMAP_MODES)}.")
+        return value
+
+
 class Capture(BaseModel):
     """H9 — what the engine models, as opposed to what it interacts with.
 
@@ -340,6 +363,12 @@ class Scope(BaseModel):
     # Informational only: the engine observes traffic, it never calls these.
     known_endpoints: list[str] = Field(default_factory=list)
 
+    # H10: capture exactly these screens rather than crawling from a start
+    # URL. Still filtered by `scope` — a list is convenience, never an
+    # authorization. Pairs with `M2`'s `urls.txt`, which is written in this
+    # shape so a map can be filtered by hand and handed straight back.
+    urls: list[str] = Field(default_factory=list)
+
     # G1: authorization is recorded *and* enforced. The engine cannot verify
     # that a person really approved this — no software can — so it does the one
     # honest thing available: against production, it refuses to start until
@@ -354,6 +383,7 @@ class Scope(BaseModel):
     identity: Identity = Field(default_factory=Identity)
     capabilities: Capabilities = Field(default_factory=Capabilities)
     capture: Capture = Field(default_factory=Capture)
+    discovery: Discovery = Field(default_factory=Discovery)
     # Defaults for every module. A module's own `probe:` overrides these
     # field by field; anything unset here falls back to `capabilities.probe`
     # and `budget.max_interactions`, so existing configs keep working.
