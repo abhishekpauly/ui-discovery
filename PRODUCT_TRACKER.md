@@ -121,7 +121,7 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 |----|---------|-------|-----|--------|
 | M1 | Sitemap ingestion | `robots.txt` + `sitemap.xml` (+ index, `.gz`) seed the crawl; scope rules still decide | P1 | ✅ |
 | M2 | `map` command | `map.json` + `urls.txt`: every URL with its source, verdict, and the rule that decided it | P1 | ✅ |
-| M3 | Scope dry-run | `--dry-run` on `crawl`/`pipeline` — the map and the budget verdict, navigating nothing | P2 | 📋 |
+| M3 | Scope dry-run | `--dry-run` on `crawl`/`pipeline` — the map and the budget verdict, navigating nothing | P2 | ✅ |
 | M4 | Orphan & dead-end screens | reachable by URL but unlinked; captured but leading nowhere | P1 | 📋 |
 
 ### Liveness & freshness — a capture that says how current it is · EPIC-FRESH

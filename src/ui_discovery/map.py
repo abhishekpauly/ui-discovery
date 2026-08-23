@@ -96,6 +96,7 @@ def build_map(
     search: Optional[str] = None,
     crawl: Optional[Crawl] = None,
     read_sitemap: bool = True,
+    max_pages: Optional[int] = None,
 ) -> UrlMap:
     """The URL surface, judged. Pure apart from the sitemap fetch.
 
@@ -146,7 +147,11 @@ def build_map(
     # The budget is applied *after* scope, to the in-scope set, in the order a
     # crawl would reach them — so "you will run out before Reports" is a thing
     # the map can say.
-    max_pages = scope.budget.max_pages
+    # The flag wins over the config, exactly as it does on a real run. A
+    # preview that ignored `--max-pages` would predict a different crawl from
+    # the one the operator is about to start, which is the one thing this
+    # artifact must never do.
+    max_pages = scope.budget.max_pages if max_pages is None else max_pages
     in_scope_seen = 0
     for entry in sorted(entries, key=_ordering):
         if not entry.in_scope:
@@ -161,6 +166,22 @@ def build_map(
 
     entries.sort(key=_ordering)
     kept = [e for e in entries if e.in_scope]
+
+    # M3: which declared modules this config cannot reach, **by name**. A
+    # budget verdict of "12 of 30" does not tell an operator that Reports is
+    # the module they are about to lose, and the module names are the only
+    # part of a scope config written in their language rather than the
+    # engine's.
+    verdict = {e.url: (e.in_scope, e.decided_by) for e in entries}
+    unreachable = []
+    for module in scope.modules:
+        if not module.start_url:
+            continue
+        module_url = normalize(module.start_url)
+        reachable, rule = verdict.get(module_url, (None, "not-on-the-map"))
+        if reachable is False:
+            unreachable.append({"module": module.name, "url": module_url,
+                                "decided_by": rule})
     return UrlMap(
         schema_version=SCHEMA_VERSION,
         engine_version=__version__,
@@ -176,6 +197,7 @@ def build_map(
             "by_source": _counted(e.source for e in entries),
             "by_rule": _counted(e.decided_by for e in entries if not e.in_scope),
             "max_pages": max_pages,
+            "modules_unreachable": unreachable,
         },
         warnings=warnings,
     )
@@ -236,6 +258,10 @@ def render_map(url_map: UrlMap) -> str:
                      f"(a filter on what is listed, never on a verdict).")
     for source, count in stats["by_source"].items():
         lines.append(f"[INFO]   from {source}: {count}")
+    for missed in stats.get("modules_unreachable") or ():
+        lines.append(f"[WARN] Module {missed['module']!r} is not reachable "
+                     f"with this config ({missed['decided_by']}) — "
+                     f"{missed['url']}")
     if stats["by_rule"]:
         lines.append("[INFO] Excluded by:")
         for rule, count in stats["by_rule"].items():
