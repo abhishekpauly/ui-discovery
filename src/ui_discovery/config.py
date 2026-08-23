@@ -363,6 +363,12 @@ class Scope(BaseModel):
     # Informational only: the engine observes traffic, it never calls these.
     known_endpoints: list[str] = Field(default_factory=list)
 
+    # H10: capture exactly these screens rather than crawling from a start
+    # URL. Still filtered by `scope` — a list is convenience, never an
+    # authorization. Pairs with `M2`'s `urls.txt`, which is written in this
+    # shape so a map can be filtered by hand and handed straight back.
+    urls: list[str] = Field(default_factory=list)
+
     # G1: authorization is recorded *and* enforced. The engine cannot verify
     # that a person really approved this — no software can — so it does the one
     # honest thing available: against production, it refuses to start until

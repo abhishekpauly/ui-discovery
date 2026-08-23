@@ -179,7 +179,7 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | H7 | External links recorded, never followed | the authorization boundary as a visible edge, not a silence | P2 | ✅ |
 | H8 | Crawl failure ledger | what was *not* captured, with reasons — a rollup of `discovered_not_captured` + `page.skipped` | P2 | ✅ |
 | H9 | Exclude the furniture | `capture.exclude_selectors` — cookie banners and chat widgets out of the model, counted not silent | P2 | ✅ |
-| H10 | Capture an explicit URL list | `--from urls.txt` / `urls:` — scope rules still apply; a list is not an authorization | P2 | 📋 |
+| H10 | Capture an explicit URL list | `--from urls.txt` / `urls:` — scope rules still apply; a list is not an authorization | P2 | ✅ |
 | H11 | TLS verification as a recorded decision | reach internal staging, and say in the manifest that you did | P3 | 📋 |
 
 ### Deliverables (deterministic, high value)

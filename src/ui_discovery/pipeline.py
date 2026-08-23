@@ -227,6 +227,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="Exit non-zero if the saved session turns out to be rejected.",
     )
     parser.add_argument(
+        "--from", dest="from_file", default=None, metavar="FILE",
+        help="H10: capture exactly the URLs in FILE, one per line, following "
+             "no links. Consumes the urls.txt that `map` writes. Scope rules "
+             "still apply - a list is convenience, never an authorization.",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true", default=False,
         help="M3: resolve the config, build the map and report the budget verdict, then exit having navigated nothing. No browser is opened. Writes map.json + urls.txt so the answer can be read, diffed and fed back in.",
     )
