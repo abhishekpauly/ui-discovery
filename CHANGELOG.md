@@ -99,9 +99,22 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ### Tests
 
-+5 (944 → 949 collected; 946 passed and 3 skipped). One previously-skipped
-test now runs: the version-drift guard skips while a version is untagged, and
-`v0.22.0` is tagged.
++34 (944 → 978 collected; 975 passed and 3 skipped). `test_h12_route_templates.py`
+(20), the `G7`/`H6` agreement tests (5), `H10`-in-the-map regressions (4), and
+mounted-tab coverage (3). One previously-skipped test now runs: the
+version-drift guard skips while a version is untagged, and `v0.22.0` is tagged.
+
+**Two flaky tests, named rather than left to be rediscovered.**
+`test_coverage.py::test_deep_nav_reuses_routes_it_already_found` and
+`test_h4_auth_expiry.py::test_expiry_is_surfaced_in_the_reports` both fail
+under heavy machine load and pass in isolation and in normal batches. Both are
+browser tests whose assertions depend on a page settling in time. Neither is a
+regression; both are worth making load-independent.
+
+**`.test_durations` is stale.** It was recorded on 2026-08-21 against 35 test
+files; there are now 54. `pytest-split` therefore mis-estimates its groups —
+locally and in CI, where `full` shards by exactly this file. Re-record it with
+`pytest --store-durations`.
 
 ---
 
