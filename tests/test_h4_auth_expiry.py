@@ -186,30 +186,30 @@ def test_expired_session_is_detected(server):
     assert page.auth.looks_logged_out is True
 
 
-def test_crawl_marks_auth_expired_when_session_is_stale(server):
+def test_crawl_marks_auth_expired_when_session_is_stale(server, tmp_path):
     crawl = asyncio.run(crawl_site(
         f"{server}/dashboard", max_depth=1, max_pages=2,
-        output_dir="/tmp/uidisco_h4_expired", auth_state=_expired_state(),
+        output_dir=str(tmp_path), auth_state=_expired_state(),
     ))
     assert crawl.config.auth_used is True
     assert crawl.stats.pages_logged_out > 0
     assert crawl.stats.auth_expired is True
 
 
-def test_crawl_with_valid_session_is_clean(server):
+def test_crawl_with_valid_session_is_clean(server, tmp_path):
     crawl = asyncio.run(crawl_site(
         f"{server}/dashboard", max_depth=1, max_pages=2,
-        output_dir="/tmp/uidisco_h4_valid", auth_state=_valid_state(),
+        output_dir=str(tmp_path), auth_state=_valid_state(),
     ))
     assert crawl.stats.auth_expired is False
     assert crawl.stats.pages_logged_out == 0
 
 
-def test_no_session_supplied_is_not_an_expiry(server):
+def test_no_session_supplied_is_not_an_expiry(server, tmp_path):
     # Landing on a login page without credentials is expected, not a failure.
     crawl = asyncio.run(crawl_site(
         f"{server}/dashboard", max_depth=1, max_pages=2,
-        output_dir="/tmp/uidisco_h4_anon",
+        output_dir=str(tmp_path),
     ))
     assert crawl.config.auth_used is False
     assert crawl.stats.pages_logged_out > 0

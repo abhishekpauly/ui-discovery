@@ -42,13 +42,13 @@ def base_url():
 
 
 @pytest.fixture(scope="module")
-def full_crawl(base_url):
+def full_crawl(base_url, tmp_path_factory):
     return asyncio.run(
         crawl_site(
             f"{base_url}/index.html",
             max_pages=25,
             max_depth=3,
-            output_dir="/tmp/uidisco_test_full",
+            output_dir=str(tmp_path_factory.mktemp("full-crawl")),
         )
     )
 
@@ -84,13 +84,13 @@ def test_navigation_edges_present(full_crawl):
     )
 
 
-def test_depth_limit(base_url):
+def test_depth_limit(base_url, tmp_path):
     crawl = asyncio.run(
         crawl_site(
             f"{base_url}/index.html",
             max_pages=25,
             max_depth=1,
-            output_dir="/tmp/uidisco_test_d1",
+            output_dir=str(tmp_path),
         )
     )
     files = {n.url.rsplit("/", 1)[-1] for n in crawl.pages}
@@ -99,13 +99,13 @@ def test_depth_limit(base_url):
     assert all((n.depth or 0) <= 1 for n in crawl.pages)
 
 
-def test_page_budget(base_url):
+def test_page_budget(base_url, tmp_path):
     crawl = asyncio.run(
         crawl_site(
             f"{base_url}/index.html",
             max_pages=3,
             max_depth=5,
-            output_dir="/tmp/uidisco_test_budget",
+            output_dir=str(tmp_path),
         )
     )
     # Crawlee's max_requests_per_crawl is an approximate cap under concurrency
@@ -128,7 +128,7 @@ def test_reports_written(full_crawl, tmp_path):
 
 # --- the page budget is exact (found on a real portal) ----------------------
 
-def test_the_page_budget_is_not_exceeded(serve):
+def test_the_page_budget_is_not_exceeded(serve, tmp_path):
     """`max_pages` used to be approximate. On a slow SPA that retried 29
     requests, a budget of 25 produced 38 captured pages: Crawlee's limit counts
     *completed* requests and is checked before dispatching the next one, so
@@ -141,17 +141,18 @@ def test_the_page_budget_is_not_exceeded(serve):
     for budget in (1, 3, 5):
         crawl = asyncio.run(crawl_site(
             f"{server.base}/index.html", max_pages=budget, max_depth=5,
-            output_dir="/tmp/uidisco_budget", probe=False, screenshots=False))
+            output_dir=str(tmp_path / str(budget)), probe=False,
+            screenshots=False))
         assert crawl.stats.pages_crawled == budget, (
             f"asked for {budget} pages, captured {crawl.stats.pages_crawled}")
 
 
-def test_a_truncated_crawl_still_reports_what_it_missed(serve):
+def test_a_truncated_crawl_still_reports_what_it_missed(serve, tmp_path):
     """Holding the budget must not hide that there was more to see."""
     server = serve("fixtures/site")
     crawl = asyncio.run(crawl_site(
         f"{server.base}/index.html", max_pages=2, max_depth=5,
-        output_dir="/tmp/uidisco_budget2", probe=False, screenshots=False))
+        output_dir=str(tmp_path), probe=False, screenshots=False))
     captured = {n.url for n in crawl.pages}
     discovered = {e["to"] for e in crawl.navigation}
     assert discovered - captured, "nothing recorded as discovered-but-not-visited"

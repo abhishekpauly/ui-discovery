@@ -41,14 +41,14 @@ def _free_port() -> int:
 
 
 @pytest.fixture(scope="module")
-def context():
+def context(tmp_path_factory):
     port = _free_port()
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(SITE))
     httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     try:
         crawl = asyncio.run(crawl_site(f"http://127.0.0.1:{port}/index.html",
-                                       max_depth=3, output_dir="/tmp/uidisco_qa"))
+                                       max_depth=3, output_dir=str(tmp_path_factory.mktemp("qagen"))))
     finally:
         httpd.shutdown()
     analysis = analyze_crawl(crawl)

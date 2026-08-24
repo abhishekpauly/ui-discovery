@@ -134,6 +134,16 @@ now builds the model directly. A test should fail for the thing it tests.
 a *click* revealed, so it genuinely needs a browser. It now raises `settle_ms`
 (below), which is the honest fix rather than a longer sleep in production code.
 
+**Seventeen tests wrote captures to hardcoded `/tmp/uidisco_*` paths**, across
+eight files. Nothing failed because of it — each name was distinct — but
+pytest never cleaned them up, so a machine that had run the suite a few times
+was carrying **94MB across 17 stale capture folders**, and two tests sharing a
+name would have shared state in a way nobody would think to look for.
+
+Now `tmp_path`, or `tmp_path_factory` for the module-scoped fixtures that
+cannot request the function-scoped one. A guard test fails the build if the
+hardcoded form comes back, because it is the form that reads more naturally.
+
 **`.test_durations` re-recorded.** It dated from 2026-08-21 and covered 35 test
 files; there are now 54, so `pytest-split` mis-estimated every group — locally,
 and in CI where the `full` workflow shards by exactly this file. Now 979 tests
