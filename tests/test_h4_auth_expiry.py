@@ -254,13 +254,25 @@ def test_crawler_applies_localstorage_from_the_session(serve, tmp_path):
     )
 
 
-def test_expiry_is_surfaced_in_the_reports(server):
+def test_expiry_is_surfaced_in_the_reports():
+    """Built from a model rather than from a live crawl, deliberately.
+
+    The claim here is about the *renderers*: given a capture that hit a login
+    wall, both reports say so. Detection is already covered above, against a
+    real browser and this module's server.
+
+    Re-crawling to reach the renderer made this the flakiest test in the
+    suite — under load the crawl occasionally captured nothing, and the
+    failure read as "the report is missing its banner" when the truth was
+    "there was no capture to report on". A test should fail for the thing it
+    is testing.
+    """
     from ui_discovery.reports import build_html, build_markdown
 
-    crawl = asyncio.run(crawl_site(
-        f"{server}/dashboard", max_depth=1, max_pages=2,
-        output_dir="/tmp/uidisco_h4_report", auth_state=_expired_state(),
-    ))
+    crawl = _crawl_with(nodes_empty=0, nodes_total=2, logged_out=2)
+    crawl.stats.auth_expired = True
+    crawl.stats.pages_logged_out = 2
+
     assert "Session rejected." in build_markdown(crawl)
     assert "Session rejected." in build_html(crawl)
 

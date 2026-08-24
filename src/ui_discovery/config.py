@@ -321,6 +321,12 @@ class ProbeSettings(BaseModel):
 
     enabled: Optional[bool] = None
     max_interactions: Optional[int] = None
+    # How long to let a page settle after a click before deciding what
+    # changed. Unset inherits, then falls back to the engine's 300ms. Raise it
+    # for a portal that fetches a tab's contents on demand: the cost of too
+    # little is silent, because the state signature is sampled before the new
+    # panel exists and the revealed state is simply never recorded.
+    settle_ms: Optional[int] = None
     # Photograph the modal / drawer / menu / tab panel each click reveals.
     state_capture: Optional[bool] = None
     # Cropped pictures of the components already on a settled page.

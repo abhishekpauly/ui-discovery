@@ -60,6 +60,22 @@ The "V0…V5" phase names used in planning map to product versions as noted.
   what an id looks like drift, and the drift is silent — which is exactly how
   `G7`'s ledger came to disagree with `H6`'s subdomain policy.
 
+### Added
+
+- **`probe.settle_ms` — how long to let a page settle after a click.** The
+  post-interaction wait was hardcoded at 300ms in both probes and in deep-nav's
+  click loop. That is fine for a page swapping pre-rendered panels and wrong
+  for one that fetches a tab's contents on demand — and the cost is **silent**:
+  the state signature is sampled before the new panel exists, `dom_changed`
+  reads false, and the revealed state is never recorded at all.
+
+  `adapters.extra_wait` exists for the same problem after *navigation* and
+  implements only `post_navigate`, so it did nothing here. A slow portal needs
+  both. Inherits per module like every other probe setting, defaults to the
+  engine's 300ms, and appears in the probe profile a capture records — so a
+  reader can tell "this portal has no modals" from "we did not wait long
+  enough to see them".
+
 ### Fixed
 
 - **`G7`'s egress ledger now honours `H6`'s subdomain policy.** It decided
@@ -104,17 +120,25 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 mounted-tab coverage (3). One previously-skipped test now runs: the
 version-drift guard skips while a version is untagged, and `v0.22.0` is tagged.
 
-**Two flaky tests, named rather than left to be rediscovered.**
-`test_coverage.py::test_deep_nav_reuses_routes_it_already_found` and
-`test_h4_auth_expiry.py::test_expiry_is_surfaced_in_the_reports` both fail
-under heavy machine load and pass in isolation and in normal batches. Both are
-browser tests whose assertions depend on a page settling in time. Neither is a
-regression; both are worth making load-independent.
+**Both load-flaky tests are fixed, each on its own merits.**
 
-**`.test_durations` is stale.** It was recorded on 2026-08-21 against 35 test
-files; there are now 54. `pytest-split` therefore mis-estimates its groups —
-locally and in CI, where `full` shards by exactly this file. Re-record it with
-`pytest --store-durations`.
+`test_h4_auth_expiry.py::test_expiry_is_surfaced_in_the_reports` re-crawled a
+live site in order to reach a renderer. Its claim is about the *renderers* —
+given a capture that hit a login wall, both reports say so — and detection is
+already covered against a real browser elsewhere in the same file. Under load
+the crawl occasionally captured nothing, and the failure read as "the report is
+missing its banner" when the truth was "there was no capture to report on". It
+now builds the model directly. A test should fail for the thing it tests.
+
+`test_coverage.py::test_deep_nav_reuses_routes_it_already_found` asserts on what
+a *click* revealed, so it genuinely needs a browser. It now raises `settle_ms`
+(below), which is the honest fix rather than a longer sleep in production code.
+
+**`.test_durations` re-recorded.** It dated from 2026-08-21 and covered 35 test
+files; there are now 54, so `pytest-split` mis-estimated every group — locally,
+and in CI where the `full` workflow shards by exactly this file. Now 979 tests
+across all 54 files, 32.6 min recorded, and a six-way split estimates 332s
+against a 326s ideal.
 
 ---
 

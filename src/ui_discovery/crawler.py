@@ -339,7 +339,7 @@ async def _count_unmarked_clickables(page) -> int:
 
 async def _discover_by_clicking(
     page, url: str, log, policy,
-    tried: set[str], budget: list[int],
+    tried: set[str], budget: list[int], settle_ms: int = 300,
 ) -> list[dict]:
     """Click unmarked clickables and record any route they navigate to.
 
@@ -390,7 +390,11 @@ async def _discover_by_clicking(
                 continue
             attempted += 1
             await handle.click(timeout=2000)
-            await page.wait_for_timeout(600)
+            # The settle that decides whether a reveal is seen at all. A menu
+            # that expands on a transition, or a portal under load, needs more
+            # than the default — and the cost of too little is silent, because
+            # the new anchors simply are not in the DOM yet when we look.
+            await page.wait_for_timeout(max(600, settle_ms))
 
             # Two ways a click can reveal a route, and both count. Navigating
             # is the obvious one; the commoner one in a sidebar is expanding a
@@ -1080,7 +1084,8 @@ async def crawl_site(
         if deep_nav:
             if unmarked:
                 for record in await _discover_by_clicking(
-                        page, url, context.log, policy, deep_tried, deep_budget):
+                        page, url, context.log, policy, deep_tried, deep_budget,
+                        profile.settle_ms):
                     deep_found[record["href"]] = record
             # Routes found anywhere are worth trying from here too: the same
             # global nav is on every page, and Crawlee dedups the rest.
