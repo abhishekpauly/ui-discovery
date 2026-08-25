@@ -34,6 +34,19 @@ The "V0…V5" phase names used in planning map to product versions as noted.
   one I introduced myself: **a seam between two layers that no test crosses.**
   The previous two were `G7`↔`H6` and `M2`↔`H10`.
 
+- **A failed screenshot no longer passes silently.** The crawler caught the
+  exception and set the path to `None`, so a capture with a screenshot quietly
+  absent looked identical to a screen that was never visited. It now emits a
+  `screenshot.failed` event and a warning. The page still succeeds — the model
+  is the valuable artifact — but the gap is now visible.
+
+  Found because a third test was load-flaky for exactly that reason:
+  `test_module_folders_carry_their_own_screenshots` asserted a module folder
+  carries PNGs, and under load the crawl had taken none. The failure read as
+  "module folders lost their screenshots" when the truth was "the crawl never
+  took one". It now asserts that precondition separately, so it fails for the
+  thing it tests.
+
 - **The dead-config guard now checks that a value reaches the crawl**, not just
   that a name exists. For the sections whose whole job is to shape a crawl —
   `identity`, `discovery`, `capture` — each field must be read off the scope in

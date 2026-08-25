@@ -1017,8 +1017,17 @@ async def crawl_site(
             shot = str(shots_dir / f"{slug_for(url)}.png")
             try:
                 await page.screenshot(path=shot, full_page=True)
-            except Exception:
+            except Exception as exc:
+                # A missing picture must not fail the page — the model is the
+                # valuable artifact. But it must not be *silent* either: a
+                # capture with a screenshot quietly absent looks the same as a
+                # screen that was never visited, and under load this is the
+                # first thing to go.
                 shot = None
+                event("screenshot.failed", level="warning", url=url,
+                      error=type(exc).__name__)
+                context.log.warning(
+                    f"Screenshot failed for {url} ({type(exc).__name__})")
             if profile.component_screenshots:
                 # The overlay is still in the page, so every crop inherits it
                 # and no coordinate translation is needed.

@@ -123,6 +123,17 @@ def test_each_module_folder_stands_on_its_own(serve, tmp_path):
 def test_module_folders_carry_their_own_screenshots(serve, tmp_path):
     crawl = _crawl(serve, tmp_path)
     base = crawl.config.start_url.rsplit("/", 1)[0]
+
+    # The precondition, asserted separately: a screenshot that failed during
+    # the crawl leaves no PNG to copy, and without this the failure reads as
+    # "module folders lost their screenshots" when the truth is "the crawl
+    # never took one". That is how this test flaked under load.
+    ordered = [n for n in crawl.pages if "orders.html" in n.url]
+    assert ordered, "the fixture crawl captured no Orders page"
+    assert any(n.page.screenshot_path for n in ordered), (
+        "the crawl took no screenshot of the Orders page, so there is nothing "
+        "for the module folder to carry — see the screenshot.failed event")
+
     written = write_module_artifacts(
         crawl, str(tmp_path / "product"), [("Orders", f"{base}/orders.html")])
     shots = Path(written["Orders"]) / "screenshots"
