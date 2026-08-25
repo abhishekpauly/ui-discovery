@@ -16,7 +16,21 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ---
 
-## [Unreleased]
+## [0.23.0] — What a real portal taught the engine (H12)
+
+Everything here came from pointing the engine at a live product for the first
+time. Not one item was found by reading the code.
+
+The theme is a single failure shape, seen four times: **a feature built before
+a later one and never wired to it.** `G7`'s ledger predated `H6` and ignored
+its subdomain policy. `M2`'s map predated `H10` and ignored its URL list. Each
+kept working, kept looking right, and quietly answered a different question
+than the one it advertised. Both were found in minutes against a real target
+and would not have been found by a test suite that only knows fixtures.
+
+`H12` is the capability the same run asked for: a portal renders one screen
+template once per record, and the only tool for that was a path glob, which is
+all-or-nothing.
 
 ### Added
 
@@ -59,8 +73,6 @@ The "V0…V5" phase names used in planning map to product versions as noted.
   the other module was the obvious alternative and the wrong one: two ideas of
   what an id looks like drift, and the drift is silent — which is exactly how
   `G7`'s ledger came to disagree with `H6`'s subdomain policy.
-
-### Added
 
 - **`probe.settle_ms` — how long to let a page settle after a click.** The
   post-interaction wait was hardcoded at 300ms in both probes and in deep-nav's
@@ -115,7 +127,7 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ### Tests
 
-+34 (944 → 978 collected; 975 passed and 3 skipped). `test_h12_route_templates.py`
++35 (944 → 979 collected; 976 passed and 3 skipped). `test_h12_route_templates.py`
 (20), the `G7`/`H6` agreement tests (5), `H10`-in-the-map regressions (4), and
 mounted-tab coverage (3). One previously-skipped test now runs: the
 version-drift guard skips while a version is untagged, and `v0.22.0` is tagged.
@@ -143,6 +155,14 @@ name would have shared state in a way nobody would think to look for.
 Now `tmp_path`, or `tmp_path_factory` for the module-scoped fixtures that
 cannot request the function-scoped one. A guard test fails the build if the
 hardcoded form comes back, because it is the form that reads more naturally.
+
+**A background-execution pathology on this machine, measured rather than
+guessed.** Detached runs of the suite came in at 42 min, 2h10m, 4h59m and
+15h16m; the same work in the foreground takes 5–9 minutes per sixth. Every one
+of those runs *passed* — it is a wall-clock effect, not a correctness one — but
+it made the suite unusable as a gate until the batches were run in the
+foreground. Not a repo defect, and recorded here only so the next person seeing
+a five-hour test run does not go looking for one.
 
 **`.test_durations` re-recorded.** It dated from 2026-08-21 and covered 35 test
 files; there are now 54, so `pytest-split` mis-estimated every group — locally,
