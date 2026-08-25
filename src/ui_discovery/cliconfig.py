@@ -266,6 +266,9 @@ def crawl_options(scope: Scope, args) -> CrawlOptions:  # noqa: ANN001
         headless=bool(getattr(args, "headless", False)),
         dedupe_queries=pick(flag("dedupe_queries"),
                             scope.identity.dedupe_queries, False),
+        # H12: one screen per template rather than one per record.
+        collapse_instances=scope.identity.collapse_instances,
+        max_instances_per_route=scope.identity.max_instances_per_route,
         drop_params=frozenset(drop_params) or None,
         hash_routes=pick(flag("hash_routes"), scope.identity.hash_routes, False),
         probe=default_profile.enabled,

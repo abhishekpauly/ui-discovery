@@ -76,3 +76,46 @@ def test_config_field_is_consumed_somewhere(field):
         f"outside config.py — either wire it up or remove it. A toggle that "
         f"silently does nothing is worse than no toggle."
     )
+
+
+# --- a mention is not a wiring ----------------------------------------------
+#
+# The check above proves a field name appears *somewhere*. `H12` showed that is
+# not enough: `identity.collapse_instances` was declared, referenced in
+# `crawler.py` and `map.py` as a `CrawlOptions` field, and read from the scope
+# by nothing. The guard passed, every unit test passed — because they built
+# `CrawlOptions` directly — and the feature was dead through the one path an
+# operator actually uses. It took a real portal run to find.
+#
+# `cliconfig.crawl_options` is the single place a scope becomes a crawl, so for
+# the sections whose whole job is to shape a crawl, being read there is the
+# thing worth asserting.
+
+CRAWL_SHAPING_SECTIONS = ("identity", "discovery", "capture")
+
+
+def _crawl_shaping_fields() -> list[tuple[str, str]]:
+    pairs = []
+    for section in CRAWL_SHAPING_SECTIONS:
+        model = Scope.model_fields[section].annotation
+        for field_name in model.model_fields:
+            pairs.append((section, field_name))
+    return sorted(pairs)
+
+
+@pytest.mark.parametrize("section,field", _crawl_shaping_fields())
+def test_a_crawl_shaping_field_is_read_where_a_scope_becomes_a_crawl(
+        section, field):
+    """It must be read off the scope, not merely named.
+
+    `scope.identity.collapse_instances` counts. A `CrawlOptions` field of the
+    same name does not — that is what made the dead wiring invisible.
+    """
+    text = (SRC / "cliconfig.py").read_text(encoding="utf-8")
+    pattern = rf"scope\.{section}\.{re.escape(field)}\b"
+    assert re.search(pattern, text), (
+        f"`{section}.{field}` is never read off the scope in cliconfig.py, so "
+        f"a config that sets it changes nothing about the run. Wire it into "
+        f"`crawl_options` (or its sibling resolvers) — a name that merely "
+        f"appears elsewhere in src/ is what let `collapse_instances` ship dead."
+    )

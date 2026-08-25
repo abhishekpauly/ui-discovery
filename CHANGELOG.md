@@ -16,6 +16,37 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **`H12`'s config key was never wired, so the feature was dead through the
+  only path an operator uses.** `identity.collapse_instances` was declared,
+  referenced in `crawler.py` and `map.py` as a `CrawlOptions` field, and read
+  off the scope by nothing. Setting it in a config changed nothing.
+
+  Every unit test passed, because they construct `CrawlOptions` directly. So
+  did `test_no_dead_config`, because the name *appears* in `src/`. It took a
+  run against a real portal — which captured five renderings of one builder
+  screen instead of one — to find it.
+
+  That is the third instance in two days of one failure shape, and the first
+  one I introduced myself: **a seam between two layers that no test crosses.**
+  The previous two were `G7`↔`H6` and `M2`↔`H10`.
+
+- **The dead-config guard now checks that a value reaches the crawl**, not just
+  that a name exists. For the sections whose whole job is to shape a crawl —
+  `identity`, `discovery`, `capture` — each field must be read off the scope in
+  `cliconfig.crawl_options`, the single place a scope becomes a crawl.
+  Verified by removing the wiring and watching it fail.
+
+  Confirmed against the portal that motivated `H12`: **one agent-builder screen
+  and one app-builder screen**, with 38 duplicates skipped and ledgered by
+  template, where the exclude globs had captured none and the dead flag had
+  captured five.
+
+---
+
 ## [0.23.0] — What a real portal taught the engine (H12)
 
 Everything here came from pointing the engine at a live product for the first
