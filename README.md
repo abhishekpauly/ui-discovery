@@ -308,6 +308,45 @@ navigation, where links that leave the product deliberately do not count.
 Both appear in the report and as `# orphan` / `# dead-end` comments in
 `urls.txt`, which stays consumable by `--from`.
 
+### One screen per record is one screen (H12)
+
+A builder, CRM or admin portal renders one screen template once per record.
+Twenty saved agents means twenty URLs and **one screen** — and on a real portal
+eleven of the first twenty-five screens captured were the same builder screen
+with a different id.
+
+The obvious fix is an `exclude` glob, and it is a trap: it is all-or-nothing.
+Excluding `/agent-builder/**` stops the duplicates *and removes the screen*,
+along with every tab and modal inside it.
+
+```yaml
+identity:
+  collapse_instances: true       # off by default
+  max_instances_per_route: 1     # how many renderings of each template to keep
+```
+
+Identifier-shaped **values** collapse to `:id` — in path segments *and* query
+values:
+
+| URL | Template |
+| --- | --- |
+| `/agent-builder/<uuid-A>?accountId=<uuid>&configTab=BasicDetails` | `/agent-builder/:id?accountId=:id&configTab=BasicDetails` |
+| `/agent-builder/<uuid-B>?accountId=<uuid>&configTab=BasicDetails` | *the same* — collapsed |
+| `/agent-builder/<uuid-A>?accountId=<uuid>&configTab=Instructions` | *different* — kept |
+
+Both halves matter. Collapse only the path and two records' *BasicDetails* tabs
+never merge; collapse the whole query and one record's seven tabs merge into
+one. So **twenty agents become one, and that one keeps all seven of its tabs.**
+
+The rule is deliberately narrow, because over-collapsing is the worse failure:
+`/settings/general` and `/settings/billing` are two screens, not one. It is the
+same rule `endpoints.md` has always used to report thirty calls to
+`/users/<uuid>` as one endpoint.
+
+A collapsed URL is a **skip, not an exclusion** — it appears in *Not captured*
+as `duplicate-instance` naming the template, so you can see what it cost. And
+`--dry-run` shows the collapse before the crawl spends the budget.
+
 ### How much of a hostname counts as your product (H6)
 
 Real portals are rarely on one host. The engine compares hostnames exactly by

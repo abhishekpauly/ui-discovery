@@ -198,9 +198,14 @@ def test_global_nav_is_clicked_once_per_crawl_not_once_per_page(serve, tmp_path)
     spent: list[int] = []
     original = crawler_mod._discover_by_clicking
 
-    async def measuring(page, url, log, policy, tried, budget):
+    # `*args` rather than the exact signature: this double exists to count the
+    # click budget, not to pin an internal function's parameter list. Spelling
+    # the arguments out meant that adding one to `_discover_by_clicking` failed
+    # this test for a reason unrelated to what it asserts.
+    async def measuring(page, url, log, policy, tried, budget, *args, **kwargs):
         before = budget[0]
-        result = await original(page, url, log, policy, tried, budget)
+        result = await original(page, url, log, policy, tried, budget,
+                                *args, **kwargs)
         spent.append(before - budget[0])
         return result
 
@@ -221,11 +226,21 @@ def test_global_nav_is_clicked_once_per_crawl_not_once_per_page(serve, tmp_path)
 
 def test_deep_nav_reuses_routes_it_already_found(serve, tmp_path):
     """The flip side of the cache: clicking once must not mean discovering
-    once. A route found on page one is still worth queueing."""
+    once. A route found on page one is still worth queueing.
+
+    `settle_ms` is raised because this asserts on what a *click* revealed, and
+    the default 300ms is a budget rather than a guarantee — under load the
+    state signature is sampled before the revealed link exists, and the test
+    fails for a reason that has nothing to do with route reuse. Giving it room
+    tests the property instead of the machine.
+    """
+    from ui_discovery.interactions import ProbeProfile
+
     site = serve("fixtures/hidden_nav")
     crawl = asyncio.run(crawl_site(
         site.url("shared-nav.html"), max_depth=2, max_pages=6,
-        output_dir=str(tmp_path), deep_nav=True))
+        output_dir=str(tmp_path), deep_nav=True,
+        probe_default=ProbeProfile(settle_ms=1500)))
     assert "revealed.html" in _urls(crawl)
 
 

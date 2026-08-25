@@ -16,7 +16,77 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ---
 
-## [Unreleased]
+## [0.23.0] — What a real portal taught the engine (H12)
+
+Everything here came from pointing the engine at a live product for the first
+time. Not one item was found by reading the code.
+
+The theme is a single failure shape, seen four times: **a feature built before
+a later one and never wired to it.** `G7`'s ledger predated `H6` and ignored
+its subdomain policy. `M2`'s map predated `H10` and ignored its URL list. Each
+kept working, kept looking right, and quietly answered a different question
+than the one it advertised. Both were found in minutes against a real target
+and would not have been found by a test suite that only knows fixtures.
+
+`H12` is the capability the same run asked for: a portal renders one screen
+template once per record, and the only tool for that was a path glob, which is
+all-or-nothing.
+
+### Added
+
+- **`H12` One screen per record is one screen.** A builder, CRM or admin portal
+  renders one screen template once per record: `/agent-builder/<uuid>` is the
+  same UI for every saved agent. A real capture found eleven of its first
+  twenty-five screens were that one screen with a different id.
+
+  The only tool for it was a path-glob `exclude`, which is all-or-nothing — and
+  on that portal the choice was made once and silently cost the whole *Manage
+  Agent* area, including seven config tabs that were never duplicates of
+  anything. The duplication was merely wasteful; the cure killing the patient
+  is what made this worth building.
+
+  ```yaml
+  identity:
+    collapse_instances: true        # off by default
+    max_instances_per_route: 1
+  ```
+
+  `util.route_template` replaces identifier-shaped **values** with `:id`, in
+  path segments *and query values*. Both halves are load-bearing, and both were
+  observed failing first: collapse only the path and two records' *BasicDetails*
+  tabs never merge; collapse the whole query and one record's seven tabs merge
+  into one. `?accountId=<uuid>&configTab=BasicDetails` becomes
+  `?accountId=:id&configTab=BasicDetails`.
+
+  Over-collapsing is the worse failure, so the rule is deliberately narrow:
+  `/settings/general` and `/settings/billing` are two screens, and a rule loose
+  enough to merge them would report a product as smaller than it is.
+
+  A capped URL is a **skip, not an exclusion** — it lands in `H8`'s ledger as
+  `duplicate-instance`, naming the template. "You already have this screen"
+  reads very differently from "you asked not to have this screen". `M2`'s map
+  reports the template as the deciding rule, so `--dry-run` shows the collapse
+  before the budget is spent.
+
+- **New `idpattern` module.** One rule for what an identifier looks like,
+  shared by `network.endpoint_pattern` (since V3) and `H12`. A second regex in
+  the other module was the obvious alternative and the wrong one: two ideas of
+  what an id looks like drift, and the drift is silent — which is exactly how
+  `G7`'s ledger came to disagree with `H6`'s subdomain policy.
+
+- **`probe.settle_ms` — how long to let a page settle after a click.** The
+  post-interaction wait was hardcoded at 300ms in both probes and in deep-nav's
+  click loop. That is fine for a page swapping pre-rendered panels and wrong
+  for one that fetches a tab's contents on demand — and the cost is **silent**:
+  the state signature is sampled before the new panel exists, `dom_changed`
+  reads false, and the revealed state is never recorded at all.
+
+  `adapters.extra_wait` exists for the same problem after *navigation* and
+  implements only `post_navigate`, so it did nothing here. A slow portal needs
+  both. Inherits per module like every other probe setting, defaults to the
+  engine's 300ms, and appears in the probe profile a capture records — so a
+  reader can tell "this portal has no modals" from "we did not wait long
+  enough to see them".
 
 ### Fixed
 
@@ -36,6 +106,18 @@ The "V0…V5" phase names used in planning map to product versions as noted.
   rather than one the ledger makes on its behalf. A regression test asserts the
   ledger against `same_site` itself rather than against a copy of its rules.
 
+- **`M3`'s dry run under-reported a `urls:` config.** `build_map` predates
+  `H10` and never learned about the explicit URL list, so `--dry-run` on a
+  config built around `urls:` reported **one** URL while the crawl would
+  capture **seven**. A preview that under-reports the run it is previewing is
+  the one failure that artifact cannot afford. The map now treats the list as a
+  source (`url-list`), judges each entry by the same gates, and — matching the
+  crawler — skips the sitemap read when a list is present.
+
+  The second instance today of one defect class: a feature built before a later
+  one and never wired to it. Both were found by running the engine against a
+  real portal rather than by reading the code.
+
 - **A trap worth knowing, now pinned by a test.** `registrable-domain` needs a
   *public suffix*. An internal TLD — `.internal`, `.local`, `.test` — has none,
   so the policy falls back to comparing hosts and two subdomains of one
@@ -45,9 +127,48 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ### Tests
 
-+5 (944 → 949 collected; 946 passed and 3 skipped). One previously-skipped
-test now runs: the version-drift guard skips while a version is untagged, and
-`v0.22.0` is tagged.
++35 (944 → 979 collected; 976 passed and 3 skipped). `test_h12_route_templates.py`
+(20), the `G7`/`H6` agreement tests (5), `H10`-in-the-map regressions (4), and
+mounted-tab coverage (3). One previously-skipped test now runs: the
+version-drift guard skips while a version is untagged, and `v0.22.0` is tagged.
+
+**Both load-flaky tests are fixed, each on its own merits.**
+
+`test_h4_auth_expiry.py::test_expiry_is_surfaced_in_the_reports` re-crawled a
+live site in order to reach a renderer. Its claim is about the *renderers* —
+given a capture that hit a login wall, both reports say so — and detection is
+already covered against a real browser elsewhere in the same file. Under load
+the crawl occasionally captured nothing, and the failure read as "the report is
+missing its banner" when the truth was "there was no capture to report on". It
+now builds the model directly. A test should fail for the thing it tests.
+
+`test_coverage.py::test_deep_nav_reuses_routes_it_already_found` asserts on what
+a *click* revealed, so it genuinely needs a browser. It now raises `settle_ms`
+(below), which is the honest fix rather than a longer sleep in production code.
+
+**Seventeen tests wrote captures to hardcoded `/tmp/uidisco_*` paths**, across
+eight files. Nothing failed because of it — each name was distinct — but
+pytest never cleaned them up, so a machine that had run the suite a few times
+was carrying **94MB across 17 stale capture folders**, and two tests sharing a
+name would have shared state in a way nobody would think to look for.
+
+Now `tmp_path`, or `tmp_path_factory` for the module-scoped fixtures that
+cannot request the function-scoped one. A guard test fails the build if the
+hardcoded form comes back, because it is the form that reads more naturally.
+
+**A background-execution pathology on this machine, measured rather than
+guessed.** Detached runs of the suite came in at 42 min, 2h10m, 4h59m and
+15h16m; the same work in the foreground takes 5–9 minutes per sixth. Every one
+of those runs *passed* — it is a wall-clock effect, not a correctness one — but
+it made the suite unusable as a gate until the batches were run in the
+foreground. Not a repo defect, and recorded here only so the next person seeing
+a five-hour test run does not go looking for one.
+
+**`.test_durations` re-recorded.** It dated from 2026-08-21 and covered 35 test
+files; there are now 54, so `pytest-split` mis-estimated every group — locally,
+and in CI where the `full` workflow shards by exactly this file. Now 979 tests
+across all 54 files, 32.6 min recorded, and a six-way split estimates 332s
+against a 326s ideal.
 
 ---
 

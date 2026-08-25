@@ -435,3 +435,42 @@ def test_cli_is_headed_by_default_and_headless_on_request():
     from ui_discovery import CrawlOptions
 
     assert CrawlOptions().headless is True
+
+
+# --- test hygiene ------------------------------------------------------------
+
+
+def test_no_test_writes_a_capture_outside_pytests_temp_dir():
+    """Captures belong in `tmp_path`, not in a path spelled into the test.
+
+    Seventeen tests wrote to hardcoded `/tmp/uidisco_*` directories. Nothing
+    failed because of it — each name was distinct — but they were never cleaned
+    up, so a machine that had run the suite a few times was carrying 94MB of
+    stale captures, and two tests sharing a name would have shared state in a
+    way nobody would think to look for.
+
+    `tmp_path` (function-scoped) and `tmp_path_factory` (module-scoped) are the
+    same fixtures pytest already cleans up. This guard exists because the
+    hardcoded form is the one that reads more naturally, so it comes back.
+    """
+    offenders = []
+    for path in sorted(Path(__file__).parent.glob("test_*.py")):
+        # This file states the pattern it is looking for, so it matches
+        # itself. Skipping it by name is clearer than contorting the check.
+        if path.name == Path(__file__).name:
+            continue
+        for number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            if "output_dir=" not in stripped:
+                continue
+            # A literal string argument is the smell; `str(tmp_path)`,
+            # `str(out_dir)` and friends are all fine.
+            if 'output_dir="' in stripped or "output_dir='" in stripped:
+                offenders.append(f"{path.name}:{number}: {stripped}")
+
+    assert not offenders, (
+        "these write captures to a hardcoded path instead of tmp_path:\n  "
+        + "\n  ".join(offenders))

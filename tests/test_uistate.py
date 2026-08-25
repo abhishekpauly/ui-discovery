@@ -393,3 +393,48 @@ def test_a_short_text_name_is_still_used():
     drawer = el(attributes={"role": "dialog"}, text="Filters", dom_path="div#d")
     trigger = el(category="button", tag="button", accessible_name="Open")
     assert classify_state(trigger, [drawer])["name"] == "Filters"
+
+
+# --- tabs the way component libraries actually build them -------------------
+#
+# `interactive/index.html` toggles `hidden` on two panels that are in the DOM
+# from the start. Radix, Headless UI and MUI commonly do neither: the inactive
+# panel is unmounted and the active one created, and generated ids contain
+# characters that need CSS escaping, so `aria-controls` and `dom_path` are not
+# the same string. Nothing covered that shape until a real portal raised the
+# question.
+
+
+@pytest.fixture(scope="module")
+def mounted_tabs_probe(tmp_path_factory):
+    states = tmp_path_factory.mktemp("mounted-tab-states")
+    probe = probe_page(
+        fixture_url("interactive/tabs-mounted.html"),
+        states_dir=str(states),
+        capture_states=True,
+    )
+    return probe, states
+
+
+def test_a_panel_that_is_mounted_on_switch_is_still_captured(mounted_tabs_probe):
+    probe, _ = mounted_tabs_probe
+    panels = [s for s in probe.states if s.kind == "tab-panel"]
+    assert panels, f"no tab panel captured; got {[s.kind for s in probe.states]}"
+
+
+def test_an_escaped_id_still_resolves_to_its_panel(mounted_tabs_probe):
+    r"""`aria-controls="radix-:r1:-content-instructions"` becomes
+    `div#radix-\:r1\:-content-instructions` in `dom_path`. If those two are
+    ever compared without escaping, every panel silently stops resolving."""
+    probe, _ = mounted_tabs_probe
+    panels = [s for s in probe.states if s.kind == "tab-panel"]
+    assert any("radix" in (s.dom_path or "") for s in panels), (
+        f"panels resolved to {[s.dom_path for s in panels]}")
+
+
+def test_each_switched_tab_is_its_own_state(mounted_tabs_probe):
+    """Three tabs, distinct panels. Collapsing them would report a config
+    screen as having one section when it has three."""
+    probe, _ = mounted_tabs_probe
+    labels = {s.trigger_label for s in probe.states if s.kind == "tab-panel"}
+    assert len(labels) >= 2, f"only these tabs opened anything: {labels}"

@@ -77,6 +77,17 @@ class ProbeProfile:
     tabs: str = "all"
     tab_labels: tuple[str, ...] = ()
     tab_exclude: tuple[str, ...] = ()
+    # How long to let the page settle after a click before deciding what
+    # changed. 300ms is today's value and is fine for a page that swaps
+    # pre-rendered panels; it is not enough for one that fetches a tab's
+    # contents on demand, and there the cost is silent — the state signature
+    # is sampled before the new panel exists, `dom_changed` reads false, and
+    # the revealed state is never recorded.
+    #
+    # `adapters.extra_wait` exists for the same problem after *navigation* and
+    # only implements `post_navigate`, so it does nothing here. This is the
+    # interaction-side equivalent, and a slow portal needs both.
+    settle_ms: int = 300
 
     def describe(self) -> dict:
         """The profile as plain data, for recording on a snapshot. A capture
@@ -84,6 +95,7 @@ class ProbeProfile:
         cannot tell "this portal has no Audit tab" from "we skipped it"."""
         return {
             "enabled": self.enabled,
+            "settle_ms": self.settle_ms,
             "max_interactions": self.max_interactions,
             "state_capture": self.state_capture,
             "component_screenshots": self.component_screenshots,
@@ -494,7 +506,7 @@ async def probe_open_page_async(
         interaction.before = before
         try:
             await handle.click(timeout=3000)
-            await page.wait_for_timeout(300)
+            await page.wait_for_timeout(profile.settle_ms)
             _score(interaction, before, await _state_async(page))
             executed_count += 1
 
@@ -689,7 +701,7 @@ def probe_page(
                 interaction.before = before
                 try:
                     handle.click(timeout=3000)
-                    page.wait_for_timeout(300)
+                    page.wait_for_timeout(profile.settle_ms)
                     _score(interaction, before, _state(page))
                     executed_count += 1
 

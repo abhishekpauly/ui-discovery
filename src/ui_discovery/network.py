@@ -12,6 +12,7 @@ import re
 from typing import Iterable
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from .idpattern import ID_SEGMENT
 from .util import SAME_HOST, same_site
 
 _SENSITIVE_KEYS = re.compile(
@@ -20,7 +21,9 @@ _SENSITIVE_KEYS = re.compile(
     r"refresh[_-]?token|code|bearer)",
     re.I,
 )
-_ID_SEG = re.compile(r"^(\d+|[0-9a-f]{8,}|[0-9a-fA-F-]{16,})$")
+# H12: one rule for both callers — see `idpattern`. This name is kept so the
+# module reads as it did.
+_ID_SEG = ID_SEGMENT
 
 
 def redact_url(url: str, extra_keys: tuple[str, ...] = ()) -> str:

@@ -250,6 +250,69 @@ V5 (LLM layer) are the ambitious, optional payoffs and come last.
 - **Files.** `browser.py`, `config.py`, `run.py`, `tests/`.
 - **Depends-on.** G2 (the envelope this is recorded in).
 
+### H12 — One screen per record is one screen  ·  Effort: M
+
+- **Goal.** A builder, CRM or admin portal renders **one screen template once
+  per record**: `/agent-builder/<uuid>` is the same UI for every saved agent,
+  and a real capture found eleven of its first twenty-five screens were that
+  one screen with a different id. The only tool for it today is a path-glob
+  `exclude`, which is all-or-nothing — spend the budget on eleven duplicates,
+  or remove the screen from the capture entirely. On a real portal that choice
+  was made once and silently cost the whole *Manage Agent* area, including
+  seven genuinely distinct config tabs that were never duplicates of anything.
+
+  The engine already solves exactly this problem one layer down.
+  `network.endpoint_pattern` collapses identifier-looking path segments to
+  `:id` so thirty calls to `/users/<uuid>` report as one endpoint. Page
+  identity never learned the same trick.
+
+- **Build.** `util.route_template(url)` — the URL with identifier-shaped
+  *values* replaced by `:id`, in path segments **and in query values**, reusing
+  `network`'s existing `_ID_SEG` rather than adding a second idea of what an
+  identifier looks like.
+
+  Collapsing query *values* is what makes this correct rather than
+  approximately correct. `?accountId=<uuid>&configTab=BasicDetails` must
+  collapse the account and keep the tab: otherwise two records' *BasicDetails*
+  tabs look like different screens (nothing collapses), or all seven tabs of
+  one record look like the same screen (everything collapses). Both were
+  observed on the real portal that motivated this.
+
+  Config, under the existing `identity:` block since this *is* page identity:
+
+  ```yaml
+  identity:
+    collapse_instances: false   # default off — no existing capture moves
+    max_instances_per_route: 1  # how many of each template to capture
+  ```
+
+  In `crawler.crawl_site`, a URL whose template already has
+  `max_instances_per_route` captures is not enqueued, and lands in `H8`'s
+  ledger with reason `duplicate-instance` and a detail naming the template and
+  the URL already captured. It is a **skip, not an exclusion**: the difference
+  matters to a reader, because one means "you already have this screen" and the
+  other means "you asked not to have it".
+
+  `M2`'s map reports the template as the deciding rule
+  (`instances:/platform/agent-builder/:id`) so a dry run says which screens the
+  cap will collapse *before* the crawl spends the budget.
+
+- **Acceptance.** A fixture serving one template under five ids captures one
+  screen and ledgers four as `duplicate-instance`, naming the template;
+  `max_instances_per_route: 2` captures two; seven query-tab variants of a
+  single record stay seven screens, because only identifier-shaped values
+  collapse; two records' identical tabs collapse to one; the default (`false`)
+  reproduces today's crawl exactly, asserted against an unchanged fixture; and
+  the template is stable across two runs.
+
+- **Files.** `util.py`, `network.py` (share `_ID_SEG`), `config.py`,
+  `crawler.py`, `map.py`, `models.py`, `tests/`.
+
+- **Depends-on.** H1 (query normalization runs first, so a template is computed
+  from an already-canonical URL), H8 (the ledger it reports into). Supersedes
+  the path-glob workaround for instance screens, which stays available and
+  stays the right answer for areas you genuinely do not want.
+
 ---
 
 ## B. Turn captures into deliverables (deterministic, high value)

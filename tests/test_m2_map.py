@@ -293,3 +293,44 @@ def test_a_bad_from_crawl_path_is_a_clean_error(tmp_path, capsys):
                str(tmp_path / "nope"), "--output", str(tmp_path)])
     assert rc == 1
     assert "Could not read" in capsys.readouterr().err
+
+
+# --- H10's URL list is a source too ----------------------------------------
+#
+# `M2` predates `H10`. Without this, a dry run of a config built around `urls:`
+# reported one URL and the crawl then captured seven — a preview that
+# under-reports the run it is previewing is the one failure this artifact
+# cannot afford. Same defect class as `G7`'s ledger ignoring `H6`'s policy: a
+# feature built before a later one and never wired to it.
+
+
+def test_an_explicit_url_list_is_on_the_map():
+    urls = [ROOT + "a", ROOT + "b", ROOT + "c"]
+    url_map = build_map(ROOT, _scope(urls=urls), read_sitemap=False)
+    assert {e.url for e in url_map.entries} == {ROOT, *urls}
+    assert url_map.stats["by_source"]["url-list"] == 3
+
+
+def test_a_listed_url_is_judged_like_any_other():
+    """A list is convenience, never an authorization — the map has to say so
+    as plainly as the crawler does."""
+    scope = _scope(urls=[ROOT + "app/ok", ROOT + "private/x"],
+                   scope={"exclude": ["/private/**"]})
+    verdicts = {e.url: (e.in_scope, e.decided_by)
+                for e in build_map(ROOT, scope, read_sitemap=False).entries}
+    assert verdicts[ROOT + "app/ok"][0] is True
+    assert verdicts[ROOT + "private/x"] == (False, "exclude:/private/**")
+
+
+def test_a_url_list_suppresses_the_sitemap_read(monkeypatch):
+    """Matching the crawler: an explicit list answers the question the sitemap
+    answers, so the map must not report URLs the run will never visit."""
+    import ui_discovery.map as map_module
+
+    def fail(*args, **kwargs):
+        raise AssertionError("the map read a sitemap despite an explicit list")
+
+    monkeypatch.setattr(map_module, "read_sitemaps", fail)
+    url_map = build_map(ROOT, _scope(urls=[ROOT + "a"],
+                                     discovery={"sitemap": "include"}))
+    assert {e.url for e in url_map.entries} == {ROOT, ROOT + "a"}

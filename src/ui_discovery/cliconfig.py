@@ -208,6 +208,9 @@ def probe_profile(
 
     return ProbeProfile(
         enabled=bool(enabled),
+        # Inherits like every other probe setting; the engine's own default is
+        # the last word, so an unchanged config behaves exactly as before.
+        settle_ms=int(layered("settle_ms", ProbeProfile.settle_ms)),
         max_interactions=int(max_interactions),
         state_capture=bool(state_capture),
         component_screenshots=bool(component_screenshots),

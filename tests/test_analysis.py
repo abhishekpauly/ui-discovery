@@ -24,7 +24,7 @@ def _free_port() -> int:
 
 
 @pytest.fixture(scope="module")
-def analysis():
+def analysis(tmp_path_factory):
     port = _free_port()
     handler = functools.partial(
         http.server.SimpleHTTPRequestHandler, directory=str(SITE)
@@ -36,7 +36,7 @@ def analysis():
             crawl_site(
                 f"http://127.0.0.1:{port}/index.html",
                 max_depth=3,
-                output_dir="/tmp/uidisco_v2",
+                output_dir=str(tmp_path_factory.mktemp("analysis")),
             )
         )
     finally:

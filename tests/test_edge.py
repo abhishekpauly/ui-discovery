@@ -93,10 +93,10 @@ def test_v0_deeply_nested_no_crash():
 # V1 — crawler resilience
 # =========================================================================
 
-def test_v1_broken_links_and_non_html(serve):
+def test_v1_broken_links_and_non_html(serve, tmp_path):
     srv = serve("fixtures/edge/site")
     crawl = asyncio.run(crawl_site(srv.url("index.html"), max_depth=3,
-                                   output_dir="/tmp/uidisco_edge_site"))
+                                   output_dir=str(tmp_path)))
     urls = {n.url for n in crawl.pages}
     # The crawl completes despite a 404 link and a non-HTML resource.
     assert any(u.endswith("good.html") for u in urls)
@@ -106,17 +106,17 @@ def test_v1_broken_links_and_non_html(serve):
     assert crawl.stats.pages_crawled >= 2
 
 
-def test_v1_max_depth_zero_is_start_page_only(serve):
+def test_v1_max_depth_zero_is_start_page_only(serve, tmp_path):
     srv = serve("fixtures/edge/site")
     crawl = asyncio.run(crawl_site(srv.url("index.html"), max_depth=0,
-                                   output_dir="/tmp/uidisco_edge_d0"))
+                                   output_dir=str(tmp_path)))
     assert crawl.stats.pages_crawled == 1
 
 
-def test_v1_start_url_404_does_not_crash(serve):
+def test_v1_start_url_404_does_not_crash(serve, tmp_path):
     srv = serve("fixtures/edge/site")
     crawl = asyncio.run(crawl_site(srv.url("does-not-exist.html"), max_depth=1,
-                                   output_dir="/tmp/uidisco_edge_404"))
+                                   output_dir=str(tmp_path)))
     # No pages successfully modelled, but a valid Crawl object is returned.
     assert isinstance(crawl, Crawl)
     assert crawl.stats.pages_crawled == 0

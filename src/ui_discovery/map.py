@@ -39,12 +39,18 @@ from .cliconfig import add_config_argument, load_or_exit, resolve_output_dir
 from .config import Scope
 from .discovery import read_sitemaps
 from .models import Crawl, MappedUrl, UrlMap
-from .util import normalize_url, path_matches, same_site, slug_for
+from .util import (
+    normalize_url,
+    path_matches,
+    route_template,
+    same_site,
+    slug_for,
+)
 
 # The order sources are reported in: what the config states, then what the
 # product declares, then what navigation found. Stable, so two runs of the
 # same map are byte-identical.
-SOURCE_ORDER = ("seed", "module", "sitemap", "link", "deep-nav")
+SOURCE_ORDER = ("seed", "url-list", "module", "sitemap", "link", "deep-nav")
 
 
 def decide(url: str, scope: Scope, start_url: str) -> tuple[bool, str]:
@@ -108,12 +114,22 @@ def build_map(
     root = normalize(start_url)
     candidates: dict[str, tuple[str, Optional[int]]] = {root: ("seed", 0)}
 
+    # H10's explicit list. `M2` predates it, and without this a dry run of a
+    # config built around `urls:` reported one URL and then the crawl captured
+    # seven — a preview that under-reports the run it is previewing is the one
+    # failure this artifact cannot afford.
+    for listed in scope.urls:
+        if listed and listed.strip():
+            candidates.setdefault(normalize(listed.strip()), ("url-list", 0))
+
     for module in scope.modules:
         if module.start_url:
             candidates.setdefault(normalize(module.start_url), ("module", None))
 
     warnings: list[str] = []
-    if read_sitemap and scope.discovery.sitemap != "skip":
+    # Matching the crawler: an explicit list answers the question the sitemap
+    # answers, so the map must not report URLs the run will never visit.
+    if read_sitemap and scope.discovery.sitemap != "skip" and not scope.urls:
         found = read_sitemaps(
             start_url,
             mode=scope.discovery.sitemap,
@@ -143,6 +159,21 @@ def build_map(
         in_scope, rule = decide(url, scope, root)
         entries.append(MappedUrl(url=url, source=source, in_scope=in_scope,
                                  decided_by=rule, depth=depth))
+
+    # H12: the instance cap runs before the budget, in the order a crawl
+    # applies them — a collapsed duplicate must not consume a budget slot, or
+    # the map would under-report what fits.
+    if scope.identity.collapse_instances:
+        cap = max(1, scope.identity.max_instances_per_route)
+        counts: dict[str, int] = {}
+        for entry in sorted(entries, key=_ordering):
+            if not entry.in_scope:
+                continue
+            template = route_template(entry.url)
+            counts[template] = counts.get(template, 0) + 1
+            if counts[template] > cap:
+                entry.in_scope = False
+                entry.decided_by = f"instances:{template}"
 
     # The budget is applied *after* scope, to the in-scope set, in the order a
     # crawl would reach them — so "you will run out before Reports" is a thing

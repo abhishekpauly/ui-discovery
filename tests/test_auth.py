@@ -77,9 +77,9 @@ def test_with_session_sees_protected_content(server):
     assert any("Secret Dashboard" == h.text for h in page.headings)
 
 
-def test_crawl_uses_session(server):
+def test_crawl_uses_session(server, tmp_path):
     crawl = asyncio.run(crawl_site(f"{server}/dashboard", max_depth=1,
-                                   output_dir="/tmp/uidisco_auth",
+                                   output_dir=str(tmp_path),
                                    auth_state=_state_for(server)))
     titles = {n.page.title for n in crawl.pages}
     assert "Dashboard" in titles  # protected <title>, not "Login"

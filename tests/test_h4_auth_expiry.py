@@ -186,30 +186,30 @@ def test_expired_session_is_detected(server):
     assert page.auth.looks_logged_out is True
 
 
-def test_crawl_marks_auth_expired_when_session_is_stale(server):
+def test_crawl_marks_auth_expired_when_session_is_stale(server, tmp_path):
     crawl = asyncio.run(crawl_site(
         f"{server}/dashboard", max_depth=1, max_pages=2,
-        output_dir="/tmp/uidisco_h4_expired", auth_state=_expired_state(),
+        output_dir=str(tmp_path), auth_state=_expired_state(),
     ))
     assert crawl.config.auth_used is True
     assert crawl.stats.pages_logged_out > 0
     assert crawl.stats.auth_expired is True
 
 
-def test_crawl_with_valid_session_is_clean(server):
+def test_crawl_with_valid_session_is_clean(server, tmp_path):
     crawl = asyncio.run(crawl_site(
         f"{server}/dashboard", max_depth=1, max_pages=2,
-        output_dir="/tmp/uidisco_h4_valid", auth_state=_valid_state(),
+        output_dir=str(tmp_path), auth_state=_valid_state(),
     ))
     assert crawl.stats.auth_expired is False
     assert crawl.stats.pages_logged_out == 0
 
 
-def test_no_session_supplied_is_not_an_expiry(server):
+def test_no_session_supplied_is_not_an_expiry(server, tmp_path):
     # Landing on a login page without credentials is expected, not a failure.
     crawl = asyncio.run(crawl_site(
         f"{server}/dashboard", max_depth=1, max_pages=2,
-        output_dir="/tmp/uidisco_h4_anon",
+        output_dir=str(tmp_path),
     ))
     assert crawl.config.auth_used is False
     assert crawl.stats.pages_logged_out > 0
@@ -254,13 +254,25 @@ def test_crawler_applies_localstorage_from_the_session(serve, tmp_path):
     )
 
 
-def test_expiry_is_surfaced_in_the_reports(server):
+def test_expiry_is_surfaced_in_the_reports():
+    """Built from a model rather than from a live crawl, deliberately.
+
+    The claim here is about the *renderers*: given a capture that hit a login
+    wall, both reports say so. Detection is already covered above, against a
+    real browser and this module's server.
+
+    Re-crawling to reach the renderer made this the flakiest test in the
+    suite — under load the crawl occasionally captured nothing, and the
+    failure read as "the report is missing its banner" when the truth was
+    "there was no capture to report on". A test should fail for the thing it
+    is testing.
+    """
     from ui_discovery.reports import build_html, build_markdown
 
-    crawl = asyncio.run(crawl_site(
-        f"{server}/dashboard", max_depth=1, max_pages=2,
-        output_dir="/tmp/uidisco_h4_report", auth_state=_expired_state(),
-    ))
+    crawl = _crawl_with(nodes_empty=0, nodes_total=2, logged_out=2)
+    crawl.stats.auth_expired = True
+    crawl.stats.pages_logged_out = 2
+
     assert "Session rejected." in build_markdown(crawl)
     assert "Session rejected." in build_html(crawl)
 

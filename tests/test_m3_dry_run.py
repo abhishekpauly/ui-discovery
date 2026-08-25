@@ -180,3 +180,24 @@ def test_a_dry_run_writes_no_capture(site, tmp_path, no_browser):
                           "--output", str(tmp_path)]) == 0
     written = {p.name for p in tmp_path.rglob("*") if p.is_file()}
     assert written == {"map.json", "urls.txt"}, written
+
+
+def test_a_dry_run_of_a_url_list_config_reports_every_listed_screen(
+        site, tmp_path, no_browser):
+    """The regression this was found by: `--dry-run` said 1 URL while the
+    crawl captured 7, because `build_map` predated `H10` and never learned
+    about `urls:`."""
+    config = tmp_path / "listed.yaml"
+    listed = [site.url("index.html"), site.url("orphan.html"),
+              site.url("reports/quarterly.html")]
+    config.write_text(
+        f"start_url: {listed[0]}\n"
+        "discovery:\n  sitemap: skip\n"
+        "urls:\n" + "".join(f"  - {u}\n" for u in listed),
+        encoding="utf-8")
+
+    assert crawl_main(["--config", str(config), "--dry-run",
+                       "--output", str(tmp_path)]) == 0
+    url_map = _written_map(tmp_path)
+    assert {e.url for e in url_map.entries} == set(listed)
+    assert url_map.stats["in_scope"] == len(listed)
