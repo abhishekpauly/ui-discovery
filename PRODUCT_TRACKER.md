@@ -183,6 +183,14 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 | H11 | TLS verification as a recorded decision | reach internal staging, and say in the manifest that you did | P3 | 📋 |
 | H12 | One screen per record is one screen | collapse identifier-shaped values to `:id`; capture N per template, skip the rest into the ledger | P1 | ✅ |
 
+### Probe fidelity — a capture must not quietly get worse (`EPIC-FIDELITY`)
+| ID | Capability | Scope | Pri | Status | Tests |
+|----|-----------|-------|-----|--------|-------|
+| PF1 | An element is still findable when the probe reaches it | re-resolve by role + accessible name, then `data-testid`; `dom_path` first but never alone | P1 | ✅ 0.24.0 | `test_pf1_relocation.py` (9) |
+| PF2 | Report probe coverage per screen | a **Shallowly probed** section beside **Not captured**; a per-screen drop is a diff finding | P1 | 📋 | — |
+| PF3 | Model controls the app never marked up as controls | pointer affordance → `inferred: true`, never merged with a declared control; `capture.infer_controls` | P2 | ✅ 0.24.0 | `test_pf3_inferred_controls.py` (5) |
+| PF4 | A revealed state carries its contents | trust `aria-controls`; else the common ancestor; harvest options back onto the control | P1 | ✅ 0.24.0 | `test_uistate.py` (+12) |
+
 ### Deliverables (deterministic, high value)
 | ID | Feature | Scope | Pri | Status |
 |----|---------|-------|-----|--------|

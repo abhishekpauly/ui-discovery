@@ -1270,34 +1270,71 @@ captured** section whose header reads *"A report that lists only what it found
 overstates its own coverage."* Probe coverage is currently the one axis with no
 such accounting.
 
-### PF1 — Deep-nav must not consume the probe's page visit  ·  Effort: M
+### PF1 — An element must still be findable when the probe reaches it  ·  Effort: M  ·  ✅ 0.24.0
 
-- **Goal.** Two features that both want to interact with a page should not
-  silently take the budget from each other.
+- **Goal.** A candidate must be locatable at the moment it is clicked, not only
+  at the moment it was listed.
 - **Evidence.** Same config, same session, deep-nav the only difference:
 
   | Page | deep-nav off | deep-nav on |
   | --- | --- | --- |
-  | `ai-gateway/model-catalog` | 16 executed, **11 states** | 0 executed, **0 states**, 46 requests |
-  | `observability/runs-and-traces` | 25 executed, **11 states** | 0 executed, **0 states**, 48 requests |
+  | `ai-gateway/model-catalog` | 16 executed, **11 states** | 0 executed, **0 states** |
+  | `observability/runs-and-traces` | 25 executed, **11 states** | 0 executed, **0 states** |
 
-  A deep-nav click navigated the page away, and the probe then ran against
-  whatever was left. It reported `0 executed, 1 blocked` — indistinguishable in
-  the log from a page that genuinely had nothing safe to click.
-- **Build.** Order the two passes and make the boundary explicit: probe the page
-  as loaded, *then* let deep-nav click candidates, restoring the page between
-  candidates as `uistate.py` already does for revealed states. Where a deep-nav
-  click navigates, that is a discovery result for the *destination*, not a
-  reason the *origin* goes unprobed. If restoring is not possible for a given
-  candidate, record why rather than proceeding with a page that is no longer the
-  page.
-- **Acceptance.** A fixture page with both a modal trigger and a click-handler
-  element that navigates yields, in one run, the modal state *and* the
-  discovered URL. A test asserts per-page executed-interaction counts do not
-  drop when deep-nav is enabled — the regression above, as a red test first.
-- **Files.** `crawler.py`, `probe.py`, `uistate.py`, `fixtures/interactive/`,
-  `tests/`.
-- **Depends-on.** None.
+  The skip reasons name the cause, and it is not what it first looked like:
+
+  ```
+  menu      SAFE  exec=False  skip=element not locatable  'Switch space'
+  expander  SAFE  exec=False  skip=element not locatable  'All families'
+  ```
+
+  All 47 candidates, every one of them. Nothing refused on safety, nothing over
+  budget. Deep-nav runs before the probe (`crawler.py`), it re-rendered the SPA,
+  and every positional `dom_path` — `div:nth-of-type(1) > button:nth-of-type(2)`
+  — stopped resolving.
+- **Build.** Re-resolve by identity rather than position: `dom_path` first
+  (exact when the DOM has not moved), then role plus accessible name, then
+  `data-testid` — the addressing `I1` already specifies for recipe steps.
+  Resolve immediately before each interaction, so a re-render costs one lookup
+  and not the rest of the page. An ambiguous match is a skip naming the count,
+  never a best guess. Safety is untouched: re-resolution decides *which*
+  element a candidate refers to, never whether it may be touched.
+- **Acceptance.** A fixture that re-parents its list on the first click — every
+  path stale, every role and name unchanged — measures 1 executed / 3 not
+  locatable / 1 state on positional lookup and 4 / 0 / 4 with the fallback. A
+  crawl-level test asserts per-page executed counts do not drop when deep-nav
+  is enabled.
+- **Files.** `interactions.py`, `fixtures/interactive/rerender.html`,
+  `tests/test_pf1_relocation.py`.
+- **Known limitation.** Deep-nav still runs before the probe, so the probe
+  works from a `raw` snapshot taken before the page was touched. Re-resolution
+  makes that survivable rather than fatal; ordering the two passes properly is
+  still worth doing and is not done here.
+
+### PF4 — A state the engine opened should have its contents in the model  ·  Effort: M  ·  ✅ 0.24.0
+
+- **Goal.** A dropdown that was opened and photographed should have its values
+  in the model, not only in a PNG.
+- **Evidence.** Across all 170 revealed states in one capture: menus 53/53 with
+  contents recorded, drawers 23/57, **disclosures 0/60**. Two filter dropdowns
+  on one screen opened successfully, were screenshotted, and recorded
+  `controls: [], fields: [], headings: []` with `option_count = 0`.
+- **Root cause.** Contents are matched by dom_path prefix against the container
+  `classify_state` returns. Its `aria-expanded` branch returned the *shallowest
+  revealed element*, which contains its siblings not at all and, as a leaf,
+  contains nothing. Every disclosure in the capture took that branch.
+- **Build.** Three parts. Trust an `aria-controls` path as the container even
+  when nothing was captured at it — a plain `<div>` panel has no role, so it is
+  never an element, but it is still what the app said contains the panel. Where
+  there is no such path, use the **common ancestor** of everything revealed.
+  And harvest the state's choices, from option elements inside it and from the
+  container's own `options`, which `extract.js` fills for a listbox it can see.
+- **Acceptance.** A fixture combobox whose listbox is portaled outside the
+  trigger's subtree records its options; a fixture accordion records the
+  controls its panel reveals; a test asserts no state kind is systematically
+  empty — the 60/60 above, red first.
+- **Files.** `uistate.py`, `interactions.py`, `models.py`,
+  `fixtures/interactive/portaled.html`, `tests/test_uistate.py`.
 
 ### PF2 — Report probe coverage, so a thin capture says it is thin  ·  Effort: S
 
@@ -1316,7 +1353,7 @@ such accounting.
 - **Files.** `inventory.py`, `reports.py`, `diff.py`, `models.py`, `tests/`.
 - **Depends-on.** PF1 (the counts it reports must first be trustworthy).
 
-### PF3 — Model controls the app never marked up as controls  ·  Effort: M
+### PF3 — Model controls the app never marked up as controls  ·  Effort: M  ·  ✅ 0.24.0
 
 - **Goal.** An element that behaves like a control should appear in the model as
   one, even when the product gave it no role.
@@ -1342,9 +1379,17 @@ such accounting.
   `summary.md` counts the two separately, because the difference is a finding
   about the product — an accordion a screen reader cannot operate is an
   accessibility defect, and the engine is well placed to say so.
-- **Files.** `extract.js`, `extraction.py`, `taxonomy.py`, `models.py`,
-  `fixtures/edge/`, `tests/`.
-- **Depends-on.** PF1.
+- **Files.** `extract.js`, `extraction.py`, `models.py`, `config.py`,
+  `crawler.py`, `cliconfig.py`, `tests/test_pf3_inferred_controls.py`.
+- **Known limitation, and it is the important one.** Modelling an accordion is
+  not the same as opening it. The probe's allow-list is
+  `disclosure | expander | menu | tab`, and a bare `<p>` offers no evidence it
+  is any of them, so an inferred control is modelled as a `button` and a button
+  is not clicked. This makes the affordance *visible in the report* — a reader
+  learns the screen has controls the app never declared — and does not make its
+  panel contents captured. Widening the allow-list to reach them is exactly
+  what principle #6 forbids, so the honest next step is a deterministic signal
+  that an inferred control is a disclosure, not a looser gate.
 
 ---
 

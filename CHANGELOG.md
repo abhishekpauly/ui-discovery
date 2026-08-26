@@ -20,6 +20,48 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ### Fixed
 
+- **A control the probe could not find again cost the rest of the page.**
+  Elements are addressed by a positional `dom_path`
+  (`div:nth-of-type(1) > button:nth-of-type(2)`), so a re-render between
+  extraction and probing invalidates every one of them at once. On a real
+  portal that is exactly what happened — deep-nav runs before the probe and
+  re-rendered the SPA — and the probe skipped all 47 candidates on the screen
+  with `element not locatable`. Nothing was refused on safety and nothing was
+  over budget; the screen simply recorded 0 executed, 0 states, and the run
+  reported success.
+
+  Candidates are now re-resolved at the moment they are clicked: `dom_path`
+  first, then role plus accessible name, then `data-testid` — the addressing
+  `EPIC-INTERACT` already specifies for recipe steps, and the use principle #5
+  collects those signals for. An ambiguous match is a skip that names the
+  count, never a best guess; safety is untouched, because re-resolution decides
+  *which* element a candidate refers to and never whether it may be touched.
+
+  Measured on the new `fixtures/interactive/rerender.html`: 1 executed / 3 not
+  locatable / 1 state before, 4 / 0 / 4 after. (`PF1`, #82)
+
+- **Disclosures recorded nothing about what they revealed — all 60 of them.**
+  In one capture, menus recorded their contents 53 times out of 53 and
+  disclosures 0 times out of 60. Two filter dropdowns opened successfully, were
+  photographed, and reported `option_count = 0`: their values existed only as
+  pixels in a PNG.
+
+  The container was the bug, not the click. State contents are matched by
+  dom_path prefix, and the `aria-expanded` branch credited the state with the
+  *shallowest revealed element* — which contains its siblings not at all and,
+  when it is a leaf, contains nothing whatsoever. Three changes: an
+  `aria-controls` path is trusted as the container even when nothing was
+  captured at it (a plain `<div>` panel has no role, so it is never an element,
+  but the app still named it); where there is none, the **common ancestor** of
+  everything revealed is used; and a state's choices are harvested from the
+  option elements inside it and from the container's own `options`.
+
+  A control whose dropdown is portaled outside its own subtree now gets those
+  options written back onto it, so `controls.csv` and `report.html` carry them
+  without either needing to know that states exist. Never destructive: a
+  `<select>` that answered for itself keeps its own answer. (`PF4`, #86)
+
+
 - **`H12`'s config key was never wired, so the feature was dead through the
   only path an operator uses.** `identity.collapse_instances` was declared,
   referenced in `crawler.py` and `map.py` as a `CrawlOptions` field, and read
@@ -57,6 +99,32 @@ The "V0…V5" phase names used in planning map to product versions as noted.
   and one app-builder screen**, with 38 duplicates skipped and ledgered by
   template, where the exclude globs had captured none and the dead flag had
   captured five.
+
+### Added
+
+- **Controls the app never marked up as controls are now modelled.** A real
+  portal grouped its model catalogue under per-provider accordions built from
+  `<p>` elements with click handlers — no button, no role, no `aria-expanded`.
+  All three were in the captured accessibility tree and none was in the element
+  model, so the capture documented that screen's chrome and none of its
+  content.
+
+  Event listeners cannot be read from script, so the affordance the page offers
+  a *pointer* is the honest signal. An element with `cursor: pointer`, a short
+  label, no role and no captured control inside it is modelled with
+  `inferred: true` — kept separate from a declared control on purpose, because
+  the two are different facts and a control only a mouse can reach is an
+  accessibility defect worth naming rather than hiding.
+
+  Off with `capture.infer_controls: false`. **Modelling one is not opening
+  one:** the probe's allow-list is `disclosure | expander | menu | tab` and an
+  inferred control is a `button`, so its panel is still not captured. Widening
+  the allow-list to reach it is what principle #6 forbids. (`PF3`, #84)
+
+### Changed
+
+- `UIState` gains `options`; `Element` gains `inferred`. Both additive, so
+  `SCHEMA_VERSION` stays `0.1.0`.
 
 ---
 

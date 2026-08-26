@@ -185,6 +185,7 @@ def element_from_raw(raw: dict) -> Element:
         attributes=raw.get("attributes") or {},
         dom_path=raw.get("dom_path", ""),
         sibling_ordinal=int(raw.get("sibling_ordinal", 0)),
+        inferred=bool(raw.get("inferred", False)),
         landmark=raw.get("landmark"),
         shadow_depth=int(raw.get("shadow_depth", 0)),
         frame=raw.get("frame"),
@@ -340,6 +341,7 @@ def extract_page(
     redaction: Optional[RedactionPolicy] = None,
     mask_screenshots: bool = False,
     exclude_selectors: tuple[str, ...] = (),
+    infer_controls: bool = True,
 ) -> Page:
     """Render `url` (sync Playwright) and return a validated `Page` model. If
     `screenshot_path` is given, a full-page screenshot is written there.
@@ -364,7 +366,10 @@ def extract_page(
             page = context.new_page()
 
             readiness = navigate(page, url, timeout_ms=timeout_ms)
-            raw = page.evaluate(JS, {"exclude_selectors": list(exclude_selectors)})
+            raw = page.evaluate(JS, {
+                "exclude_selectors": list(exclude_selectors),
+                "infer_controls": infer_controls,
+            })
             frames = extract_frames_sync(page, raw)
             tree = aria_snapshot(page)
 

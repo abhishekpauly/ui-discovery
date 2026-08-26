@@ -1,0 +1,79 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Portaled listbox and a plain-div accordion</title>
+<!--
+  The two shapes a real component library produces that the engine used to
+  record nothing for (PF4, and PF3 for the last one):
+
+  1. A combobox whose listbox is rendered into a PORTAL — a sibling of the app
+     root, not a descendant of the trigger — and only while open. At extraction
+     time the control genuinely has no options in the DOM to report.
+  2. A disclosure whose panel contents appear as SIBLINGS of each other, with
+     the panel itself an unlabelled <div>. Taking the shallowest revealed
+     element as the container credits the state with nothing.
+  3. An accordion built from a <p> with a click handler and no role at all —
+     invisible to role-based modelling, and to a screen reader.
+-->
+<style>
+  body { font: 14px system-ui; margin: 2rem; }
+  [hidden] { display: none; }
+  .panel { border: 1px solid #ccc; padding: .5rem; }
+  #portal-root [role=listbox] { border: 1px solid #333; padding: .25rem; }
+  /* What a real app does to say "this is clickable" to a mouse, and to
+     nothing else. The <p> below has no role, no button, no aria-expanded. */
+  #bare-accordion { cursor: pointer; font-weight: 600; }
+</style>
+
+<div id="root">
+  <h1>Filters</h1>
+
+  <button id="status" role="combobox" aria-expanded="false"
+          aria-controls="status-list">All statuses</button>
+
+  <h2>Providers</h2>
+  <button id="acc-trigger" aria-expanded="false" aria-controls="acc-panel">
+    Anthropic
+  </button>
+  <div id="acc-panel" class="panel" hidden>
+    <button>Claude Opus</button>
+    <button>Claude Sonnet</button>
+    <a href="#haiku">Claude Haiku</a>
+  </div>
+
+  <p id="bare-accordion">OpenAI</p>
+  <div id="bare-panel" hidden>
+    <button>GPT-5</button>
+    <button>GPT-5 mini</button>
+  </div>
+</div>
+
+<!-- The portal. A sibling of #root, exactly as Radix/Headless UI render it. -->
+<div id="portal-root"></div>
+
+<script>
+  const portal = document.getElementById("portal-root");
+  const status = document.getElementById("status");
+  status.addEventListener("click", () => {
+    const open = status.getAttribute("aria-expanded") === "true";
+    status.setAttribute("aria-expanded", String(!open));
+    portal.innerHTML = open ? "" : `
+      <div id="status-list" role="listbox" aria-label="Status">
+        <div role="option" aria-selected="true">All statuses</div>
+        <div role="option">Active</div>
+        <div role="option">Deprecated</div>
+        <div role="option">Retired</div>
+      </div>`;
+  });
+
+  function toggle(triggerId, panelId, isAria) {
+    const t = document.getElementById(triggerId);
+    const p = document.getElementById(panelId);
+    t.addEventListener("click", () => {
+      const open = !p.hidden;
+      p.hidden = open;
+      if (isAria) t.setAttribute("aria-expanded", String(!open));
+    });
+  }
+  toggle("acc-trigger", "acc-panel", true);
+  toggle("bare-accordion", "bare-panel", false);
+</script>

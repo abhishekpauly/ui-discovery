@@ -165,6 +165,13 @@ class Capture(BaseModel):
     and does not belong in a document about it.
     """
 
+    # PF3: model controls the app never marked up as controls — a <p> or
+    # <div> with a click handler and a pointer cursor. On by default because a
+    # capture that silently omits a third of a screen's affordances is the
+    # worse failure; off is for a capture that must contain only what the
+    # product actually declared.
+    infer_controls: bool = True
+
     # CSS selectors whose subtrees are excluded from extraction entirely.
     # A selector matching a landmark is refused rather than honoured: `main`
     # and `nav` are the page's own structure, and a selector broad enough to

@@ -84,6 +84,12 @@ class Element(BaseModel):
     # so a truncated list still reports its true size.
     options: list[Option] = Field(default_factory=list)
     option_count: int = 0
+    # PF3: this control was not declared as one. The app gave it no role and no
+    # ARIA state; it was modelled because it offers a pointer affordance, which
+    # is the only signal a page gives that script can read. Kept separate from
+    # a declared control on purpose — the two are different facts, and a
+    # control only a mouse can reach is an accessibility defect worth naming.
+    inferred: bool = False
     # checked / selected / expanded / required / readonly / invalid / pressed /
     # current / sort / open / multiple / has_value. Values are strings so the
     # dict stays serializable and open to signals we have not met yet.
@@ -1015,6 +1021,11 @@ class UIState(BaseModel):
     # The controls this state reveals — the ones that were not visible before.
     controls: list[Element] = Field(default_factory=list)
     fields: list["FormField"] = Field(default_factory=list)
+    # PF4: the choices this state offers, when it is a choice list — a
+    # dropdown's values, a menu's items. Read off the revealed state because a
+    # portaled listbox does not exist in the DOM until it is opened, so the
+    # control itself can honestly report no options at extraction time.
+    options: list[str] = Field(default_factory=list)
     # How many controls on this screen open this same state. A grid of cards
     # each with a "Try out" button opens ONE Model Playground drawer, thirty
     # times — one affordance, not thirty, and photographed once.

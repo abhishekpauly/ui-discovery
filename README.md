@@ -856,6 +856,63 @@ Two guardrails:
   says so, so a typo looks like a typo rather than like a widget that was not
   there.
 
+### Controls the app never marked up as controls
+
+A real portal grouped its model catalogue under per-provider accordions —
+Anthropic, Google, OpenAI — built from `<p>` elements with click handlers. No
+button, no role, no `aria-expanded`. All three were in the captured
+accessibility tree and none was in the element model, so the capture described
+that screen's header, sidebar and filters and nothing else on it.
+
+Event listeners are not readable from script, so the affordance the page offers
+a **pointer** is the honest signal: `cursor: pointer` is what an app uses to
+tell a person "this is clickable". An element with a pointer cursor, a short
+label, no role, and no captured control inside it is modelled as a control and
+flagged:
+
+```csv
+label,type,ui_type,inferred
+OpenAI,button,button,true
+Anthropic,button,disclosure,false
+```
+
+```yaml
+capture:
+  infer_controls: false   # model only what the product actually declared
+```
+
+**An inferred control is never merged with a declared one.** A `<button>` and a
+guess are different facts, and the difference is itself worth reporting: a
+control only a mouse can reach is one a screen reader cannot, which is an
+accessibility defect in the product rather than a gap in the capture.
+
+Two limits, stated rather than discovered:
+
+- **Modelling one is not opening one.** The probe's allow-list is
+  `disclosure | expander | menu | tab`, and a bare `<p>` offers no evidence it
+  is any of those, so an inferred control is modelled as a `button` and a
+  button is never clicked. You learn the affordance exists; you do not get
+  what is behind it. Widening the allow-list to reach it is exactly what
+  principle #6 forbids.
+- **Wrappers are not controls.** An element containing a captured control is a
+  layout div, and capturing it would bury the real controls in scaffolding.
+
+### What a dropdown actually contains
+
+A custom combobox renders its listbox into a portal, outside its own subtree,
+and only while open. At extraction time the control genuinely has no options in
+the DOM, and the engine correctly reports none — which for a long time meant a
+dropdown could be opened, photographed, and still recorded as
+`option_count = 0`, its values surviving only as pixels.
+
+The options are read back off the state the click revealed, which is the one
+moment they exist, and written onto the control itself. `controls.csv`,
+`report.html` and `crawl.json` all carry them without any of them needing to
+know that revealed states exist.
+
+Never destructive: a `<select>` that answered for itself keeps its own answer.
+Observation beats reconstruction, and the reconstruction is the weaker source.
+
 ### Choosing how much to capture
 
 Nine capability toggles is the right amount of control and the wrong amount of

@@ -20,6 +20,7 @@ The browser work (clicking, screenshotting) stays in `crawler.py` and
 
 from __future__ import annotations
 
+import os.path
 from typing import Any, Optional
 
 from .taxonomy import classify as classify_ui_type
@@ -79,6 +80,40 @@ def _depth(dom_path: str) -> int:
     return dom_path.count(">") + dom_path.count(">>>")
 
 
+# dom_path separators, longest first so " >>> " is matched before " > ".
+_PATH_SEPS = (" >>> ", " > ")
+
+
+def common_ancestor(paths: list[str]) -> str:
+    """The deepest `dom_path` that contains every path given, or "".
+
+    Containment in this module is decided by path prefix, so the container a
+    state is credited with has to be a real *ancestor* of what it revealed.
+    Taking the shallowest revealed element instead — which is what the
+    `aria-expanded` branch below used to do — makes every sibling that appeared
+    with it fall outside the container by construction, and a leaf contain
+    nothing at all. A whole capture's worth of disclosures recorded no contents
+    for exactly that reason.
+
+    One revealed path is its own ancestor: an accordion that reveals a single
+    panel should be credited with the panel.
+    """
+    kept = [p for p in paths if p]
+    if not kept:
+        return ""
+    if len(kept) == 1:
+        return kept[0]
+    prefix = os.path.commonprefix(kept)
+    # One of the paths is an ancestor of all the others — use it as-is rather
+    # than trimming it back to its own parent.
+    if any(p == prefix for p in kept):
+        return prefix
+    # Otherwise the common prefix probably ends mid-selector
+    # ("div:nth-of-type(1) > butt"); retreat to the last whole step.
+    cut = max(prefix.rfind(sep) for sep in _PATH_SEPS)
+    return prefix[:cut] if cut > 0 else ""
+
+
 def _ui_type(el: dict) -> str:
     """The element's UI type.
 
@@ -109,6 +144,37 @@ def _name_of(el: dict) -> str:
         return name[:MAX_NAME_CHARS]
     text = " ".join((el.get("text") or "").split())
     return text if 0 < len(text) <= MAX_NAME_CHARS else ""
+
+
+# What an "option" is, in the language the taxonomy already speaks. These are
+# the element types that exist to be *chosen from* rather than acted on, so a
+# revealed state made of them is a choice list and its contents are its values.
+_OPTION_TYPES = frozenset({
+    "option", "menuitem", "menuitemcheckbox", "menuitemradio",
+    "radio", "tab", "treeitem",
+})
+
+
+def option_labels(elements: list[dict]) -> list[str]:
+    """The choices a revealed state offers, in DOM order.
+
+    A custom combobox portals its listbox outside the trigger's subtree and
+    renders it only while open, so `extract.js`'s `optionsOf` — which reads
+    options off the control itself — correctly finds none at extraction time.
+    The options are real, they just do not exist yet. This reads them back off
+    the state the click revealed, which is the only moment they are in the DOM.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for el in elements:
+        if _ui_type(el) not in _OPTION_TYPES:
+            continue
+        name = _name_of(el)
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        out.append(name)
+    return out
 
 
 def _box(el: dict) -> dict:
@@ -191,6 +257,18 @@ def classify_state(
                     found = _as_state(el, trigger)
                     if found:
                         return found
+        # ...and it may not have been captured at all. A plain <div> panel has
+        # no role and no name, so nothing collects it as an element — but the
+        # app still told us it is the container, and contents are matched by
+        # path prefix, which does not need the container to be an element.
+        # Refusing to use it here is what sent every accordion down the
+        # `aria-expanded` branch to have its container guessed.
+        if any((el.get("dom_path") or "").startswith(path) for el in revealed):
+            return {
+                "kind": "disclosure",
+                "name": _name_of(trigger),
+                "dom_path": path,
+            }
 
     # 2. The outermost revealed container.
     containers = [
@@ -209,11 +287,20 @@ def classify_state(
     #    real portals to be worth naming rather than discarding.
     attrs = trigger.get("attributes") or {}
     if attrs.get("aria-expanded") is not None and revealed:
-        outermost = min(revealed, key=lambda el: _depth(el.get("dom_path", "")))
+        # The container is what *contains* everything that appeared, not the
+        # shallowest thing that appeared. See `common_ancestor`.
+        container = common_ancestor([el.get("dom_path", "") for el in revealed])
+        if not container:
+            # Revealed elements in disjoint subtrees — a panel that expanded
+            # inline and a listbox portaled to the body root, say. There is no
+            # single container, and the shallowest is the least wrong picture.
+            container = min(
+                revealed, key=lambda el: _depth(el.get("dom_path", ""))
+            ).get("dom_path", "")
         return {
             "kind": "disclosure",
             "name": _name_of(trigger),
-            "dom_path": outermost.get("dom_path", ""),
+            "dom_path": container,
         }
     return None
 

@@ -43,6 +43,7 @@ from .extraction import (
 from .interactions import (
     ProbeProfile,
     attach_network_async,
+    backfill_control_options,
     probe_open_page_async,
 )
 from .mask import apply_mask_async, clear_mask_async
@@ -555,6 +556,8 @@ class CrawlOptions:
     # not part of your product. Distinct from `never_touch`, which forbids
     # interacting with something the model still describes.
     exclude_selectors: tuple[str, ...] = ()
+    # PF3: model pointer-affordant elements the app gave no role.
+    infer_controls: bool = True
     # M1: seed from the target's own robots.txt / sitemap.xml.
     #   include — read it and add what it lists (default)
     #   skip    — behave exactly as the crawler did before M1
@@ -980,7 +983,8 @@ async def crawl_site(
         # before anything is read, so they can cover what those miss.
         await adapter_hooks.post_navigate(active_adapters, page)
         raw = await page.evaluate(
-            JS, {"exclude_selectors": list(opts.exclude_selectors)})
+            JS, {"exclude_selectors": list(opts.exclude_selectors),
+                 "infer_controls": opts.infer_controls})
         frames = await _extract_frames_async(page, raw)
         aria = await _aria(page) if accessibility_tree else None
 
@@ -1220,6 +1224,15 @@ async def crawl_site(
                 # state carrying whatever the page displayed. Redacted here,
                 # before the node is written or counted.
                 redact_probe(node.probe, Redactor(opts.redaction))
+                # PF4: a control whose options only exist while its dropdown is
+                # open gets them back here, from the state the probe revealed.
+                # After redaction, so a reconstructed option list is redacted
+                # exactly like an observed one.
+                filled = backfill_control_options(node.page, node.probe.states)
+                if filled:
+                    context.log.info(
+                        f"Recovered options for {filled} control(s) on {url}"
+                    )
                 p = node.probe.stats
                 context.log.info(
                     f"Probed {url}: {p.get('executed', 0)} executed, "

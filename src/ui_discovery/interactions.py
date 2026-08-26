@@ -25,6 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from playwright.sync_api import sync_playwright
 
@@ -44,6 +45,7 @@ from .network import redact_url
 from .safety import ALLOW_LIST, DEFAULT_POLICY, SafetyPolicy, decide, should_execute
 from .uistate import (
     classify_state,
+    option_labels,
     revealed_elements,
     state_filename,
     state_signature,
@@ -311,9 +313,26 @@ def build_state(
         h.get("text", "") for h in after_raw.get("headings", [])
         if h.get("dom_path", "").startswith(container) and h.get("text")
     ]
+    # The choices this state offers, from both places they can live: option
+    # elements revealed inside it, and the container's own `options` — which
+    # `extract.js` fills in for a listbox/menu/tablist it can see, and which is
+    # the whole answer when the options themselves are not collected as
+    # elements in their own right.
+    options = option_labels(inside)
+    if not options:
+        for el in after_raw.get("elements", []):
+            if el.get("dom_path") == container:
+                options = [
+                    (o.get("label") or "").strip()
+                    for o in (el.get("options") or [])
+                    if (o.get("label") or "").strip()
+                ]
+                break
+
     return UIState(
         kind=found["kind"],
         name=found["name"],
+        options=options,
         trigger_label=(trigger.get("accessible_name") or trigger.get("text") or "").strip()[:120],
         trigger_path=trigger.get("dom_path", ""),
         page_url=url,
@@ -322,6 +341,156 @@ def build_state(
         controls=controls,
         fields=_fields_of(controls),
     )
+
+
+# --- finding a candidate again, at the moment it is clicked -----------------
+#
+# PF1. A `dom_path` is positional — `div:nth-of-type(1) > button:nth-of-type(2)`
+# — so it survives only as long as the DOM around it does. On a real portal a
+# re-render between extraction and probing shifted every index and all 47
+# candidates on the page were skipped `element not locatable`: nothing refused
+# on safety, nothing over budget, and a screen with eleven modals behind it
+# recorded none.
+#
+# Principle #5 says elements carry a generous signal set precisely so identity
+# can be recomputed later. This is where that gets used. The order below is the
+# same one `EPIC-INTERACT`'s `I1` specifies for recipe steps, so a control is
+# addressed one way across the engine.
+
+# Categories whose implicit ARIA role is not carried explicitly in the DOM.
+_IMPLICIT_ROLES: dict[str, str] = {
+    "button": "button", "link": "link", "tab": "tab",
+    "menu": "menuitem", "disclosure": "button",
+}
+
+
+def relocation_strategies(interaction, raw_el: Optional[dict] = None) -> list[dict]:
+    """How to find this element again, best first.
+
+    Pure and inspectable on purpose: which strategy found a control is a fact
+    about the capture, and a list of dicts can be asserted on in a test without
+    a browser.
+
+    `dom_path` stays first. When the DOM has not moved it is exact and
+    unambiguous, and demoting it would trade a precise answer for a fuzzy one
+    on every page that never had this problem.
+    """
+    out: list[dict] = []
+    if interaction.dom_path:
+        out.append({"how": "dom_path", "selector": interaction.dom_path})
+
+    name = (interaction.target or "").strip()
+    role = (interaction.role or "").strip() or _IMPLICIT_ROLES.get(
+        interaction.category, "")
+    if name and role:
+        out.append({"how": "role+name", "role": role, "name": name})
+
+    testid = ((raw_el or {}).get("attributes") or {}).get("data-testid")
+    if testid:
+        out.append({"how": "testid",
+                    "selector": f'[data-testid="{testid}"]'})
+    return out
+
+
+def _ambiguous(strategy: dict, count: int) -> str:
+    return (f"ambiguous after re-render: {count} elements match "
+            f"{strategy['how']} ({strategy.get('name') or strategy.get('selector')})")
+
+
+async def locate_async(page, interaction, raw_el: Optional[dict] = None):
+    """Find `interaction`'s element, trying each strategy in turn.
+
+    Returns `(handle, reason)`. A reason without a handle is a skip the report
+    can print; ambiguity is one of those and never a best guess, because
+    clicking the wrong "Delete" is exactly the failure the safety gates exist
+    to prevent. Re-resolution decides WHICH element a candidate refers to; it
+    never decides whether it may be touched.
+    """
+    reason = "element not locatable"
+    for strategy in relocation_strategies(interaction, raw_el):
+        try:
+            if strategy["how"] == "role+name":
+                locator = page.get_by_role(
+                    strategy["role"], name=strategy["name"], exact=True)
+                count = await locator.count()
+                if count > 1:
+                    reason = _ambiguous(strategy, count)
+                    continue
+                if count == 0:
+                    continue
+                handle = await locator.first.element_handle()
+            else:
+                handle = await page.query_selector(strategy["selector"])
+        except Exception:
+            continue
+        if handle is not None:
+            return handle, strategy["how"]
+    return None, reason
+
+
+def locate_sync(page, interaction, raw_el: Optional[dict] = None):
+    """`locate_async`'s twin. The two probes share a strategy list and not a
+    body, because sync and async Playwright are different APIs."""
+    reason = "element not locatable"
+    for strategy in relocation_strategies(interaction, raw_el):
+        try:
+            if strategy["how"] == "role+name":
+                locator = page.get_by_role(
+                    strategy["role"], name=strategy["name"], exact=True)
+                count = locator.count()
+                if count > 1:
+                    reason = _ambiguous(strategy, count)
+                    continue
+                if count == 0:
+                    continue
+                handle = locator.first.element_handle()
+            else:
+                handle = page.query_selector(strategy["selector"])
+        except Exception:
+            continue
+        if handle is not None:
+            return handle, strategy["how"]
+    return None, reason
+
+
+def backfill_control_options(page, states: list) -> int:
+    """Give a control the options its revealed state turned out to hold.
+
+    A custom combobox renders its listbox into a portal and only while open,
+    so at extraction time the control genuinely has no options to report and
+    `extract.js` correctly reports none. The values are recoverable exactly
+    once — in the state the click revealed — and this is where that is written
+    back onto the control, so `controls.csv`, `report.html` and `crawl.json`
+    all carry it without any of them needing to know about states.
+
+    Deliberately additive and never destructive: a control that reported its
+    own options keeps them. Observation beats reconstruction, and a `<select>`
+    that answered for itself is the better answer.
+
+    Returns how many controls gained options, for the caller to log.
+    """
+    from .models import Option
+
+    from_state: dict[str, list[str]] = {}
+    for state in states:
+        options = getattr(state, "options", None)
+        path = getattr(state, "trigger_path", "")
+        if options and path:
+            from_state.setdefault(path, options)
+    if not from_state:
+        return 0
+
+    filled = 0
+    for el in page.elements:
+        if el.option_count or not el.dom_path:
+            continue
+        options = from_state.get(el.dom_path)
+        if not options:
+            continue
+        el.options = [Option(label=label) for label in options[:50]]
+        el.option_count = len(options)
+        filled += 1
+    return filled
 
 
 def _fields_of(controls: list) -> list:
@@ -493,12 +662,10 @@ async def probe_open_page_async(
             interactions.append(interaction)
             continue
 
-        try:
-            handle = await page.query_selector(interaction.dom_path)
-        except Exception:
-            handle = None
+        handle, how = await locate_async(
+            page, interaction, raw_by_path.get(interaction.dom_path))
         if handle is None:
-            interaction.skipped_reason = "element not locatable"
+            interaction.skipped_reason = how
             interactions.append(interaction)
             continue
 
@@ -687,13 +854,10 @@ def probe_page(
                     interactions.append(interaction)
                     continue
 
-                handle = None
-                try:
-                    handle = page.query_selector(interaction.dom_path)
-                except Exception:
-                    handle = None
+                handle, how = locate_sync(
+                    page, interaction, raw_by_path.get(interaction.dom_path))
                 if handle is None:
-                    interaction.skipped_reason = "element not locatable"
+                    interaction.skipped_reason = how
                     interactions.append(interaction)
                     continue
 

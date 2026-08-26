@@ -23,10 +23,12 @@ from pathlib import Path
 import pytest
 
 from ui_discovery.crawler import crawl_site
-from ui_discovery.interactions import probe_page
+from ui_discovery.interactions import backfill_control_options, probe_page
 from ui_discovery.uistate import (
     classify_state,
+    common_ancestor,
     component_targets,
+    option_labels,
     revealed_elements,
 )
 
@@ -438,3 +440,158 @@ def test_each_switched_tab_is_its_own_state(mounted_tabs_probe):
     probe, _ = mounted_tabs_probe
     labels = {s.trigger_label for s in probe.states if s.kind == "tab-panel"}
     assert len(labels) >= 2, f"only these tabs opened anything: {labels}"
+
+
+# --- PF4: a state the engine opened should have its contents in the model ---
+#
+# One real capture recorded 170 states: menus 53/53 with contents, drawers
+# 23/57, and disclosures 0/60. Not one disclosure in the whole run recorded a
+# single control, so two filter dropdowns that were opened AND photographed
+# reported `option_count = 0` and their values existed only as pixels.
+#
+# The cause was the container, not the click. Contents are found by dom_path
+# prefix, and the `aria-expanded` branch credited the state with the SHALLOWEST
+# REVEALED ELEMENT — which contains its siblings not at all, and contains
+# nothing whatsoever when it is a leaf.
+
+
+def test_common_ancestor_of_siblings_is_their_parent():
+    assert common_ancestor(["div#p > button:nth-of-type(1)",
+                            "div#p > button:nth-of-type(2)"]) == "div#p"
+
+
+def test_common_ancestor_prefers_a_path_that_contains_the_others():
+    """An accordion that reveals its panel AND the buttons in it should be
+    credited with the panel, not with the panel's parent."""
+    assert common_ancestor(["div#p",
+                            "div#p > button:nth-of-type(1)"]) == "div#p"
+
+
+def test_common_ancestor_never_cuts_mid_selector():
+    """`div:nth-of-type(1)` and `div:nth-of-type(2)` share the characters
+    `div:nth-of-type(`, which is not a selector and would match neither."""
+    got = common_ancestor(["main > div:nth-of-type(1) > a",
+                           "main > div:nth-of-type(2) > a"])
+    assert got == "main"
+
+
+def test_common_ancestor_of_disjoint_subtrees_is_nothing():
+    """A panel that expands inline and a listbox portaled to the body root have
+    no common container. Saying so beats inventing one that matches everything
+    — `startswith("")` is true of every path on the page."""
+    assert common_ancestor(["div#root > div", "div#portal > div"]) == ""
+
+
+def test_a_disclosure_is_credited_with_what_contains_its_contents():
+    """The regression, as a unit. Two controls appear as siblings inside a
+    panel; the state must be the panel, so both are its contents."""
+    trigger = el(category="button", tag="button", accessible_name="Anthropic",
+                 attributes={"aria-expanded": "true"}, dom_path="button#t")
+    revealed = [
+        el(category="button", tag="button", accessible_name="Claude Opus",
+           dom_path="div#acc-panel > button:nth-of-type(1)"),
+        el(category="button", tag="button", accessible_name="Claude Sonnet",
+           dom_path="div#acc-panel > button:nth-of-type(2)"),
+    ]
+    found = classify_state(trigger, revealed)
+    assert found["kind"] == "disclosure"
+    assert found["dom_path"] == "div#acc-panel", (
+        "the container has to CONTAIN the contents; the shallowest revealed "
+        "element is a sibling of them and holds nothing")
+
+
+def test_option_labels_reads_a_revealed_choice_list():
+    revealed = [
+        el(category="option", tag="div", attributes={"role": "option"},
+           accessible_name="Active", dom_path="div#l > div:nth-of-type(1)"),
+        el(category="option", tag="div", attributes={"role": "option"},
+           accessible_name="Deprecated", dom_path="div#l > div:nth-of-type(2)"),
+        el(category="button", tag="button", accessible_name="Apply",
+           dom_path="div#l > button"),
+    ]
+    assert option_labels(revealed) == ["Active", "Deprecated"], (
+        "a button in the dropdown is not one of the choices")
+
+
+def test_backfill_never_overwrites_what_a_control_reported_itself():
+    """A native <select> answered for itself. Observation beats
+    reconstruction, and the reconstruction is the weaker source."""
+    from types import SimpleNamespace
+
+    from ui_discovery.models import Element, Option, UIState
+
+    native = Element(category="select", tag="select", dom_path="select#s",
+                     options=[Option(label="Yes")], option_count=1)
+    page = SimpleNamespace(elements=[native])
+    state = UIState(kind="listbox", trigger_path="select#s",
+                    options=["Something", "Else"])
+
+    assert backfill_control_options(page, [state]) == 0
+    assert [o.label for o in page.elements[0].options] == ["Yes"]
+
+
+def test_backfill_gives_a_portaled_combobox_the_options_it_could_not_report():
+    from types import SimpleNamespace
+
+    from ui_discovery.models import Element, UIState
+
+    combo = Element(category="button", tag="button", dom_path="button#status",
+                    accessible_name="All statuses")
+    page = SimpleNamespace(elements=[combo])
+    state = UIState(kind="listbox", trigger_path="button#status",
+                    options=["All statuses", "Active", "Deprecated"])
+
+    assert backfill_control_options(page, [state]) == 1
+    assert page.elements[0].option_count == 3
+    assert [o.label for o in page.elements[0].options][1] == "Active"
+
+
+# --- and the same thing through a real browser ------------------------------
+
+@pytest.fixture(scope="module")
+def portaled_probe(tmp_path_factory):
+    states = tmp_path_factory.mktemp("portaled-states")
+    probe = probe_page(
+        fixture_url("interactive/portaled.html"),
+        states_dir=str(states),
+        capture_states=True,
+    )
+    return probe, states
+
+
+def test_an_accordion_panel_records_the_controls_it_reveals(portaled_probe):
+    probe, _ = portaled_probe
+    panels = [s for s in probe.states
+              if s.trigger_label == "Anthropic" and s.controls]
+    assert panels, (
+        "the accordion opened and recorded no contents; states were "
+        f"{[(s.kind, s.trigger_label, len(s.controls)) for s in probe.states]}")
+    names = {(c.accessible_name or c.text or "").strip()
+             for c in panels[0].controls}
+    assert "Claude Opus" in names, names
+
+
+def test_a_portaled_listbox_yields_its_options(portaled_probe):
+    """The listbox is a sibling of the app root and exists only while open, so
+    `extract.js` cannot see it at extraction time. This is the one moment the
+    values are in the DOM."""
+    probe, _ = portaled_probe
+    with_options = [s for s in probe.states if s.options]
+    assert with_options, (
+        "no state recorded any options; "
+        f"{[(s.kind, s.trigger_label) for s in probe.states]}")
+    assert any("Deprecated" in s.options for s in with_options), (
+        [s.options for s in with_options])
+
+
+def test_no_state_kind_is_systematically_empty(portaled_probe):
+    """The shape of the original defect: disclosures at 0/60 while menus were
+    at 53/53. A kind that never records anything is a bug, not a fact about
+    the page."""
+    probe, _ = portaled_probe
+    by_kind: dict[str, list[bool]] = {}
+    for state in probe.states:
+        has = bool(state.controls or state.options or state.headings)
+        by_kind.setdefault(state.kind, []).append(has)
+    empty = [k for k, hits in by_kind.items() if len(hits) > 1 and not any(hits)]
+    assert not empty, f"these kinds recorded nothing, ever: {empty}"

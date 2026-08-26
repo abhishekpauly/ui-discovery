@@ -1,0 +1,56 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>A page that re-renders under the probe</title>
+<!--
+  PF1. Deliberately NO id and NO data-testid on the controls, so every
+  `dom_path` is purely positional — `div#app > div:nth-of-type(2) > button`.
+  That is the shape the real portal had.
+
+  The re-render fires on the FIRST click, which is what actually happened: a
+  deep-nav click re-rendered the app, and every candidate the probe had not
+  reached yet was addressed by a path that no longer resolved. The list is
+  re-parented, so the old paths match NOTHING — which is the `element not
+  locatable` the real capture reported 47 times. Roles and accessible names are
+  untouched throughout: the elements are all still there and still findable,
+  just not where they were.
+
+  Positional lookup finds only the first of these. Role plus accessible name
+  finds all of them.
+-->
+<style>
+  body { font: 14px system-ui; margin: 2rem; }
+  [hidden] { display: none; }
+</style>
+
+<div id="app">
+  <div><button aria-expanded="false" aria-controls="p-one">Filters</button></div>
+  <div id="p-one" hidden><button>Apply</button><button>Reset</button></div>
+  <div><button aria-expanded="false" aria-controls="p-two">Columns</button></div>
+  <div id="p-two" hidden><button>Name</button><button>Status</button></div>
+  <div><button aria-expanded="false" aria-controls="p-three">Sort</button></div>
+  <div id="p-three" hidden><button>Ascending</button></div>
+  <div><button aria-expanded="false" aria-controls="p-four">Density</button></div>
+  <div id="p-four" hidden><button>Compact</button></div>
+</div>
+
+<script>
+  let shifted = false;
+  document.querySelectorAll("[aria-controls]").forEach((t) => {
+    t.addEventListener("click", () => {
+      // The re-render: the list is re-parented under a new wrapper, so every
+      // previously-recorded path (`div#app > div:nth-of-type(N) > button`) now
+      // matches nothing at all. Once, on the first interaction.
+      if (!shifted) {
+        shifted = true;
+        const app = document.getElementById("app");
+        const wrap = document.createElement("section");
+        while (app.firstChild) wrap.appendChild(app.firstChild);
+        app.appendChild(wrap);
+      }
+      const p = document.getElementById(t.getAttribute("aria-controls"));
+      const open = !p.hidden;
+      p.hidden = open;
+      t.setAttribute("aria-expanded", String(!open));
+    });
+  });
+</script>

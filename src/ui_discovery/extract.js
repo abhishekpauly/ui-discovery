@@ -655,6 +655,52 @@
     }
   }
 
+  // PF3: controls the app never marked up as controls.
+  //
+  // A real portal grouped its model catalogue under per-provider accordions
+  // built from <p> elements with click handlers — no button, no role, no
+  // aria-expanded. All three were in the accessibility tree as paragraphs and
+  // none was in the element model, so the capture documented that screen's
+  // chrome and none of its content.
+  //
+  // Event listeners are not readable from script, so the affordance the page
+  // offers a POINTER is the honest signal: `cursor: pointer` is what the app
+  // itself uses to tell a person "this is clickable".
+  //
+  // Recorded as `inferred: true` and never merged with a declared control. A
+  // <button> and a guess are different facts, and the difference is itself a
+  // finding — a control only a mouse can reach is one a screen reader cannot.
+  if (OPTS.infer_controls !== false) {
+    const MAX_INFERRED = 200;
+    const NAME_MIN = 1, NAME_MAX = 60;
+    let inferred = 0;
+    for (const root of roots) {
+      if (inferred >= MAX_INFERRED) break;
+      root.querySelectorAll("*").forEach((el) => {
+        if (inferred >= MAX_INFERRED) return;
+        if (seen.has(el)) return;
+        // Inside something already captured, this is that control's label,
+        // not a control of its own.
+        if (el.closest && [...seen].some((s) => s !== el && s.contains(el))) return;
+        // A wrapper around real controls is a layout div, not a control.
+        if (el.querySelector("a[href], button, input, select, textarea, [role]")) return;
+        let st;
+        try { st = getComputedStyle(el); } catch (e) { return; }
+        if (st.cursor !== "pointer") return;
+        if (!isVisible(el)) return;
+        const text = (el.textContent || "").replace(/\s+/g, " ").trim();
+        if (text.length < NAME_MIN || text.length > NAME_MAX) return;
+        if (excludedRoots.length && isExcluded(el)) { excludedCount++; return; }
+        seen.add(el);
+        const record = describe(el, "button");
+        record.inferred = true;
+        elements.push(record);
+        byNode.set(el, record);
+        inferred++;
+      });
+    }
+  }
+
   // Second pass: containment and ARIA control relationships.
   //
   // Both are deliberately expressed as `dom_path` references to OTHER captured
