@@ -16,7 +16,7 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ---
 
-## [Unreleased]
+## [0.24.0] — Three ways a capture was quieter than it was wrong (PF1, PF3, PF4)
 
 ### Fixed
 
