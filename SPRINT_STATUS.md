@@ -16,8 +16,6 @@ goes stale.
 | how a release is cut | `RELEASING.md` |
 | **where the branches are today** | this file |
 
-Regenerate the ledger with:
-
 ```bash
 git fetch --all --prune
 git branch -r --format='%(refname:short)'
@@ -26,62 +24,88 @@ git rev-list --left-right --count origin/main...<branch>   # behind / ahead
 
 ---
 
-## Branch ledger · 2026-08-23
+## Branch ledger · 2026-08-25
 
-`main` is at `e5d4da1`, carrying `G1`–`G7` and `H6`–`H9` + `X9`.
+`main` is at `f1af1d4`. **No sprint is live and nothing is in flight.**
 
 | Branch | Ahead of `main` | State |
 | --- | --- | --- |
-| `sprint/12-map` | 7 | **Complete, unmerged.** `M1`–`M4` + `H10`, at 0.22.0. |
-| `sprint/2-field-validation` | 0 | Cut empty from the pre-0.19.0 trunk, far behind. Delete and re-cut when `QA.1`–`QA.4` start. |
+| `sprint/2-field-validation` | 0 | Cut empty from the pre-0.19.0 trunk, long behind. Delete and re-cut when `QA.1`–`QA.4` start. |
 | `sprint/4-deferred` | 0 | Same, and meant to stay empty — it exists so the deferral is visible. |
 
-## Sprint 12 — map · `EPIC-MAP` · complete
+Released: **v0.20.0**, **v0.21.0**, **v0.22.0**, **v0.23.0**. `v0.19.0` was never
+tagged and cannot be — see *Version history* below.
 
-| Item | Pri | Status |
+`0.23.1` is uncut: two commits touch `src/` since the 0.23.0 bump, under the
+drift guard's limit of three, so nothing forces it.
+
+## Epics closed
+
+| Epic | Items | Released |
 | --- | --- | --- |
-| `M1` Sitemap ingestion | P1 | ✅ |
-| `M2` `map` command | P1 | ✅ |
-| `M3` Scope dry-run | P2 | ✅ |
-| `M4` Orphan & dead-end screens | P1 | ✅ |
-| `H10` Capture an explicit URL list | P2 | ✅ |
+| `EPIC-GOV` | `G1`–`G7` | 0.19.0 (untagged) · 0.20.0 |
+| `EPIC-MAP` | `M1`–`M4`, `H6`–`H8` | 0.21.0 · 0.22.0 |
 
-`EPIC-MAP` is complete. With `EPIC-GOV` closed at 0.20.0, the backlog's two
-finished epics are governance and discovery.
+Plus `H9`, `H10`, `X9` (pulled forward) and `H12` (unplanned — see below).
 
 ## Next actions, in order
 
-1. **Merge `sprint/12-map`, then tag `v0.22.0`** — `RELEASING.md`.
-2. **Run against a real product.** Everything since 0.20.0 was built for this.
-   `GETTING_STARTED.md` §7 is the order to do it in; `crawl --dry-run` first.
-3. **`QA.2`/`QA.3`/`QA.4`** — the real-portal validations. No fixture can stand
-   in for them, and three sprints have now been justified by them.
-4. Next sprint by `BRANCHING.md`'s *Cut after* order: `sprint/6-liveness`
-   (`L1`–`L3`, `C3`).
+1. **Run against a real product again.** Every defect found in the last three
+   days came from doing so, and none from the 985-test suite. Two runs worth
+   having: a full `pipeline` pass with `collapse_instances: true` (only the
+   `--no-probe --no-screenshots` path has been verified on a real target), and
+   a second portal, because everything is currently tuned to one product's shape.
+2. **`QA.3` (#13)** is arguably answerable now — probing measured at 27.2% and
+   33.3% of crawl time on two real runs. The acceptance is a number to read
+   rather than a judgement to make, and the number exists.
+3. **`X8` (#38)** — open, but `sprint/3-devex` merged as PR #68 and
+   `PRODUCT_GUIDE.md` has no decision table. Either the sprint landed incomplete
+   or the tracker is stale.
+4. **`sprint/6-liveness`** (`L1`–`L3`, `C3`) per `BRANCHING.md`'s *Cut after*
+   order — `L1` has a concrete case: a capture reported `/platform/rag` as a
+   screen when it was a redirect to the dashboard, and nothing said so.
+5. **`sprint/7-reachability`** (`I1`–`I3`) — modals are structurally unreachable
+   because `button` is not on the safety allow-list, by design. Recipes are the
+   designed answer, and a real Manage Agent capture is the case for them.
 
-## Version history note
+## Version history
 
-**`v0.19.0` was never tagged and cannot be.** Sprint 8 was cut from sprint 1,
-so sprint 1's version bump reached `main` on sprint 8's merge and no commit ever
-declared `0.19.0` without also containing `G5`–`G7`. `v0.20.0` contains
-`G1`–`G7`; the changelog says so.
+**`v0.19.0` was never tagged and cannot be.** Sprint 8 was cut from
+`sprint/1-governance` rather than from `main`, so sprint 1's version bump reached
+`main` on sprint 8's merge (#72) rather than its own (#70). At the sprint 1 merge
+the tree still declared `0.18.1`, and `release.yml` refuses a tag whose version
+disagrees with `pyproject.toml` — so no commit could carry a `v0.19.0` tag
+without also containing `G5`–`G7`. `v0.20.0` therefore contains `G1`–`G7`.
 
-Sprint 12 was cut from a **merged** `main` for exactly this reason, and
-`v0.21.0` was tagged before it started.
+Every sprint since has been cut from a **merged** `main`, and each release has
+been tagged before the next sprint started. That ordering is the whole fix.
 
-## What earlier sprints did differently
+## What real runs found that the suite could not
 
-Kept because each was a decision, and the next sprint should make them
-deliberately or not at all.
+Recorded because it is the strongest argument in this repo for `EPIC-QA`. Three
+defects of **one shape** — a feature built before a later one and never wired to
+it — none visible to a fixture-only suite:
 
-- **Sprint 8 cut from sprint 1, not `main`** — cost the `v0.19.0` tag.
-- **`G6`/`G7` shared one work branch**, against the one-item-per-branch rule.
-  They landed as separate commits, but could not be reviewed separately.
-- **Sprint 5 shipped five of ten planned items.** `M1`–`M4` + `H10` were
-  deferred rather than half-landed, and became this sprint.
-- **CodeQL blocked a push once**, for a fixture reading a URL from
-  `location.search`. The alert was correct. CodeQL is *not* in the `full-ok`
-  required set, so it reports without gating — worth changing if security
-  alerts should block merges.
-- **The `sprint/**` ruleset did not prevent branch deletion**, though
-  `BRANCHING.md` says it does. Worth reconciling the doc with the ruleset.
+- `G7`'s egress ledger predated `H6` and ignored its subdomain policy, reporting
+  the product's own API subdomain as a third party.
+- `M2`'s map predated `H10` and ignored its URL list, so `--dry-run` reported one
+  URL where the crawl captured seven.
+- `H12`'s own config key was read by nothing, so the feature shipped dead in
+  0.23.0 through the only path an operator uses.
+
+Plus: a config pointing at a route that redirects, and screenshot failures
+swallowed silently. `test_no_dead_config` now checks that a crawl-shaping value
+*reaches the crawl* rather than that a name exists somewhere in `src/`.
+
+## Practices worth keeping
+
+- **One item per work branch**, squashed into its sprint. `G6`/`G7` shared a
+  branch and could not be reviewed separately.
+- **Tag before the next sprint starts.** See *Version history*.
+- **Run the suite in the foreground.** Detached runs on at least one machine came
+  in at 42 min, 2h10m, 4h59m and 15h16m against 5–9 minutes per sixth. Every one
+  passed — it is wall-clock, not correctness — but it makes the suite useless as
+  a gate.
+- **CodeQL reports without gating**, and the `sprint/**` ruleset did not prevent
+  branch deletion, though `BRANCHING.md` says it does. Worth reconciling the doc
+  with the actual rulesets.
