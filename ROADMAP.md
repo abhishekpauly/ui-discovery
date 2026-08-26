@@ -1256,6 +1256,98 @@ each other?*
 
 ---
 
+## P. Probe fidelity — a capture must not quietly get worse  ·  `EPIC-FIDELITY`
+
+Both items came out of one real run: the Control Center area of an authenticated
+builder portal, captured twice on 2026-08-26 — once with deep-nav off, once on.
+The second run found one extra URL and **lost 13 revealed states**, including
+all 11 on the very screen the run existed to document. Nothing in `summary.md`
+said so. That is the failure this epic is about: not that the engine missed
+something, but that it missed something *and reported success*.
+
+The engine is scrupulous about this everywhere else — `summary.md` has a **Not
+captured** section whose header reads *"A report that lists only what it found
+overstates its own coverage."* Probe coverage is currently the one axis with no
+such accounting.
+
+### PF1 — Deep-nav must not consume the probe's page visit  ·  Effort: M
+
+- **Goal.** Two features that both want to interact with a page should not
+  silently take the budget from each other.
+- **Evidence.** Same config, same session, deep-nav the only difference:
+
+  | Page | deep-nav off | deep-nav on |
+  | --- | --- | --- |
+  | `ai-gateway/model-catalog` | 16 executed, **11 states** | 0 executed, **0 states**, 46 requests |
+  | `observability/runs-and-traces` | 25 executed, **11 states** | 0 executed, **0 states**, 48 requests |
+
+  A deep-nav click navigated the page away, and the probe then ran against
+  whatever was left. It reported `0 executed, 1 blocked` — indistinguishable in
+  the log from a page that genuinely had nothing safe to click.
+- **Build.** Order the two passes and make the boundary explicit: probe the page
+  as loaded, *then* let deep-nav click candidates, restoring the page between
+  candidates as `uistate.py` already does for revealed states. Where a deep-nav
+  click navigates, that is a discovery result for the *destination*, not a
+  reason the *origin* goes unprobed. If restoring is not possible for a given
+  candidate, record why rather than proceeding with a page that is no longer the
+  page.
+- **Acceptance.** A fixture page with both a modal trigger and a click-handler
+  element that navigates yields, in one run, the modal state *and* the
+  discovered URL. A test asserts per-page executed-interaction counts do not
+  drop when deep-nav is enabled — the regression above, as a red test first.
+- **Files.** `crawler.py`, `probe.py`, `uistate.py`, `fixtures/interactive/`,
+  `tests/`.
+- **Depends-on.** None.
+
+### PF2 — Report probe coverage, so a thin capture says it is thin  ·  Effort: S
+
+- **Goal.** `summary.md` accounts for screens it did not capture. It should
+  account for screens it captured *shallowly* by the same standard.
+- **Build.** Per screen, record interactions offered / executed / blocked /
+  skipped-with-reason, and surface a **Shallowly probed** section for screens
+  where the executed count is zero or far below what was offered. State the
+  reason where it is known (budget exhausted, navigated away, all candidates
+  refused) rather than inferring one.
+- **Acceptance.** The deep-nav run above produces a `summary.md` that names
+  `model-catalog` as shallowly probed with the reason; a normal run's section is
+  empty rather than absent, so "no problems" is distinguishable from "not
+  checked". `C1`'s diff reports a per-screen drop in executed interactions as a
+  change, since that is exactly what went unnoticed here.
+- **Files.** `inventory.py`, `reports.py`, `diff.py`, `models.py`, `tests/`.
+- **Depends-on.** PF1 (the counts it reports must first be trustworthy).
+
+### PF3 — Model controls the app never marked up as controls  ·  Effort: M
+
+- **Goal.** An element that behaves like a control should appear in the model as
+  one, even when the product gave it no role.
+- **Evidence.** The Model Catalog screen groups its models under per-provider
+  accordions — Anthropic, Google, OpenAI. All three appear in the captured
+  accessibility tree as `paragraph: Anthropic`, `paragraph: 7 models · Anthropic,
+  GCP Model Garden`. None appears among the screen's 47 modelled elements, and
+  none was ever interacted with: the accordion headers are `<p>` elements with
+  click handlers — no button, no `aria-expanded`, no role. The capture therefore
+  documents the shell of that screen and none of its content, and says nothing
+  about the gap. Deep-nav is the intended answer and did not get there, for the
+  reason `PF1` describes.
+- **Build.** Where an element is not interactive by role but presents as one to
+  a pointer (cursor, listener-bearing ancestor, a sibling pattern that repeats),
+  model it with its inferred type and — this is the part that matters — a flag
+  saying the classification is *inferred, not declared*. Never merge the two:
+  a declared `disclosure` and a guessed one are different facts and the model
+  must keep them different. Safety is unchanged; an inferred control passes the
+  same two gates as any other, and inference is never grounds for widening them.
+- **Acceptance.** A fixture accordion built from `<div>`/`<p>` with click
+  handlers is modelled with `inferred: true` and its states captured; a properly
+  marked-up `<button aria-expanded>` accordion is still modelled as declared;
+  `summary.md` counts the two separately, because the difference is a finding
+  about the product — an accordion a screen reader cannot operate is an
+  accessibility defect, and the engine is well placed to say so.
+- **Files.** `extract.js`, `extraction.py`, `taxonomy.py`, `models.py`,
+  `fixtures/edge/`, `tests/`.
+- **Depends-on.** PF1.
+
+---
+
 ## K. Considered and declined
 
 Capabilities that were reviewed against this engine and deliberately not

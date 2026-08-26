@@ -24,12 +24,13 @@ git rev-list --left-right --count origin/main...<branch>   # behind / ahead
 
 ---
 
-## Branch ledger · 2026-08-25
+## Branch ledger · 2026-08-26
 
-`main` is at `f1af1d4`. **No sprint is live and nothing is in flight.**
+`main` is at `9993ad5`. **No sprint is live.** One docs branch is in flight.
 
 | Branch | Ahead of `main` | State |
 | --- | --- | --- |
+| `docs/pf-probe-fidelity-epic` | 2 | `EPIC-FIDELITY` (`PF1`–`PF3`) into `ROADMAP.md` § P. Docs only, no `src/` change. Open for review. |
 | `sprint/2-field-validation` | 0 | Cut empty from the pre-0.19.0 trunk, long behind. Delete and re-cut when `QA.1`–`QA.4` start. |
 | `sprint/4-deferred` | 0 | Same, and meant to stay empty — it exists so the deferral is visible. |
 
@@ -50,21 +51,27 @@ Plus `H9`, `H10`, `X9` (pulled forward) and `H12` (unplanned — see below).
 
 ## Next actions, in order
 
-1. **Run against a real product again.** Every defect found in the last three
-   days came from doing so, and none from the 985-test suite. Two runs worth
-   having: a full `pipeline` pass with `collapse_instances: true` (only the
-   `--no-probe --no-screenshots` path has been verified on a real target), and
-   a second portal, because everything is currently tuned to one product's shape.
-2. **`QA.3` (#13)** is arguably answerable now — probing measured at 27.2% and
+1. **`PF1` (#82).** A real run on 2026-08-26 found deep-nav and the probe
+   competing for one page visit: the same config with deep-nav on captured one
+   extra URL and lost 13 revealed states, all 11 of them on the start screen,
+   and reported success. It is a `bug` against shipped behaviour and both
+   `PF2` (#83) and `PF3` (#84) sit behind it.
+2. **Run against a real product again.** Every defect found in the last four
+   days came from doing so, and none from the 985-test suite. Still outstanding
+   after the 2026-08-26 run: a full `pipeline` pass with
+   `collapse_instances: true` (only `crawl` has been exercised on a real
+   target), and a second portal, because everything is tuned to one product's
+   shape.
+3. **`QA.3` (#13)** is arguably answerable now — probing measured at 27.2% and
    33.3% of crawl time on two real runs. The acceptance is a number to read
    rather than a judgement to make, and the number exists.
-3. **`X8` (#38)** — open, but `sprint/3-devex` merged as PR #68 and
+4. **`X8` (#38)** — open, but `sprint/3-devex` merged as PR #68 and
    `PRODUCT_GUIDE.md` has no decision table. Either the sprint landed incomplete
    or the tracker is stale.
-4. **`sprint/6-liveness`** (`L1`–`L3`, `C3`) per `BRANCHING.md`'s *Cut after*
+5. **`sprint/6-liveness`** (`L1`–`L3`, `C3`) per `BRANCHING.md`'s *Cut after*
    order — `L1` has a concrete case: a capture reported `/platform/rag` as a
    screen when it was a redirect to the dashboard, and nothing said so.
-5. **`sprint/7-reachability`** (`I1`–`I3`) — modals are structurally unreachable
+6. **`sprint/7-reachability`** (`I1`–`I3`) — modals are structurally unreachable
    because `button` is not on the safety allow-list, by design. Recipes are the
    designed answer, and a real Manage Agent capture is the case for them.
 
@@ -82,7 +89,7 @@ been tagged before the next sprint started. That ordering is the whole fix.
 
 ## What real runs found that the suite could not
 
-Recorded because it is the strongest argument in this repo for `EPIC-QA`. Three
+Recorded because it is the strongest argument in this repo for `EPIC-QA`. Four
 defects of **one shape** — a feature built before a later one and never wired to
 it — none visible to a fixture-only suite:
 
@@ -92,10 +99,26 @@ it — none visible to a fixture-only suite:
   URL where the crawl captured seven.
 - `H12`'s own config key was read by nothing, so the feature shipped dead in
   0.23.0 through the only path an operator uses.
+- Deep-nav and the probe were built to interact with the same page and neither
+  was told about the other. A deep-nav click that navigates leaves the probe
+  running against a page that is no longer there, and it logs
+  `0 executed, 1 blocked` — which is exactly what a page with nothing safe to
+  click logs. `PF1` (#82).
 
 Plus: a config pointing at a route that redirects, and screenshot failures
 swallowed silently. `test_no_dead_config` now checks that a crawl-shaping value
 *reaches the crawl* rather than that a name exists somewhere in `src/`.
+
+And one defect of a **second** shape, which no wiring check would have caught:
+the engine models controls by role, so a provider accordion built from `<p>`
+elements with click handlers is visible in the captured accessibility tree and
+absent from the element model. The capture documented that screen's chrome and
+none of its content, and said nothing about the gap. `PF3` (#84).
+
+Both shapes share one consequence, and it is the more general lesson: **a
+capture should report its own depth.** `summary.md` already refuses to overstate
+which screens it reached; it has no equivalent account of how far it got into
+them. That is `PF2` (#83).
 
 ## Practices worth keeping
 
