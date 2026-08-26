@@ -18,7 +18,7 @@ Report · **V2** analysis (fingerprints, regions, components, navigation) · **V
 safe interaction + network probe · **session-based auth** for logged-in portals ·
 **V4** source correlation · **V5** semantic/docs/QA layer (deterministic-first) ·
 **V6** relationships, control options and visual capture.
-**533 tests pass.** See `PRODUCT_TRACKER.md` for the authoritative status.
+**1,011 tests pass** (4 skipped). See `PRODUCT_TRACKER.md` for the authoritative status.
 
 ## Non-negotiable principles (do not violate these when adding features)
 
