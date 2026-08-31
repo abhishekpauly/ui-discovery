@@ -18,7 +18,7 @@ Report · **V2** analysis (fingerprints, regions, components, navigation) · **V
 safe interaction + network probe · **session-based auth** for logged-in portals ·
 **V4** source correlation · **V5** semantic/docs/QA layer (deterministic-first) ·
 **V6** relationships, control options and visual capture.
-**1,011 tests pass** (4 skipped). See `PRODUCT_TRACKER.md` for the authoritative status.
+**TBD tests pass.** See `PRODUCT_TRACKER.md` for the authoritative status.
 
 ## Non-negotiable principles (do not violate these when adding features)
 
@@ -90,7 +90,9 @@ python -m venv .venv && source .venv/bin/activate   # Windows: .\.venv\Scripts\A
 pip install -e ".[dev]"
 python -m playwright install chromium
 
-# ALWAYS run before and after a change — keep it green
+# ALWAYS run before and after a change — keep it green.
+# NEVER run the suite in the background / detached. Foreground only. See
+# "Running the tests" below — this one is not negotiable.
 pytest -q
 
 # the CLIs
@@ -100,6 +102,24 @@ python -m ui_discovery.analyze  output/<slug>/
 python -m ui_discovery.probe    <url> [--auth-state session.json]
 python -m ui_discovery.login    <login-url> --output session.json   # run locally, headed
 ```
+
+## Running the tests — foreground, always
+
+**Never run `pytest` in the background, detached, or as a task you come back
+to. Run it in the foreground and wait for it.** This is a hard rule, not a
+preference, and it applies to the full suite and to any subset.
+
+Two reasons, and the first is measured: detached runs on at least one machine
+came in at 42 min, 2h10m, 4h59m and 15h16m against 5–9 minutes per sixth in
+the foreground. Every one of them passed — it is wall-clock, not correctness —
+but a gate nobody waits for is not a gate. Second, a backgrounded suite invites
+editing the tree while it runs, so the result describes a tree that no longer
+exists.
+
+If the suite is too slow to wait for, cut the *scope* rather than the
+foreground: run the affected files or a `-k` selection first, then the whole
+suite once, in the foreground, before you call the change done. Never report a
+change as tested on the strength of a run you did not watch finish.
 
 ## Conventions
 

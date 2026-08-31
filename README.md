@@ -563,6 +563,59 @@ per-page probe line. The same safety rules apply as in single-page `probe`.
 A probe failure never fails the crawl — the page's extraction is still valid
 without it, and the failure is logged as a warning.
 
+## Is this the screen it claims to be? (L1)
+
+`requested_url` and `final_url` have both been on every `Page` since V0. Until
+`L1`, no report compared them — so a capture could name a screen it never
+reached and still read as healthy.
+
+Every page now carries a `verdict`, with the evidence behind it:
+
+| Verdict | Meaning |
+| --- | --- |
+| `captured` | Ended up where it was asked to go, and rendered |
+| `redirected` | Rendered, somewhere else — the destination is named |
+| `auth_wall` | `H4`'s logged-out reasoning fired: this is a login page |
+| `error` | HTTP status ≥ 400 |
+| `empty` | Settled with no headings and no controls |
+| `unknown` | The evidence is thin — most often a page that never settled |
+
+Tested most-severe first, and the ordering is the argument. A page that
+redirected *to a login form* is an `auth_wall`, because "your session is gone"
+is what you act on and "the URL moved" is how you found out. `redirected_to`
+is still set whenever the two URLs differ, so a more severe verdict never
+costs you the redirect.
+
+A trailing slash and a fragment are **not** redirects. `/settings` →
+`/settings/` is not a navigation, and reporting it as one would bury the
+redirects that matter. The comparison reuses `normalize_url` — the same
+definition of "the same page" the crawl uses for identity, so the two cannot
+drift apart.
+
+`unknown` is a real verdict, not a fallback. A page still loading and a page
+that finished with nothing on it look identical; a confident wrong answer is
+worse than an honest one.
+
+The counts roll up into `stats.verdicts`, `summary.md`, `report.html` and
+`run.json`. The banner is graded:
+
+```
+> 🛑 This capture is mostly not of the product. Only 1 of 4 screen(s) were the
+  screen they claimed to be — 3 auth wall. Everything below describes what was
+  actually reached, which is not what was asked for.
+```
+
+Fewer than half the screens `captured` leads `summary.md` with that, because
+such a capture is a write-off. One screen that redirected is a note beside the
+screens table instead — crying wolf over the second is how the first stops
+being read.
+
+What it catches, from a real run: a portal's control-center route redirected to
+that product's dashboard. The report named the screen with the URL that had
+been asked for, filed a screenshot of the dashboard under that name, counted
+one screen captured, and said nothing. The word "redirect" appeared nowhere in
+`summary.md`, `report.md`, `documentation.md` or their HTML.
+
 ## Session expiry (H4)
 
 A saved session eventually goes stale. Without a check, the engine keeps

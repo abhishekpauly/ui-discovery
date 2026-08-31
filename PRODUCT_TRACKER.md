@@ -127,7 +127,7 @@ complete, awaiting real-world/manual validation) · 🚧 In Progress · 📋 Pla
 ### Liveness & freshness — a capture that says how current it is · EPIC-FRESH
 | ID | Feature | Scope | Pri | Status |
 |----|---------|-------|-----|--------|
-| L1 | Per-page capture verdict | `captured`/`redirected`/`auth_wall`/`error`/`empty`/`unknown` + evidence | P0 | 📋 |
+| L1 | Per-page capture verdict | `captured`/`redirected`/`auth_wall`/`error`/`empty`/`unknown` + evidence | P0 | ✅ |
 | L2 | Capture age surfaced | timestamp + age lead the reports; `diff` warns on stale or unhealthy sides | P1 | 📋 |
 | L3 | `verify` command | re-check a prior capture cheaply: live / redirected / gone / auth-walled | P2 | 📋 |
 | L4 | Revisit `X4` with `O4` metrics | **spike** — does capture reuse pay? Deliverable is a recorded answer | P3 | 📋 |

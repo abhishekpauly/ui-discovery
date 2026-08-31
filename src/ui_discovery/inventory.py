@@ -102,6 +102,15 @@ def _screens(crawl: Crawl) -> list[dict[str, Any]]:
                            if page.screenshot_path else None),
             "out_links": len(node.out_links),
             "probed": node.probe is not None,
+            # L1: the verdict travels with the screen, so every renderer and
+            # every downstream reader draws it from one place. `None` — not
+            # `unknown` — for a snapshot captured before L1 existed: "we did
+            # not ask" and "we asked and could not tell" are different facts,
+            # and conflating them would re-render every old capture as broken.
+            "verdict": (page.verdict.verdict if page.verdict else None),
+            "verdict_reason": (page.verdict.reason if page.verdict else ""),
+            "redirected_to": (page.verdict.redirected_to
+                              if page.verdict else None),
         })
     return screens
 
@@ -143,6 +152,12 @@ def build_inventory(crawl: Crawl) -> dict[str, Any]:
         "elements_count": sum(s["elements_total"] for s in screens),
         "endpoints_count": len(endpoints),
         "probe_ran": any(s["probed"] for s in screens),
+        # L1: counts by verdict, and the one number a reader acts on — how
+        # many screens were the screen they claimed to be.
+        "verdicts": dict(Counter(s["verdict"] for s in screens
+                                 if s["verdict"]).most_common()),
+        "screens_captured": sum(1 for s in screens
+                                if s["verdict"] == "captured"),
         "totals_by_category": dict(totals.most_common()),
         "screens": screens,
         "endpoints": endpoints,
@@ -251,12 +266,97 @@ def _endpoints_markdown(inv: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+# --- L1: rendering the per-page verdict -------------------------------------
+#
+# One phrasing of each verdict, used by every renderer. Two wordings of one
+# verdict is how a reader ends up believing they are two findings.
+VERDICT_LABEL = {
+    "captured": "captured",
+    "redirected": "redirected",
+    "auth_wall": "auth wall",
+    "error": "error",
+    "empty": "empty",
+    "unknown": "unknown",
+}
+
+
+def _verdict_cell(screen: dict[str, Any]) -> str:
+    """One screen's verdict, with the redirect destination when there is one.
+
+    A bare "redirected" is the same unusable verdict as a bare "out of scope":
+    the destination is the part the reader acts on.
+    """
+    name = screen.get("verdict")
+    if not name:
+        # Captured before L1. Saying nothing is the honest rendering.
+        return "—"
+    label = VERDICT_LABEL.get(name, name)
+    if name == "captured":
+        return label
+    destination = screen.get("redirected_to")
+    if destination:
+        return f"**{label}** → `{destination}`"
+    return f"**{label}**"
+
+
+def _verdict_qualifier(inv: dict[str, Any]) -> str:
+    """Qualify the headline count when it is not the whole story.
+
+    `screens_count` counts pages the crawler visited; it has never counted
+    pages that were the page they claimed to be, and reporting the first as
+    though it were the second is exactly the overstatement L1 exists to end.
+    """
+    total = inv.get("screens_count", 0)
+    judged = sum((inv.get("verdicts") or {}).values())
+    captured = inv.get("screens_captured", total)
+    if not total or not judged or captured == total:
+        return ""
+    return f"  _({captured} of {total} were the screen they claimed to be)_"
+
+
+def _verdict_banner(inv: dict[str, Any]) -> list[str]:
+    """The banner that leads `summary.md` when the capture is not of the
+    product it names.
+
+    Deliberately graded. A capture where most screens are an auth wall is a
+    write-off and must say so before anything else; one screen that redirected
+    is a note, not an alarm — and crying wolf over the second is how the first
+    stops being read.
+    """
+    total = inv.get("screens_count", 0)
+    counts = inv.get("verdicts") or {}
+    # Nothing to say about a capture that predates the verdict.
+    if not total or not sum(counts.values()):
+        return []
+    captured = counts.get("captured", 0)
+    off = {k: v for k, v in counts.items() if k != "captured" and v}
+    if not off:
+        return []
+    detail = ", ".join(f"{n} {VERDICT_LABEL.get(k, k)}"
+                       for k, n in sorted(off.items(), key=lambda kv: -kv[1]))
+    if captured * 2 < total:
+        return [
+            f"> 🛑 **This capture is mostly not of the product.** Only "
+            f"{captured} of {total} screen(s) were the screen they claimed to "
+            f"be — {detail}. Everything below describes what was actually "
+            f"reached, which is not what was asked for. Check the session and "
+            f"the start URL before reading further.",
+            "",
+        ]
+    return [
+        f"> ⚠️ **{sum(off.values())} screen(s) were not the "
+        f"screen they claimed to be** ({detail}). See the Verdict column.",
+        "",
+    ]
+
+
 def _summary_markdown(inv: dict[str, Any]) -> str:
     lines = [
         f"# Capture summary — {inv['target']}", "",
         f"*crawl `{inv['crawl_id']}` · {inv['captured_at']} · "
         f"engine {inv['engine_version']}*", "",
-        f"- **Screens captured: {inv['screens_count']}**",
+        f"- **Screens captured: {inv['screens_count']}**"
+        + _verdict_qualifier(inv),
         f"- **UI elements found: {inv['elements_count']}**",
         f"- **API endpoints observed: {inv['endpoints_count']}**"
         + ("" if inv["probe_ran"] else "  _(probe not run — use `--probe`)_"),
@@ -288,6 +388,13 @@ def _summary_markdown(inv: dict[str, Any]) -> str:
             f"the bottom of this file.",
             "",
         ]
+    # L1: inserted last at the same index, so it lands *above* the coverage
+    # banners. A capture that is not of the product is a more urgent fact than
+    # a capture that is merely partial, and burying it under the others was
+    # how a crawl of forty login screens read as healthy.
+    banner = _verdict_banner(inv)
+    if banner:
+        lines[6:6] = banner
     for kind, count in inv["totals_by_category"].items():
         lines.append(f"- {kind}: {count}")
     cov = inv["ui_coverage"]
@@ -314,12 +421,14 @@ def _summary_markdown(inv: dict[str, Any]) -> str:
               f"`inventory.json` for the full breakdown._",
               ""]
     lines += ["", "## Screens", "",
-              "| # | Screen | Elements | Visible | Links | Screenshot |",
-              "| --- | --- | --- | --- | --- | --- |"]
+              "| # | Screen | Verdict | Elements | Visible | Links | "
+              "Screenshot |",
+              "| --- | --- | --- | --- | --- | --- | --- |"]
     for i, s in enumerate(inv["screens"], 1):
         shot = f"`screenshots/{s['screenshot']}`" if s["screenshot"] else "—"
         title = s["title"] or "(untitled)"
         lines.append(f"| {i} | **{title}**<br>`{s['url']}` | "
+                     f"{_verdict_cell(s)} | "
                      f"{s['elements_total']} | {s['elements_visible']} | "
                      f"{s['out_links']} | {shot} |")
     if inv["discovered_not_captured"]:

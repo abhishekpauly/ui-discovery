@@ -36,6 +36,7 @@ from .discovery import read_sitemaps
 from .extraction import (
     JS,
     assemble_page,
+    capture_verdict,
     merge_frame_extraction,
     plan_frames,
     skipped_frame,
@@ -1079,6 +1080,17 @@ async def crawl_site(
                   looks_logged_out=model.auth.looks_logged_out,
                   looks_empty=model.auth.looks_empty)
 
+        # L1: after the adapter has had its say, so a product-specific
+        # signed-in check reaches the verdict too rather than only the report
+        # of the generic signal.
+        model.verdict = capture_verdict(
+            model, http_status=readiness.get("http_status")
+        )
+        if model.verdict.verdict != "captured":
+            event("page.verdict", url=url, verdict=model.verdict.verdict,
+                  reason=model.verdict.reason,
+                  final_url=model.verdict.final_url)
+
         # Build the page graph from the extracted anchors (deterministic, and
         # independent of Crawlee's internal enqueue bookkeeping). Each entry
         # carries the label of the control that leads there, so the graph can
@@ -1369,6 +1381,14 @@ async def crawl_site(
     empty = sum(
         1 for n in nodes.values() if n.page.auth and n.page.auth.looks_empty
     )
+    # L1: counted by verdict rather than as a fixed set of integers, so adding
+    # a verdict later cannot leave it silently uncounted. Only verdicts that
+    # occurred appear — a zero for every name would bury the ones that matter.
+    verdict_counts: dict[str, int] = {}
+    for n in nodes.values():
+        if n.page.verdict:
+            name = n.page.verdict.verdict
+            verdict_counts[name] = verdict_counts.get(name, 0) + 1
 
     missed = discovered - set(nodes)
     if missed:
@@ -1450,6 +1470,7 @@ async def crawl_site(
             runtime_seconds=round(runtime, 3),
             pages_logged_out=logged_out,
             pages_empty=empty,
+            verdicts=verdict_counts,
             # Only an expiry if we actually presented a session, AND the
             # evidence is proportionate to the claim.
             #

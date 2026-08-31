@@ -363,6 +363,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     s = crawl.stats
     print(f"[INFO] Crawled {s.pages_crawled} pages "
           f"({s.pages_failed} failed) in {s.runtime_seconds}s")
+    off_verdict = {k: v for k, v in (s.verdicts or {}).items()
+                   if k != "captured" and v}
+    if off_verdict:
+        detail = ", ".join(f"{n} {k.replace('_', ' ')}"
+                           for k, n in sorted(off_verdict.items(),
+                                              key=lambda kv: -kv[1]))
+        print(f"[WARN] {(s.verdicts or {}).get('captured', 0)} of "
+              f"{s.pages_crawled} screens were the screen they claimed to be "
+              f"— {detail}")
     if modules:
         print(f"[INFO] Module folders: {', '.join(sorted(modules))}")
     run.record_stats(
@@ -373,6 +382,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         tables=relations.stats.get("tables", 0),
         states_captured=sum(len(n.probe.states) for n in crawl.pages if n.probe),
         auth_expired=s.auth_expired,
+        # L1: how many screens were the screen they claimed to be. Recorded
+        # next to `pages_crawled` because the two are read together and have
+        # never been the same number.
+        screens_captured=(s.verdicts or {}).get("captured", 0),
+        verdicts=dict(s.verdicts or {}),
         # O4: what interacting with every page actually cost, which is the
         # question `QA.3` asks and the one nobody could previously answer.
         probe_ms=s.probe_ms,
