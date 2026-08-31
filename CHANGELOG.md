@@ -18,6 +18,25 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ## [Unreleased]
 
+## [0.24.0] — A capture that says whether it is of the product (L1)
+
+Two ways a capture could be wrong and quiet about it, both found by running
+against a real portal rather than by the suite. `L1` closes the larger one: a
+screen now states whether it is the screen it claims to be. `H12`'s dead
+config key, fixed below, is the smaller.
+
+Closes `L1` (#31), the first item of `EPIC-FRESH`. Unblocks `L2` (#32), `L3`
+(#33) and `QA.4` (#14), all of which were waiting on the verdict vocabulary.
+
+Nothing is removed or renamed, so `SCHEMA_VERSION` stays `0.1.0` — but
+`Page.verdict` and `CrawlStats.verdicts` are new fields in every capture, and
+`summary.md` gains a **Verdict** column. Anyone parsing those files should
+know.
+
+Deliberately not done: `L2`'s capture-age header and `diff` warnings, and
+`L3`'s `verify` command. Both depend on this vocabulary and neither should
+have been rushed into the same change.
+
 ### Added
 
 - **`L1` — every screen now states whether it is the screen it claims to be.**
@@ -48,7 +67,11 @@ The "V0…V5" phase names used in planning map to product versions as noted.
   stays the signal, the verdict is the judgement drawn from it — and reuses
   `normalize_url` for "the same page", so a trailing slash or a fragment is
   not reported as a redirect and the crawl's notion of identity cannot drift
-  from the report's. (+20 tests)
+  from the report's.
+
+### Tests
+
+- +21 (985 → 1006 passing, 3 skipped).
 
 ### Fixed
 
