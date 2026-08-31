@@ -18,6 +18,38 @@ The "V0…V5" phase names used in planning map to product versions as noted.
 
 ## [Unreleased]
 
+### Added
+
+- **`L1` — every screen now states whether it is the screen it claims to be.**
+  A `verdict` on `Page`: `captured`, `redirected`, `auth_wall`, `error`,
+  `empty` or `unknown`, alongside the evidence it was drawn from — requested
+  vs final URL, HTTP status, element count, and whether `auth.py`'s
+  logged-out heuristic fired. Rolled up into `CrawlStats.verdicts`,
+  `summary.md`, `report.html` and `run.json`.
+
+  `Page.requested_url` and `Page.final_url` have both existed since V0 and no
+  report ever compared them. A run against a real portal made the cost
+  concrete: a capture of that product's control-center route landed on its
+  dashboard, and the report named the screen with the URL that had been asked
+  for, filed a screenshot of the dashboard under that name, counted it as one
+  screen captured, and said nothing. The word "redirect" appeared in none of
+  `summary.md`, `report.md`, `documentation.md` or their HTML. Every fact
+  needed to catch it was already in the model.
+
+  The banner is graded on purpose. Fewer than half the screens `captured`
+  leads `summary.md` with a stop sign, because that capture is a write-off;
+  one screen that redirected is a note next to the screens table. Crying wolf
+  over the second is how the first stops being read.
+
+  `unknown` is a real verdict and is used rather than guessed past: a page
+  that never settled cannot be told from one that settled empty.
+
+  Extends the existing `Page.auth` pattern rather than paralleling it — `auth`
+  stays the signal, the verdict is the judgement drawn from it — and reuses
+  `normalize_url` for "the same page", so a trailing slash or a fragment is
+  not reported as a redirect and the crawl's notion of identity cannot drift
+  from the report's. (+20 tests)
+
 ### Fixed
 
 - **`H12`'s config key was never wired, so the feature was dead through the

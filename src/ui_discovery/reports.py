@@ -399,6 +399,18 @@ def build_markdown(crawl: Crawl, relations: Relations | None = None) -> str:
                                  for u in relations.entry_points))
     lines.append(f"- Screens captured: **{s.pages_crawled}** "
                  f"(failed: {s.pages_failed}) · crawl depth ≤ {c.max_depth}")
+    # L1: `pages_crawled` counts pages the crawler visited, never pages that
+    # were the page they claimed to be. Where those differ, say so on the same
+    # line a reader takes the count from.
+    off_verdict = {k: v for k, v in (s.verdicts or {}).items()
+                   if k != "captured" and v}
+    if off_verdict:
+        detail = ", ".join(f"{n} {k.replace('_', ' ')}"
+                           for k, n in sorted(off_verdict.items(),
+                                              key=lambda kv: -kv[1]))
+        lines.append(f"- **Screens that were the screen they claimed to be: "
+                     f"{(s.verdicts or {}).get('captured', 0)}** of "
+                     f"{s.pages_crawled} — {detail}")
     lines.append(f"- Navigation paths: {rstats.get('navigation_edges', 0)} "
                  f"({rstats.get('labelled_edges', 0)} with a readable label)")
     lines.append(f"- Element relationships recorded: "
@@ -835,6 +847,16 @@ def _screen_html(index: int, node: PageNode, screen, titles: dict) -> str:
     parts.append(f'<p class="meta"><code>{_esc(node.url)}</code> · depth '
                  f'{_esc(node.depth)} · HTTP '
                  f'{_esc(p.readiness.get("http_status"))}</p>')
+    # L1: per screen, not only in the rollup. A reader scrolling to one screen
+    # must not have to go back to the header to find out it is the wrong one.
+    if p.verdict and p.verdict.verdict != "captured":
+        moved = (f' → <code>{_esc(p.verdict.redirected_to)}</code>'
+                 if p.verdict.redirected_to else "")
+        parts.append(
+            f'<p class="banner note"><b>Verdict: '
+            f'{_esc(p.verdict.verdict.replace("_", " "))}</b>{moved} '
+            f'<span class="meta">({_esc(p.verdict.reason)})</span></p>'
+        )
     if p.screenshot_path:
         parts.append(_thumb(p.screenshot_path, title, height=260))
 
@@ -1061,6 +1083,25 @@ def build_html(crawl: Crawl, relations: Relations | None = None) -> str:
             f'<code>--auth-state</code> to capture the signed-in product.</p>'
         )
 
+    # L1: the same graded banner as `summary.md`, above the auth one — a
+    # capture that is not of the product is the first thing a reader needs,
+    # and `auth_expired` covers only the session case.
+    verdict_html = ""
+    off_verdict = {k: v for k, v in (s.verdicts or {}).items()
+                   if k != "captured" and v}
+    if off_verdict:
+        captured_n = (s.verdicts or {}).get("captured", 0)
+        detail = ", ".join(f"{n} {k.replace('_', ' ')}"
+                           for k, n in sorted(off_verdict.items(),
+                                              key=lambda kv: -kv[1]))
+        css = ("error" if captured_n * 2 < s.pages_crawled else "note")
+        verdict_html = (
+            f'<p class="banner {css}"><b>{esc(captured_n)} of '
+            f'{esc(s.pages_crawled)} screen(s) were the screen they claimed '
+            f'to be</b> — {esc(detail)}. Each screen states its own verdict '
+            f'below.</p>'
+        )
+
     toc = "".join(
         f'<li><a href="#screen-{i}">{esc(_screen_title(n))}</a></li>'
         for i, n in enumerate(crawl.pages, start=1)
@@ -1207,6 +1248,7 @@ destructive ones are observed and refused.</p>
 <p class="meta">Start <code>{esc(c.start_url)}</code> · crawl
  <code>{esc(crawl.crawl_id)}</code> · engine {esc(crawl.engine_version)}
  · schema {esc(crawl.schema_version)} · captured {esc(crawl.finished_at)}</p>
+{verdict_html}
 {auth_html}
 
 <h2>What this capture contains</h2>
