@@ -145,6 +145,44 @@ class AuthCheck(BaseModel):
     evidence: Optional[str] = None  # the matching text/url, for the report
 
 
+# L1 — the verdict vocabulary. Ordered most-severe first, which is also the
+# order `capture_verdict` tests them in.
+VERDICTS = ("error", "auth_wall", "empty", "redirected", "captured", "unknown")
+
+
+class CaptureVerdict(BaseModel):
+    """Whether a screen is the screen it claims to be, and the evidence.
+
+    `Page.requested_url` and `Page.final_url` have both existed since V0, and
+    until L1 no report compared them. A session that expires mid-crawl
+    therefore yielded forty screenshots of a login form under a page count that
+    looked healthy — every fact needed to say so was already in the model, and
+    nothing said it.
+
+    This extends the `Page.auth` pattern rather than paralleling it: `auth`
+    stays the *signal* ("this looks logged out, here is the rule that fired"),
+    and the verdict is the *judgement* drawn from that signal plus the URLs,
+    the status code and what rendered. `unknown` is a real verdict — a
+    confident wrong one is worse than an honest absence.
+    """
+
+    verdict: str = "unknown"  # one of VERDICTS
+    # Why, in one phrase, naming the rule rather than the category — the same
+    # reason `map.decide` names the pattern: a verdict you cannot act on is
+    # not worth recording.
+    reason: str = ""
+    # The facts it was drawn from, so a reader can disagree with the
+    # judgement without re-running the crawl.
+    requested_url: str = ""
+    final_url: str = ""
+    http_status: Optional[int] = None
+    element_count: int = 0
+    # Set whenever the two URLs differ, on every verdict — a redirect is
+    # worth knowing about even when a more severe verdict is what gets
+    # reported.
+    redirected_to: Optional[str] = None
+
+
 class FrameInfo(BaseModel):
     """One iframe seen on the page, and whether we entered it.
 
@@ -186,6 +224,10 @@ class Page(BaseModel):
 
     # H4: does this page look like a login / logged-out page?
     auth: Optional[AuthCheck] = None
+
+    # L1: is this the screen it claims to be? Drawn from `auth` above plus the
+    # two URLs, the status code and what rendered.
+    verdict: Optional[CaptureVerdict] = None
 
     # The browser's own ARIA snapshot (YAML) — ground-truth-ish a11y tree,
     # kept alongside the deterministic per-element pass rather than instead of.
@@ -262,6 +304,10 @@ class CrawlStats(BaseModel):
     # work, not of the elapsed time, and it is what makes "probing on by
     # default costs us X" a measurement instead of an impression.
     probe_ms: int = 0
+    # L1: how many screens were the screen they claimed to be. Keyed by
+    # verdict, so a new verdict cannot silently go uncounted the way a fixed
+    # set of integer fields would.
+    verdicts: dict[str, int] = Field(default_factory=dict)
 
 
 class PageNode(BaseModel):

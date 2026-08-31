@@ -19,9 +19,19 @@ from . import SCHEMA_VERSION, __version__
 from .auth import check_auth
 from .browser import LIVE_CONNECTION_PROBE_JS, aria_snapshot, navigate
 from .mask import apply_mask
-from .models import Element, FrameInfo, Geometry, Heading, Option, Page
+from .models import (
+    AuthCheck,
+    CaptureVerdict,
+    Element,
+    FrameInfo,
+    Geometry,
+    Heading,
+    Option,
+    Page,
+)
 from .redact import RedactionPolicy, Redactor, redact_element, redact_heading
 from .taxonomy import classify
+from .util import normalize_url
 
 # The deterministic in-page pass, shared by the sync extractor (V0) and the
 # async Crawlee handler (V1). Public so the crawler can `page.evaluate(JS)`.
@@ -283,6 +293,91 @@ def assemble_page(
     )
 
 
+# --- L1: is this the screen it claims to be? --------------------------------
+
+
+def _same_page(requested: str, final: str) -> bool:
+    """Do two URLs name the same screen, ignoring differences that never meant
+    a different page?
+
+    A trailing slash and a fragment are not navigations, and reporting
+    `/settings` -> `/settings/` as a redirect would bury the redirects that
+    matter under noise. `normalize_url` already encodes exactly this judgement
+    for crawl identity; reusing it keeps one definition of "the same page"
+    rather than a second one that can drift.
+    """
+    if not final or not requested:
+        return True
+    return normalize_url(requested) == normalize_url(final)
+
+
+def capture_verdict(page: Page, *, http_status: Optional[int] = None) -> CaptureVerdict:
+    """Judge one captured page, from facts the model already carries.
+
+    Pure and deterministic — like `check_auth`, it reads only the assembled
+    model, so the verdict can be recomputed from a stored snapshot and two
+    readers cannot disagree about it.
+
+    Tested most-severe first. The ordering is the argument: a page that
+    redirected *to a login form* is an `auth_wall`, because "your session is
+    gone" is what the reader must act on and "the URL moved" is a detail of
+    how they found out. Likewise a redirect that rendered nothing is `empty` —
+    it failed harder than it moved. `redirected_to` is set on every verdict
+    where the URLs differ, so the more severe answer never costs the reader
+    the redirect.
+    """
+    status = http_status
+    if status is None:
+        status = page.readiness.get("http_status")
+    if not isinstance(status, int):
+        status = None
+
+    auth = page.auth or AuthCheck()
+    element_count = len(page.elements)
+    moved = not _same_page(page.requested_url, page.final_url)
+
+    def verdict(name: str, reason: str) -> CaptureVerdict:
+        return CaptureVerdict(
+            verdict=name,
+            reason=reason,
+            requested_url=page.requested_url,
+            final_url=page.final_url,
+            http_status=status,
+            element_count=element_count,
+            redirected_to=page.final_url if moved else None,
+        )
+
+    # 1. The server said no. Nothing below this line can be trusted about a
+    #    page that was never served.
+    if status is not None and status >= 400:
+        return verdict("error", f"http-status:{status}")
+
+    # 2. H4's logged-out reasoning, already written and tested. A login page
+    #    is a perfectly valid page — it is just not the page that was asked
+    #    for, which is precisely what this verdict exists to say.
+    if auth.looks_logged_out:
+        return verdict("auth_wall", f"auth:{auth.signal or 'looks-logged-out'}")
+
+    # 3. Nothing rendered. `check_auth` only sets this on a *settled* page, so
+    #    it is a finished page with no content rather than one still loading.
+    if auth.looks_empty:
+        return verdict("empty", f"auth:{auth.signal or 'empty-page'}")
+
+    # 4. A page that never settled cannot be told apart from one that settled
+    #    empty, and guessing between them is exactly the confident-wrong
+    #    verdict this vocabulary has `unknown` to avoid.
+    if page.readiness.get("body_present") is False:
+        return verdict("unknown", "page-never-settled")
+    if not element_count and not page.headings:
+        return verdict("unknown", "no-content-and-no-settle-evidence")
+
+    # 5. It rendered, and it rendered somewhere else.
+    if moved:
+        return verdict("redirected", "final-url-differs-from-requested")
+
+    return verdict("captured", "final-url-matches-and-content-rendered")
+
+
 def mask_targets_for_raw(raw: dict, policy: RedactionPolicy) -> list:
     """G6: which elements of a raw extraction a screenshot must cover.
 
@@ -390,6 +485,7 @@ def extract_page(
                 page.screenshot(path=screenshot_path, full_page=True)
                 page_model.screenshot_path = screenshot_path
             page_model.auth = check_auth(page_model)
+            page_model.verdict = capture_verdict(page_model)
             return page_model
         finally:
             browser.close()
